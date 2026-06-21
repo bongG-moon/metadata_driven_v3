@@ -9,8 +9,8 @@
 ```text
 main router canvas
 Chat Input
--> router_flow 00~07
--> selected Run Flow
+-> router_flow 00~05
+-> 06 Selected Flow API Runner
 -> Chat Output
 ```
 
@@ -29,7 +29,7 @@ Final Message
 -> Chat Output
 ```
 
-main router는 어떤 flow를 실행할지 선택만 합니다. state load/write, metadata QA 판단, data analysis 실행 준비는 각 subflow 안에서 처리합니다.
+main router는 어떤 flow를 실행할지 선택하고, 선택된 flow의 API 호출 정보만 만듭니다. state load/write, metadata QA 판단, data analysis 실행 준비는 각 subflow 안에서 처리합니다.
 
 ## Main Router Flow
 
@@ -38,14 +38,14 @@ main router는 어떤 flow를 실행할지 선택만 합니다. state load/write
 | `00 Router Request Loader` | 질문을 route 판단 payload로 변환 |
 | `01 Metadata Context Loader` | route 판단용 metadata 요약 로드 |
 | `02 Route Candidate Builder` | rule 기반 route 후보와 LLM 필요 여부 생성 |
-| `03 Route Classifier Prompt Builder` | route classifier prompt 생성 |
+| `03A Route Prompt Context Builder` | 기본 Prompt Template용 route context 하나 생성 |
+| Langflow Prompt Template | route/API catalog와 route classifier prompt 문장 관리 |
 | Route Classifier LLM | 최종 route 판단 |
 | `04 Route Classifier Normalizer` | route 결과 정규화 |
-| `05 Orchestrator Response Builder` | `selected_flow` 생성 |
-| `06 Run Flow Text Switch` | Run Flow text input으로 보낼 질문을 선택 branch 하나에만 전달 |
-| `07 Selected Run Flow Message Merger` | 선택된 Run Flow message 하나만 Chat Output으로 전달 |
+| `05 Orchestrator Response Builder` | `selected_flow`와 `subflow_call` 생성 |
+| `06 Selected Flow API Runner` | 선택된 subflow 하나만 Langflow API로 호출 |
 
-Run Flow node는 text/message input만 받을 수 있으므로 `05.Route Response`를 Run Flow에 직접 연결하지 않습니다. `06 Run Flow Text Switch`가 선택된 Run Flow에 원래 사용자 질문 text만 넘기고, 선택되지 않은 output은 `stop()` 처리합니다. Chat Output은 입력을 하나만 받을 수 있으므로 `07 Selected Run Flow Message Merger`가 선택된 Run Flow message 하나만 Chat Output으로 넘깁니다.
+여러 native Run Flow output을 한 노드로 모으면 Langflow 실행기가 연결된 upstream을 모두 기다릴 수 있습니다. direct router canvas에서는 `05.Route Response -> 06.Selected Flow API Runner -> Chat Output`으로 연결합니다. `05.Route Response` 안에는 `subflow_call.api_url`, `subflow_call.input_value`, `subflow_call.session_id`가 들어가며, `06`은 이 값으로 선택된 subflow 하나만 호출합니다. web backend도 같은 원칙으로 router API를 먼저 호출하고 `selected_flow` 하나만 두 번째 API 호출로 실행합니다.
 
 ## Data Analysis Flow
 
@@ -104,7 +104,7 @@ API/session state 저장 경로:
 
 | Purpose | Connection |
 | --- | --- |
-| Route classification | `03 Route Classifier Prompt Builder -> Route Classifier LLM -> 04 Route Classifier Normalizer` |
+| Route classification | `03A Route Prompt Context Builder -> Langflow Prompt Template -> Route Classifier LLM -> 04 Route Classifier Normalizer` |
 | Intent planning | `02 Intent Prompt Builder -> Intent LLM -> 03 Intent Plan Normalizer` |
 | Pandas code generation | `14 Pandas Prompt Builder -> Pandas Code LLM -> 15 Pandas Code Executor` |
 | Pandas repair | `16B Pandas Repair Prompt Builder -> Pandas Repair LLM -> second 15 Pandas Code Executor` |

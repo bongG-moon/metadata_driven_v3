@@ -1,3 +1,7 @@
+# 파일 설명: 01 Metadata Context Loader Langflow custom component 파일입니다.
+# 흐름 역할: MongoDB에서 domain, table catalog, main-flow-filter 메타데이터를 읽어 payload에 붙입니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import os
@@ -32,6 +36,9 @@ COLLECTION_ENV_KEYS = {
     "main_flow_filters": "MONGODB_MAIN_FLOW_FILTER_COLLECTION",
 }
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: MongoDB에서 domain, table catalog, main-flow-filter 메타데이터를 읽어 payload에 붙입니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def load_metadata_payload(
     payload: dict[str, Any],
     mongo_uri: str = "",
@@ -53,6 +60,9 @@ def load_metadata_payload(
     return _attach_metadata(payload, metadata, load_info)
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: MongoDB에서 domain, table catalog, main-flow-filter 메타데이터를 읽어 payload에 붙입니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def load_metadata_from_mongodb(
     mongo_uri: str,
     mongo_database: str,
@@ -273,9 +283,12 @@ def _json_ready(value: Any) -> Any:
     return str(value)
 
 
+# 컴포넌트 설명: 01 Metadata Context Loader
+# Langflow 표시 설명: MongoDB에서 domain, table catalog, main-flow-filter 메타데이터를 읽어 payload에 붙입니다.
 class MetadataContextLoader(Component):
+
     display_name = "01 Metadata Context Loader"
-    description = "Loads domain, table catalog, and main-flow-filter metadata from MongoDB."
+    description = "MongoDB에서 domain, table catalog, main-flow-filter 메타데이터를 읽어 payload에 붙입니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value=""),
@@ -289,12 +302,16 @@ class MetadataContextLoader(Component):
         MessageTextInput(
             name="main_flow_filter_collection_name",
             display_name="Main Flow Filter Collection Name",
+
             value=DEFAULT_COLLECTIONS["main_flow_filters"],
         ),
         MessageTextInput(name="load_limit", display_name="Load Limit", value="1000", advanced=True),
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: MongoDB에서 domain, table catalog, main-flow-filter 메타데이터를 읽어 payload에 붙입니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         payload = getattr(self.payload, "data", self.payload)
         result = load_metadata_payload(

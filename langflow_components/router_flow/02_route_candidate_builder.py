@@ -1,3 +1,7 @@
+# 파일 설명: 02 Route Candidate Builder Langflow custom component 파일입니다.
+# 흐름 역할: metadata 기반 규칙으로 1차 route 후보를 만들고 작은 LLM classifier 필요 여부를 판단합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import re
@@ -47,6 +51,24 @@ FAMILY_KEYWORDS = {
     "equipment": ["장비", "설비", "equipment", "eqp"],
     "capacity": ["capacity", "uph", "capa"],
 }
+DOMAIN_SECTION_LABELS = {
+    "process_groups": "공정 그룹",
+    "product_terms": "제품/조건 용어",
+    "quantity_terms": "수량/지표 용어",
+    "metric_terms": "계산 지표",
+    "analysis_recipes": "분석 레시피",
+    "status_terms": "상태 용어",
+    "product_key_columns": "제품 식별 컬럼",
+}
+DOMAIN_SECTION_ALIASES = {
+    "process_groups": ["공정 그룹", "공정그룹", "공정군", "공정 분류", "process group", "process_groups"],
+    "product_terms": ["제품 조건", "제품조건", "제품 용어", "제품 도메인", "product terms", "product_terms"],
+    "quantity_terms": ["수량 용어", "지표 용어", "수량 지표", "quantity terms", "quantity_terms"],
+    "metric_terms": ["계산 지표", "계산식", "파생 지표", "metric terms", "metric_terms"],
+    "analysis_recipes": ["분석 레시피", "분석 recipe", "분석 규칙", "분석 패턴", "analysis recipes", "analysis_recipes"],
+    "status_terms": ["상태 용어", "상태 조건", "status terms", "status_terms"],
+    "product_key_columns": ["제품 식별 컬럼", "제품 키", "product key", "product_key_columns"],
+}
 
 ANALYSIS_CUES = [
     "production",
@@ -86,6 +108,9 @@ ANALYSIS_CUES = [
 ]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: metadata 기반 규칙으로 1차 route 후보를 만들고 작은 LLM classifier 필요 여부를 판단합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def route_metadata_question(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
@@ -98,6 +123,8 @@ def route_metadata_question(payload_value: Any) -> dict[str, Any]:
     confidence = "low"
     reason = "질문 유형 분류가 필요합니다. 작은 route classifier가 metadata 질문인지 실제 데이터 분석 질문인지 판단합니다."
     target_term = ""
+    target_dataset = ""
+    target_family = ""
     route = "data_analysis"
     route_llm_required = True
 
@@ -107,13 +134,23 @@ def route_metadata_question(payload_value: Any) -> dict[str, Any]:
         confidence = "high"
         reason = "인사 또는 짧은 대화형 입력입니다."
         route_llm_required = False
+    else:
+        metadata_hint = _metadata_question_hint(question, dataset_match, metadata)
+        if metadata_hint:
+            route = "metadata_qa"
+            action = metadata_hint.get("metadata_action", "")
+            confidence = metadata_hint.get("confidence", "medium")
+            reason = metadata_hint.get("reason", reason)
+            target_term = metadata_hint.get("target_term", "")
+            target_dataset = metadata_hint.get("target_dataset", "")
+            target_family = metadata_hint.get("target_family", "")
 
     next_payload = deepcopy(payload)
     next_payload["metadata_route"] = {
         "route": route,
         "metadata_action": action,
-        "target_dataset": "",
-        "target_family": "",
+        "target_dataset": target_dataset,
+        "target_family": target_family,
         "target_term": target_term,
         "candidate_target_dataset": dataset_match.get("target_dataset", ""),
         "candidate_target_family": dataset_match.get("target_family", ""),
@@ -138,6 +175,57 @@ def route_metadata_question(payload_value: Any) -> dict[str, Any]:
         ],
     }
     return next_payload
+
+
+def _metadata_question_hint(question: str, dataset_match: dict[str, Any], metadata: dict[str, Any]) -> dict[str, str]:
+    target_dataset = str(dataset_match.get("target_dataset") or "")
+    target_family = str(dataset_match.get("target_family") or "")
+    if _contains_any(question, CATALOG_LIST_CUES):
+        return {
+            "metadata_action": "catalog_list",
+            "confidence": "medium",
+            "reason": "사용자가 등록된 데이터 목록이나 카탈로그 정보를 요청했습니다.",
+        }
+    if _contains_any(question, DATASET_QUERY_CUES):
+        return {
+            "metadata_action": "dataset_query",
+            "target_dataset": target_dataset,
+            "target_family": target_family,
+            "confidence": "medium",
+            "reason": "사용자가 실제 데이터 값이 아니라 등록된 조회 쿼리/템플릿을 요청했습니다.",
+        }
+    if target_dataset and _contains_any(question, DATASET_EXAMPLE_CUES + AMBIGUOUS_DATASET_USAGE_CUES):
+        return {
+            "metadata_action": "dataset_examples",
+            "target_dataset": target_dataset,
+            "target_family": target_family,
+            "confidence": "medium",
+            "reason": "사용자가 등록된 데이터셋으로 어떤 질문을 할 수 있는지 요청했습니다.",
+        }
+    if _contains_any(question, DATASET_EXAMPLE_CUES):
+        return {
+            "metadata_action": "dataset_examples",
+            "target_dataset": target_dataset,
+            "target_family": target_family,
+            "confidence": "medium",
+            "reason": "사용자가 활용 예시나 예시 질문을 요청했습니다.",
+        }
+    if _contains_any(question, DATASET_DETAIL_CUES):
+        return {
+            "metadata_action": "dataset_detail",
+            "target_dataset": target_dataset,
+            "target_family": target_family,
+            "confidence": "medium",
+            "reason": "사용자가 등록된 데이터셋의 컬럼, 필터, source 등 상세 정보를 요청했습니다.",
+        }
+    if _contains_any(question, DOMAIN_SEARCH_CUES) or _domain_sections_for_term(question, metadata):
+        return {
+            "metadata_action": "domain_search",
+            "target_term": _extract_domain_term(question, dataset_match, metadata),
+            "confidence": "medium",
+            "reason": "사용자가 등록된 도메인 용어, 조건, alias, 공정/제품/지표 규칙을 요청했습니다.",
+        }
+    return {}
 
 
 def _match_dataset(question: str, datasets: dict[str, dict[str, Any]], metadata: dict[str, Any]) -> dict[str, Any]:
@@ -278,7 +366,11 @@ def _flatten_candidates(values: list[Any]) -> list[str]:
     return result
 
 
-def _extract_domain_term(question: str, dataset_match: dict[str, Any]) -> str:
+def _extract_domain_term(question: str, dataset_match: dict[str, Any], metadata: dict[str, Any]) -> str:
+    section_matches = _domain_sections_for_term(question, metadata)
+    if section_matches:
+        return section_matches[0]
+
     text = question
     for match in dataset_match.get("matches", []):
         for key in ("dataset_key", "display_name", "dataset_family"):
@@ -311,6 +403,24 @@ def _extract_domain_term(question: str, dataset_match: dict[str, Any]) -> str:
     for term in replace_terms:
         text = text.replace(term, " ")
     return " ".join(part for part in re.split(r"\s+", text.strip()) if part)[:80]
+
+
+def _domain_sections_for_term(term: str, metadata: dict[str, Any]) -> list[str]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    term_norm = _normalize(term)
+    if not term_norm:
+        return []
+    matched: list[str] = []
+    for section in domain:
+        aliases = [
+            section,
+            DOMAIN_SECTION_LABELS.get(str(section), str(section)),
+            *DOMAIN_SECTION_ALIASES.get(str(section), []),
+        ]
+        alias_norms = [_normalize(alias) for alias in aliases if str(alias or "").strip()]
+        if any(alias and (alias in term_norm or term_norm == alias) for alias in alias_norms):
+            matched.append(str(section))
+    return matched
 
 
 def _is_greeting(question: str) -> bool:
@@ -387,17 +497,24 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 02 Route Candidate Builder
+# Langflow 표시 설명: metadata 기반 규칙으로 1차 route 후보를 만들고 작은 LLM classifier 필요 여부를 판단합니다.
 class RouteCandidateBuilder(Component):
+
     display_name = "02 Route Candidate Builder"
-    description = "Adds metadata-backed route candidates before the small LLM question-type classifier."
+    description = "metadata 기반 규칙으로 1차 route 후보를 만들고 작은 LLM classifier 필요 여부를 판단합니다."
     icon = "Route"
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: metadata 기반 규칙으로 1차 route 후보를 만들고 작은 LLM classifier 필요 여부를 판단합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = route_metadata_question(getattr(self, "payload", None))
         route = result.get("metadata_route", {})
         self.status = {
+
             "route": route.get("route"),
             "metadata_action": route.get("metadata_action"),
             "target_dataset": route.get("target_dataset"),

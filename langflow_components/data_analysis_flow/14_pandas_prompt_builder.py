@@ -1,3 +1,7 @@
+# 파일 설명: 14 Pandas Prompt Builder Langflow custom component 파일입니다.
+# 흐름 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -10,6 +14,9 @@ from lfx.schema.data import Data
 from lfx.schema.message import Message
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
@@ -290,17 +297,24 @@ def _list_preview(value: Any, limit: int) -> list[Any]:
     return deepcopy(value[:limit]) if isinstance(value, list) else []
 
 
+# 컴포넌트 설명: 14 Pandas Prompt Builder
+# Langflow 표시 설명: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
 class PandasPromptBuilder(Component):
+
     display_name = "14 Pandas Prompt Builder"
-    description = "Builds the prompt that should be sent to the Langflow Gemini/LLM node for pandas code generation."
+    description = "의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [
         Output(name="pandas_prompt", display_name="Pandas Prompt", method="build_prompt"),
         Output(name="prompt_payload", display_name="Prompt Payload", method="build_prompt_payload"),
     ]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
         prompt_payload = build_pandas_prompt_payload(getattr(self, "payload", None))
+
         self.status = {
             "prompt_type": prompt_payload.get("prompt_type", "pandas_code"),
             "chars": len(prompt_payload["prompt"]),
@@ -308,5 +322,8 @@ class PandasPromptBuilder(Component):
         }
         return Message(text=prompt_payload["prompt"])
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt_payload(self) -> Data:
         return Data(data=build_pandas_prompt_payload(getattr(self, "payload", None)))

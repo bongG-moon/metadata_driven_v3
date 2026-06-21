@@ -241,17 +241,16 @@ flowchart LR
 | Step | 역할 | 구현 포인트 |
 | --- | --- | --- |
 | 00 | Existing Metadata Loader | 기본 분석 자체에는 선택 노드지만, 중복/유사 감지를 하려면 켜는 것을 권장한다. 기존 항목 요약만 읽고 전체 collection을 prompt에 넣지 않는다. |
-| 01 | Text Refinement Prompt Builder | raw text를 정제 요청 prompt로 만든다. |
+| 01 | Text Refinement Variables Builder | Prompt Template의 `{raw_text}` 값을 만든다. |
 | LLM | Text Refinement | 원문을 정리하고 부족한 정보를 `missing_information`으로 반환한다. |
 | 02 | Text Refinement Normalizer | LLM 결과에서 `refined_text`, `needs_more_input`, `missing_information`만 뽑는다. |
-| 03 | Authoring Prompt Builder | 정제된 설명과 기존 항목 요약을 보고 저장 후보 JSON을 만들도록 요청한다. |
+| 03 | Authoring Variables Builder | Prompt Template의 `{authoring_context}` 값을 만든다. |
 | LLM | Authoring JSON | 저장 후보 item list를 JSON으로 반환한다. |
 | 04 | Authoring Result Normalizer | JSON parsing, key 정규화, list/dict 정리, source_config 정리, condition 정규화를 수행한다. |
-| 04B | Duplicate/Similarity Checker | 기존 항목과 새 item을 비교해 같은 key, 비슷한 alias, 비슷한 조건, 충돌 가능성을 경고한다. |
-| 05 | Review Prompt Builder | 저장 후보 JSON을 검수 prompt로 만든다. |
+| 05 | Duplicate/Similarity Checker | 기존 항목과 새 item을 비교해 같은 key, 비슷한 alias, 비슷한 조건, 충돌 가능성을 경고한다. |
+| 06 | Review Variables Builder | Prompt Template의 `{review_input_json}` 값을 만든다. |
 | LLM | Save Review | `ready_to_save`, `supplement_requests`, `item_reviews`를 JSON으로 반환한다. |
-| 06 | Review Normalizer | 검수 결과를 안정화한다. 보충 요청이 있으면 `ready_to_save=false`로 만든다. |
-| 07 | MongoDB Writer | review가 통과한 경우에만 upsert한다. 기본은 merge, 필요 시 replace를 지원한다. |
+| 07 | MongoDB Review Writer | 검수 결과를 안정화하고 review가 통과한 경우에만 upsert한다. |
 | 08 | Response Builder | 저장 성공/실패, 부족 정보, trace를 한국어로 반환한다. |
 
 Langflow 기본 Prompt Template과 Gemini/LLM node를 그대로 사용해도 된다. custom component가 LLM을 직접 호출하지 않아도 되고, 오히려 flow에서 LLM node가 보이는 편이 운영자가 이해하기 쉽다.
@@ -283,7 +282,7 @@ Langflow 기본 Prompt Template과 Gemini/LLM node를 그대로 사용해도 된
 
 - LLM prompt 전문을 다음 단계 payload에 계속 싣지 않는다. 필요하면 `prompt_preview` 정도만 trace에 남긴다.
 - source 전체 row나 MongoDB collection 전체 문서를 prompt에 넣지 않는다.
-- `existing_items_json`은 중복 판단용 요약만 전달한다.
+- `authoring_context`는 기존 항목 요약, 원문, 정제문처럼 작성 prompt에 필요한 값을 하나의 문자열로 묶어 전달한다.
 - `existing_matches`에는 새 item과 관련 있는 기존 항목만 넣는다. 전체 기존 metadata를 그대로 복사하지 않는다.
 - `duplicate_decision.action`은 사용자가 선택한 저장 방식만 담는다. 허용값은 `ask`, `merge`, `replace`, `skip`, `create_new` 정도로 제한한다.
 - 최종 response의 `trace`에는 사용자가 이해할 수 있는 요약만 넣는다.
@@ -763,14 +762,13 @@ langflow_components/domain_authoring_flow/
 | # | Component | Output |
 | --- | --- | --- |
 | 00 | Existing Domain Items Loader | `existing_items_json` |
-| 01 | Domain Text Refinement Prompt Builder | `prompt` |
+| 01 | Domain Text Refinement Variables Builder | `raw_text` |
 | 02 | Normalize Domain Text Refinement | `refined_text`, `payload_out` |
-| 03 | Domain Authoring Prompt Builder | `prompt` |
+| 03 | Domain Authoring Variables Builder | `authoring_context` |
 | 04 | Normalize Domain Authoring Result | `domain_authoring_json`, `payload_out` |
-| 04B | Domain Duplicate/Similarity Checker | `payload_out` |
-| 05 | Domain Authoring Review Prompt Builder | `prompt` |
-| 06 | Normalize Domain Authoring Review | `reviewed_domain_authoring_json`, `payload_out` |
-| 07 | MongoDB Domain Items Writer | `write_result` |
+| 05 | Domain Similarity Checker | `payload_out` |
+| 06 | Domain Review Variables Builder | `review_input_json` |
+| 07 | Domain Review Writer | `payload_out` |
 | 08 | Domain Authoring Response Builder | `api_response`, `message` |
 
 처리해야 하는 자연어 범위:
@@ -839,33 +837,42 @@ langflow_components/main_flow_filters_authoring_flow/
 
 ```text
 Text Input.raw_text
--> 01 Text Refinement Prompt Builder.raw_text
+-> 00 Request Loader.raw_text
+-> 01 Text Refinement Variables Builder.payload
+01 Text Refinement Variables Builder.raw_text
+-> Text Refinement Prompt Template.raw_text
+Text Refinement Prompt Template
 -> Gemini Text Refinement.prompt
 -> 02 Text Refinement Normalizer.llm_response
--> 03 Authoring Prompt Builder.refined_payload
 ```
 
 기존 항목을 참고할 때:
 
 ```text
-00 Existing Metadata Loader.existing_items_json
--> 03 Authoring Prompt Builder.existing_items_json
+02 Text Refinement Normalizer.payload_out
+-> 03 Authoring Variables Builder.payload
+03 Authoring Variables Builder.authoring_context
+-> Authoring Prompt Template.authoring_context
 ```
 
 JSON 변환과 검수:
 
 ```text
-03 Authoring Prompt Builder.prompt
+Authoring Prompt Template
 -> Gemini Authoring JSON.prompt
 -> 04 Authoring Result Normalizer.llm_response
 04 Authoring Result Normalizer.payload_out
--> 04B Duplicate/Similarity Checker.authoring_payload
-00 Existing Metadata Loader.existing_items_json
--> 04B Duplicate/Similarity Checker.existing_items_json
-04B Duplicate/Similarity Checker.payload_out
--> 05 Review Prompt Builder.authoring_payload
+-> 05 Similarity Checker.payload
+05 Similarity Checker.payload_out
+-> 06 Review Variables Builder.payload
+06 Review Variables Builder.review_input_json
+-> Review Prompt Template.review_input_json
+Review Prompt Template
 -> Gemini Review JSON.prompt
--> 06 Review Normalizer.review_llm_response
+05 Similarity Checker.payload_out
+-> 07 Review Writer.payload
+Gemini Review JSON
+-> 07 Review Writer.llm_response
 ```
 
 저장:

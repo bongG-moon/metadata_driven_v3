@@ -1,3 +1,7 @@
+# 파일 설명: 05 MongoDB Data Loader Langflow custom component 파일입니다.
+# 흐름 역할: MongoDB data_ref가 가리키는 저장 결과를 preview 또는 full rows 형태로 복원합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -16,6 +20,9 @@ ENABLED_OPTIONS = ["true", "false"]
 RESTORE_MODE_OPTIONS = ["auto", "preview", "full"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: MongoDB data_ref가 가리키는 저장 결과를 preview 또는 full rows 형태로 복원합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def load_payload_from_mongodb(
     payload_value: Any,
     mongo_uri: Any = "",
@@ -499,9 +506,12 @@ def _rows_columns(rows: list[dict[str, Any]]) -> list[str]:
     return columns
 
 
+# 컴포넌트 설명: 05 MongoDB Data Loader
+# Langflow 표시 설명: MongoDB data_ref가 가리키는 저장 결과를 preview 또는 full rows 형태로 복원합니다.
 class MongoDBDataLoader(Component):
+
     display_name = "05 MongoDB Data Loader"
-    description = "Restores MongoDB data_ref pointers as lightweight previews by default, or full rows when explicitly requested."
+    description = "MongoDB data_ref가 가리키는 저장 결과를 preview 또는 full rows 형태로 복원합니다."
     icon = "DatabaseZap"
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
@@ -510,6 +520,7 @@ class MongoDBDataLoader(Component):
         MessageTextInput(
             name="result_collection_name",
             display_name="Result Collection Full Name",
+
             value=DEFAULT_RESULT_COLLECTION,
             advanced=True,
         ),
@@ -519,6 +530,9 @@ class MongoDBDataLoader(Component):
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: MongoDB data_ref가 가리키는 저장 결과를 preview 또는 full rows 형태로 복원합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = load_payload_from_mongodb(
             getattr(self, "payload", None),

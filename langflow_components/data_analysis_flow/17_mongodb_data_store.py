@@ -1,3 +1,7 @@
+# 파일 설명: 17 MongoDB Data Store Langflow custom component 파일입니다.
+# 흐름 역할: 큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -27,6 +31,9 @@ SOURCE_METADATA_KEYS = (
 )
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def store_payload_in_mongodb(
     payload_value: Any,
     mongo_uri: Any = "",
@@ -402,9 +409,12 @@ def _find_session_id(value: Any) -> str:
     return ""
 
 
+# 컴포넌트 설명: 17 MongoDB Data Store
+# Langflow 표시 설명: 큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다.
 class MongoDBDataStore(Component):
+
     display_name = "17 MongoDB Data Store"
-    description = "Stores large row lists in a MongoDB result collection and leaves compact data_ref pointers in the payload."
+    description = "큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다."
     icon = "Database"
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
@@ -413,6 +423,7 @@ class MongoDBDataStore(Component):
         MessageTextInput(
             name="result_collection_name",
             display_name="Result Collection Full Name",
+
             value=DEFAULT_RESULT_COLLECTION,
             advanced=True,
         ),
@@ -422,6 +433,9 @@ class MongoDBDataStore(Component):
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = store_payload_in_mongodb(
             getattr(self, "payload", None),

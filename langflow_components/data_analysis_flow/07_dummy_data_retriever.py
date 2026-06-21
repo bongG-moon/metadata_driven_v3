@@ -1,3 +1,7 @@
+# 파일 설명: 07 Dummy Data Retriever Langflow custom component 파일입니다.
+# 흐름 역할: 로컬 검증용 deterministic 제조 dummy 데이터를 실제 조회 결과와 같은 구조로 생성합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -60,6 +64,9 @@ PRODUCT_ROWS = [
 ]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 로컬 검증용 deterministic 제조 dummy 데이터를 실제 조회 결과와 같은 구조로 생성합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def retrieve_dummy_data(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else payload
@@ -682,17 +689,24 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 07 Dummy Data Retriever
+# Langflow 표시 설명: 로컬 검증용 deterministic 제조 dummy 데이터를 실제 조회 결과와 같은 구조로 생성합니다.
 class DummyDataRetriever(Component):
+
     display_name = "07 Dummy Data Retriever"
-    description = "Returns deterministic manufacturing dummy rows for local retrieval and pandas validation."
+    description = "로컬 검증용 deterministic 제조 dummy 데이터를 실제 조회 결과와 같은 구조로 생성합니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="retrieval_payload", display_name="Retrieval Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 로컬 검증용 deterministic 제조 dummy 데이터를 실제 조회 결과와 같은 구조로 생성합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         payload = retrieve_dummy_data(getattr(self, "payload", None))
         retrieval = payload.get("retrieval_payload", {}) if isinstance(payload.get("retrieval_payload"), dict) else {}
         source_results = retrieval.get("source_results", []) if isinstance(retrieval.get("source_results"), list) else []
         self.status = {
+
             "route": retrieval.get("route"),
             "source_count": len(source_results),
             "row_count": sum(int(item.get("row_count", 0) or 0) for item in source_results if isinstance(item, dict)),

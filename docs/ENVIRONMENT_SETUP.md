@@ -35,6 +35,39 @@ RUN_LLM_VALIDATION=true
 `LLM_MODEL_NAME`은 운영자가 실제 사용 가능한 Gemini 모델 이름으로 채운다.
 로컬 도구가 Google 표준 이름을 요구하면 `GOOGLE_API_KEY` 또는 `GEMINI_API_KEY`에도 같은 값을 넣을 수 있다.
 
+## Required For Langflow Desktop/Web API Validation
+
+Langflow Desktop에서 각 flow를 만든 뒤, flow 우측 상단의 API/Share/Run API 화면에서 flow id를 확인한다.
+full URL이 `http://127.0.0.1:7860/api/v1/run/3023...` 형태라면 `LANGFLOW_BASE_URL`에는 `http://127.0.0.1:7860`만 넣고, 각 `*_FLOW_ID`에는 마지막 UUID만 넣으면 된다.
+full URL을 그대로 쓰고 싶으면 대응되는 `*_API_URL`에 전체 주소를 넣어도 된다.
+
+```dotenv
+LANGFLOW_BASE_URL=http://127.0.0.1:7860
+LANGFLOW_API_KEY=
+LANGFLOW_INPUT_TYPE=chat
+LANGFLOW_OUTPUT_TYPE=chat
+LANGFLOW_TIMEOUT_SECONDS=180
+
+LANGFLOW_ROUTER_FLOW_ID=
+LANGFLOW_METADATA_QA_FLOW_ID=
+LANGFLOW_DATA_ANALYSIS_FLOW_ID=
+LANGFLOW_REPORT_GENERATION_FLOW_ID=
+LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID=
+
+LANGFLOW_DOMAIN_AUTHORING_FLOW_ID=
+LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID=
+LANGFLOW_MAIN_FILTER_AUTHORING_FLOW_ID=
+
+RUN_LANGFLOW_API_VALIDATION=true
+```
+
+검증 기준은 다음과 같다.
+
+- router flow: web app의 첫 진입점이다.
+- metadata/data/report/diagnosis flow: router가 선택하거나 web app이 후속 호출하는 query subflow다.
+- authoring flow: web metadata 관리 화면에서 신규 metadata를 등록할 때 사용한다.
+- `LANGFLOW_INPUT_TYPE`은 현재 컴포넌트들이 `MessageTextInput` 기반이면 `chat`을 기본으로 둔다. 실제 Langflow API 화면에서 `input_type`을 `text`로 안내하면 `.env`에서 `text`로 바꾸면 된다.
+
 ## Optional Source Retrieval Settings
 
 기본 검증은 실제 Oracle/H-API/Datalake/Goodocs를 호출하지 않고 deterministic dummy data를 사용한다.

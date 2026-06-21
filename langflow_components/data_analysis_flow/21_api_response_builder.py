@@ -1,3 +1,7 @@
+# 파일 설명: 21 API Response Builder Langflow custom component 파일입니다.
+# 흐름 역할: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -7,9 +11,11 @@ from typing import Any
 from lfx.custom.custom_component.component import Component
 from lfx.io import DataInput, Output
 from lfx.schema.data import Data
-from lfx.schema.message import Message
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_main_flow_api_response(payload_value: Any) -> dict[str, Any]:
     payload = _payload_from_value(payload_value)
     data = _build_data_view(payload)
@@ -59,6 +65,9 @@ def build_main_flow_api_response(payload_value: Any) -> dict[str, Any]:
     return {"api_response": api_response}
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_api_response(payload_value: Any) -> dict[str, Any]:
     return build_main_flow_api_response(payload_value)
 
@@ -68,16 +77,6 @@ def _make_data(payload: dict[str, Any]) -> Any:
         return Data(data=payload)
     except TypeError:
         return Data(payload)
-
-
-def _make_message(text: str) -> Any:
-    try:
-        return Message(text=text)
-    except TypeError:
-        try:
-            return Message(content=text)
-        except TypeError:
-            return Message(text)
 
 
 def _payload_from_value(value: Any) -> dict[str, Any]:
@@ -306,9 +305,12 @@ def _unique_values(values: list[Any]) -> list[Any]:
     return result
 
 
+# 컴포넌트 설명: 21 API Response Builder
+# Langflow 표시 설명: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
 class MainFlowApiResponseBuilder(Component):
+
     display_name = "21 API Response Builder"
-    description = "Projects the final main-flow payload into a compact JSON response for web/API clients."
+    description = "최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다."
     icon = "Braces"
     name = "MainFlowApiResponseBuilder"
 
@@ -316,19 +318,23 @@ class MainFlowApiResponseBuilder(Component):
         DataInput(name="payload", display_name="Payload", info="Payload output from 19 Answer Response Builder.", input_types=["Data", "JSON"], required=True),
     ]
 
-    outputs = [
-        Output(name="api_response", display_name="API Response", method="build_api_response_output", group_outputs=True, types=["Data"]),
-        Output(name="api_message", display_name="API Message", method="build_api_message_output", group_outputs=True, types=["Message"]),
-    ]
+    outputs = [Output(name="api_response", display_name="API Response", method="build_api_response_output", types=["Data"])]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def _payload(self) -> dict[str, Any]:
         cached = getattr(self, "_cached_payload", None)
         if isinstance(cached, dict):
             return cached
+
         payload = build_main_flow_api_response(getattr(self, "payload", None))
         self._cached_payload = payload
         return payload
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_api_response_output(self) -> Data:
         payload = self._payload()
         api_response = _as_dict(payload.get("api_response"))
@@ -338,6 +344,3 @@ class MainFlowApiResponseBuilder(Component):
             "column_count": len(api_response.get("columns", [])),
         }
         return _make_data(payload)
-
-    def build_api_message_output(self) -> Message:
-        return _make_message(json.dumps(self._payload(), ensure_ascii=False, default=str))

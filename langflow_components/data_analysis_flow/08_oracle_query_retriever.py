@@ -1,3 +1,7 @@
+# 파일 설명: 08 Oracle Query Retriever Langflow custom component 파일입니다.
+# 흐름 역할: metadata source_config의 Oracle query job을 실행하고, 설정이 비어 있으면 dummy fallback으로 검증 가능하게 합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import ast
@@ -20,6 +24,9 @@ from lfx.schema.data import Data
 SINGLE_ORACLE_CONFIG_KEY = "__single_oracle_config__"
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: metadata source_config의 Oracle query job을 실행하고, 설정이 비어 있으면 dummy fallback으로 검증 가능하게 합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def ensure_package(package_name: str, import_name: str | None = None) -> None:
     module_name = import_name or package_name
     if importlib.util.find_spec(module_name) is None:
@@ -36,6 +43,9 @@ def ensure_package(package_name: str, import_name: str | None = None) -> None:
         )
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: metadata source_config의 Oracle query job을 실행하고, 설정이 비어 있으면 dummy fallback으로 검증 가능하게 합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def retrieve_oracle_data(payload_value: Any, oracle_config: Any = "", fetch_limit: Any = "5000") -> dict[str, Any]:
     payload = _payload(payload_value)
     plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else payload
@@ -415,11 +425,13 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 08 Oracle Query Retriever
+# Langflow 표시 설명: metadata source_config의 Oracle query job을 실행하고, 설정이 비어 있으면 dummy fallback으로 검증 가능하게 합니다.
 class OracleQueryRetriever(Component):
     oracledb = None
 
     display_name = "08 Oracle Query Retriever"
-    description = "Executes Oracle jobs from metadata source_config, with dummy fallback when config is empty."
+    description = "metadata source_config의 Oracle query job을 실행하고, 설정이 비어 있으면 dummy fallback으로 검증 가능하게 합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="oracle_config", display_name="Oracle Config / TNS", value=""),
@@ -427,5 +439,8 @@ class OracleQueryRetriever(Component):
     ]
     outputs = [Output(name="retrieval_payload", display_name="Retrieval Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: metadata source_config의 Oracle query job을 실행하고, 설정이 비어 있으면 dummy fallback으로 검증 가능하게 합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         return Data(data=retrieve_oracle_data(getattr(self, "payload", None), self.oracle_config, self.fetch_limit))

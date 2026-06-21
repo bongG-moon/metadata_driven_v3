@@ -1,3 +1,7 @@
+# 파일 설명: 08 Main Flow Filter Authoring Response Builder Langflow custom component 파일입니다.
+# 흐름 역할: main-flow-filter 등록 결과를 사용자가 읽기 좋은 한국어 Playground/API 응답으로 만듭니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from typing import Any
@@ -8,6 +12,9 @@ from lfx.schema.data import Data
 from lfx.schema.message import Message
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: main-flow-filter 등록 결과를 사용자가 읽기 좋은 한국어 Playground/API 응답으로 만듭니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_main_flow_filter_authoring_response(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     review = payload.get("review") if isinstance(payload.get("review"), dict) else {}
@@ -69,19 +76,29 @@ def _payload(value: Any) -> dict[str, Any]:
     return dict(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 08 Main Flow Filter Authoring Response Builder
+# Langflow 표시 설명: main-flow-filter 등록 결과를 사용자가 읽기 좋은 한국어 Playground/API 응답으로 만듭니다.
 class MainFlowFilterAuthoringResponseBuilder(Component):
+
     display_name = "08 Main Flow Filter Authoring Response Builder"
-    description = "Builds a playground-friendly Korean response for main flow filter authoring."
+    description = "main-flow-filter 등록 결과를 사용자가 읽기 좋은 한국어 Playground/API 응답으로 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [
         Output(name="api_response", display_name="API Response", method="build_api_response"),
         Output(name="message", display_name="Message", method="build_message"),
     ]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: main-flow-filter 등록 결과를 사용자가 읽기 좋은 한국어 Playground/API 응답으로 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_api_response(self) -> Data:
         result = build_main_flow_filter_authoring_response(getattr(self, "payload", None))
+
         self.status = {"status": result.get("status"), "items": len(result.get("items", []))}
         return Data(data=result)
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: main-flow-filter 등록 결과를 사용자가 읽기 좋은 한국어 Playground/API 응답으로 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_message(self) -> Message:
         return Message(text=build_main_flow_filter_authoring_response(getattr(self, "payload", None))["message"])

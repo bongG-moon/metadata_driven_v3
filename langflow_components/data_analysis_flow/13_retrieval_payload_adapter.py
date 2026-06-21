@@ -1,3 +1,7 @@
+# 파일 설명: 13 Retrieval Payload Adapter Langflow custom component 파일입니다.
+# 흐름 역할: 병합된 조회 결과를 pandas 실행용 runtime_sources와 compact source_results 구조로 변환합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 from copy import deepcopy
 from typing import Any
@@ -6,6 +10,9 @@ from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 from lfx.schema.message import Message
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 병합된 조회 결과를 pandas 실행용 runtime_sources와 compact source_results 구조로 변환합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def adapt_retrieval_payload(main_payload_value: Any, retrieval_payload_value: Any) -> dict[str, Any]:
     main_payload = _payload(main_payload_value)
     if main_payload.get("direct_response_ready"):
@@ -227,14 +234,20 @@ def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "full", "required"}
 
 
+# 컴포넌트 설명: 13 Retrieval Payload Adapter
+# Langflow 표시 설명: 병합된 조회 결과를 pandas 실행용 runtime_sources와 compact source_results 구조로 변환합니다.
 class RetrievalPayloadAdapter(Component):
+
     display_name = "13 Retrieval Payload Adapter"
-    description = "Converts merged source retrieval payload into main flow runtime_sources and compact source_results."
+    description = "병합된 조회 결과를 pandas 실행용 runtime_sources와 compact source_results 구조로 변환합니다."
     inputs = [
         DataInput(name="main_payload", display_name="Main Payload", required=True),
         DataInput(name="retrieval_payload", display_name="Retrieval Payload", required=True),
     ]
     outputs = [Output(name="payload", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 병합된 조회 결과를 pandas 실행용 runtime_sources와 compact source_results 구조로 변환합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         return Data(data=adapt_retrieval_payload(self.main_payload, self.retrieval_payload))

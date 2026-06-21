@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 
@@ -475,21 +476,85 @@ def test_table_catalog_writer_allows_false_review_without_actionable_blockers() 
     assert any("mongo_uri" in item for item in result["write_result"]["errors"])
 
 
-def test_authoring_prompts_include_mapping_and_equipment_contracts() -> None:
-    table_prompt_builder = load_module("langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_prompt_builder.py")
-    filter_prompt_builder = load_module("langflow_components/main_flow_filters_authoring_flow/03_main_flow_filter_authoring_prompt_builder.py")
-    domain_prompt_builder = load_module("langflow_components/domain_authoring_flow/03_domain_authoring_prompt_builder.py")
-
-    table_prompt = table_prompt_builder.build_table_catalog_authoring_prompt_payload({"raw_text": "equipment_status"})["prompt"]
-    filter_prompt = filter_prompt_builder.build_main_flow_filter_authoring_prompt_payload({"raw_text": "MCP_NO"})["prompt"]
-    domain_prompt = domain_prompt_builder.build_domain_authoring_prompt_payload({"raw_text": "장비 대수"})["prompt"]
+def test_authoring_prompt_templates_include_mapping_and_equipment_contracts() -> None:
+    table_prompt = (
+        PROJECT_ROOT / "langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_prompt_template.md"
+    ).read_text(encoding="utf-8")
+    filter_prompt = (
+        PROJECT_ROOT
+        / "langflow_components/main_flow_filters_authoring_flow/03_main_flow_filter_authoring_prompt_template.md"
+    ).read_text(encoding="utf-8")
+    domain_prompt = (
+        PROJECT_ROOT / "langflow_components/domain_authoring_flow/03_domain_authoring_prompt_template.md"
+    ).read_text(encoding="utf-8")
 
     assert "table_catalog.filter_mappings maps those standard keys to this dataset's physical columns" in table_prompt
-    assert "Original user text" in table_prompt
+    assert "Authoring context" in table_prompt
     assert "standard_column_aliases" in table_prompt
     assert "dataset-specific mappings such as PKG_TYPE1->PKG1 or MCP_NO->MCPSALENO belong in table_catalog.filter_mappings" in filter_prompt
     assert "EQP_COUNT" in domain_prompt
     assert "result_mode='detail_rows'" in domain_prompt
+
+    table_variables = load_module(
+        "langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_variables_builder.py"
+    )
+    context = table_variables.build_table_catalog_authoring_prompt_variables(
+        {"raw_text": "equipment_status", "refined_text": "equipment refined", "existing_items": []}
+    )["authoring_context"]
+    assert "Original user text" in context
+    assert "equipment_status" in context
+    assert "equipment refined" in context
+
+
+def test_authoring_prompt_templates_expose_only_expected_langflow_variables() -> None:
+    expected_variables_by_template = {
+        "langflow_components/domain_authoring_flow/01_domain_text_refinement_prompt_template.md": {"raw_text"},
+        "langflow_components/domain_authoring_flow/01_domain_text_refinement_prompt_template_ko.md": {"raw_text"},
+        "langflow_components/domain_authoring_flow/03_domain_authoring_prompt_template.md": {"authoring_context"},
+        "langflow_components/domain_authoring_flow/03_domain_authoring_prompt_template_ko.md": {"authoring_context"},
+        "langflow_components/domain_authoring_flow/06_domain_review_prompt_template.md": {"review_input_json"},
+        "langflow_components/domain_authoring_flow/06_domain_review_prompt_template_ko.md": {"review_input_json"},
+        "langflow_components/table_catalog_authoring_flow/01_table_catalog_text_refinement_prompt_template.md": {"raw_text"},
+        "langflow_components/table_catalog_authoring_flow/01_table_catalog_text_refinement_prompt_template_ko.md": {"raw_text"},
+        "langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_prompt_template.md": {"authoring_context"},
+        "langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_prompt_template_ko.md": {"authoring_context"},
+        "langflow_components/table_catalog_authoring_flow/06_table_catalog_review_prompt_template.md": {"review_input_json"},
+        "langflow_components/table_catalog_authoring_flow/06_table_catalog_review_prompt_template_ko.md": {"review_input_json"},
+        "langflow_components/main_flow_filters_authoring_flow/01_main_flow_filter_text_refinement_prompt_template.md": {"raw_text"},
+        "langflow_components/main_flow_filters_authoring_flow/01_main_flow_filter_text_refinement_prompt_template_ko.md": {"raw_text"},
+        "langflow_components/main_flow_filters_authoring_flow/03_main_flow_filter_authoring_prompt_template.md": {"authoring_context"},
+        "langflow_components/main_flow_filters_authoring_flow/03_main_flow_filter_authoring_prompt_template_ko.md": {"authoring_context"},
+        "langflow_components/main_flow_filters_authoring_flow/06_main_flow_filter_review_prompt_template.md": {"review_input_json"},
+        "langflow_components/main_flow_filters_authoring_flow/06_main_flow_filter_review_prompt_template_ko.md": {"review_input_json"},
+    }
+
+    for relative_path, expected_variables in expected_variables_by_template.items():
+        template = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+        variables = set(re.findall(r"(?<!\{)\{([^{}]+)\}(?!\})", template))
+
+        assert variables == expected_variables
+
+
+def test_authoring_variable_builders_do_not_read_local_prompt_template_files() -> None:
+    variable_builder_paths = [
+        "langflow_components/domain_authoring_flow/01_domain_text_refinement_variables_builder.py",
+        "langflow_components/domain_authoring_flow/03_domain_authoring_variables_builder.py",
+        "langflow_components/domain_authoring_flow/06_domain_review_variables_builder.py",
+        "langflow_components/table_catalog_authoring_flow/01_table_catalog_text_refinement_variables_builder.py",
+        "langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_variables_builder.py",
+        "langflow_components/table_catalog_authoring_flow/06_table_catalog_review_variables_builder.py",
+        "langflow_components/main_flow_filters_authoring_flow/01_main_flow_filter_text_refinement_variables_builder.py",
+        "langflow_components/main_flow_filters_authoring_flow/03_main_flow_filter_authoring_variables_builder.py",
+        "langflow_components/main_flow_filters_authoring_flow/06_main_flow_filter_review_variables_builder.py",
+    ]
+
+    for relative_path in variable_builder_paths:
+        code = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+
+        assert "TEMPLATE_FILE" not in code
+        assert "read_text" not in code
+        assert "Path(__file__)" not in code
+        assert "_render_template" not in code
 
 
 def test_main_flow_filter_authoring_detects_alias_overlap() -> None:

@@ -1,3 +1,7 @@
+# 파일 설명: 02 Report Data Selector Langflow custom component 파일입니다.
+# 흐름 역할: 리포트 작성에 사용할 수 있는 이전 분석 결과와 data_ref 후보를 선택합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -8,6 +12,9 @@ from lfx.io import DataInput, Output
 from lfx.schema.data import Data
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 리포트 작성에 사용할 수 있는 이전 분석 결과와 data_ref 후보를 선택합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def select_report_data(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
@@ -39,13 +46,19 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 02 Report Data Selector
+# Langflow 표시 설명: 리포트 작성에 사용할 수 있는 이전 분석 결과와 data_ref 후보를 선택합니다.
 class ReportDataSelector(Component):
+
     display_name = "02 Report Data Selector"
-    description = "Selects previous analysis data references that can be used to build a report."
+    description = "리포트 작성에 사용할 수 있는 이전 분석 결과와 data_ref 후보를 선택합니다."
     icon = "Database"
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 리포트 작성에 사용할 수 있는 이전 분석 결과와 data_ref 후보를 선택합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = select_report_data(getattr(self, "payload", None))
         self.status = (result.get("report") or {}).get("data_selection", {})

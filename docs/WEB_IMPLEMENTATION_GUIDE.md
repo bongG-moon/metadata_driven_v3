@@ -69,6 +69,8 @@ Query runtime은 split mode로 동작한다. Router가 만든 `selected_flow`에
 | Metadata QA | `langflow_components/metadata_qa_flow/` | metadata 질문에 직접 답변 |
 | Data analysis | `langflow_components/data_analysis_flow/` | 질문, state, metadata를 받아 retrieval, pandas, 답변, next state 생성 |
 | Data retrieval | `langflow_components/data_analysis_flow/07~12_*` | `source_type`별 조회 결과를 `retrieval_payload`로 병합 |
+| Report generation | `langflow_components/report_generation_flow/` | 리포트 작성 요청 하나를 받아 E2E 리포트 업무 flow로 처리 |
+| Operations diagnosis | `langflow_components/operations_diagnosis_flow/` | 병목/저조/이상 징후 진단 요청 하나를 받아 E2E 진단 업무 flow로 처리 |
 | Domain authoring | `langflow_components/domain_authoring_flow/` | domain 용어/규칙을 자연어에서 MongoDB item으로 저장 |
 | Table catalog authoring | `langflow_components/table_catalog_authoring_flow/` | dataset/source/column/filter mapping을 자연어에서 저장 |
 | Main flow filter authoring | `langflow_components/main_flow_filters_authoring_flow/` | 날짜, 공정, 제품, LOT, 장비 등 filter metadata 저장 |
@@ -100,7 +102,7 @@ Web/API
 -> selected subflow API response
 ```
 
-Web/API backend는 `05`의 route response JSON을 코드에서 읽고 다음 subflow API를 직접 호출한다. Langflow canvas 안에서 Run Flow node를 연결할 때는 Run Flow가 text input만 받으므로 `router_flow 00~07`까지 사용한다. `06 Run Flow Text Switch`의 선택된 text output을 Run Flow input에 연결하고, 각 Run Flow output은 `07 Selected Run Flow Message Merger`로 모아 선택된 message 하나만 Chat Output에 연결한다.
+Web/API backend는 `05`의 route response JSON을 코드에서 읽고 다음 subflow API를 직접 호출한다. Langflow Playground에서 router canvas 자체를 끝까지 실행해야 할 때도 같은 원칙으로 `05 Orchestrator Response Builder.Route Response -> 06 Selected Flow API Runner.Route Response -> Chat Output`을 사용한다. 여러 native Run Flow output을 한 노드로 모으는 방식은 연결된 upstream을 모두 기다릴 수 있어 권장하지 않는다.
 
 `data_analysis_flow`가 선택된 경우 subflow 내부 순서는 다음과 같다.
 
@@ -154,6 +156,13 @@ Web/API query 입력:
   "question": "오늘 DA, WB공정에서 각각 재공 상위 3개 제품을 뽑아줘",
   "session_id": "user-session-id"
 }
+```
+
+Report/diagnosis route를 검증할 때는 후속형 문장보다 E2E 업무 요청 문장을 우선 사용한다.
+
+```text
+오늘 WB공정 기준으로 생산량, 재공, 목표 달성률을 포함한 요약 리포트 만들어줘
+오늘 HBM 제품군 생산 저조 원인을 장비, 재공, HOLD LOT 관점으로 진단해줘
 ```
 
 선택된 subflow의 `00 ... Request Loader`가 만드는 내부 request payload:
@@ -233,14 +242,17 @@ Web에서 노출할 main response shape:
 
 ```text
 00 Request Loader
--> 01 Text Refinement Prompt Builder
+-> 01 Text Refinement Variables Builder
+-> Langflow Prompt Template
 -> Gemini/LLM refinement
 -> 02 Text Refinement Normalizer
--> 03 Authoring Prompt Builder
+-> 03 Authoring Variables Builder
+-> Langflow Prompt Template
 -> Gemini/LLM authoring JSON
 -> 04 Authoring Result Normalizer
 -> 05 Similarity Checker
--> 06 Review Prompt Builder
+-> 06 Review Variables Builder
+-> Langflow Prompt Template
 -> Gemini/LLM review
 -> 07 Review Writer
 -> 08 Authoring Response Builder
@@ -829,7 +841,7 @@ Pending record에 저장하지 않을 값:
 
 - router flow와 selected subflow가 정상 호출되는가
 - selected subflow `api_response`의 compacted payload를 JSON으로 받을 수 있는가
-- text/message 포트만 받을 때 `12.api_message` JSON 문자열 fallback을 파싱하는가
+- 선택된 subflow의 API/Data output을 우선 파싱하는가
 - `21 Answer Message Adapter.message`를 API JSON으로 오인하지 않는가
 - session별 follow-up 질문이 유지되는가
 - `state.current_data.data_ref`가 다음 질문 전에 preview/summary로 복원되고, full rows가 초반 payload에 불필요하게 붙지 않는가

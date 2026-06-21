@@ -1,3 +1,7 @@
+# 파일 설명: 11 Goodocs Retriever Langflow custom component 파일입니다.
+# 흐름 역할: Goodocs 문서 기반 source job을 실행하고, 인증 또는 문서 설정이 없으면 dummy fallback으로 대체합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -24,6 +28,9 @@ class Goodocs:
         raise RuntimeError("Goodocs class implementation is not configured. Paste the real class or set goodocs_module_name.")
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: Goodocs 문서 기반 source job을 실행하고, 인증 또는 문서 설정이 없으면 dummy fallback으로 대체합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def retrieve_goodocs_data(
     payload_value: Any,
     user_id: str = "",
@@ -270,21 +277,28 @@ def _payload(value: Any) -> dict[str, Any]:
     return {}
 
 
+# 컴포넌트 설명: 11 Goodocs Retriever
+# Langflow 표시 설명: Goodocs 문서 기반 source job을 실행하고, 인증 또는 문서 설정이 없으면 dummy fallback으로 대체합니다.
 class GoodocsRetriever(Component):
+
     goodocs_class = None
 
     display_name = "11 Goodocs Retriever"
-    description = "Executes Goodocs jobs from metadata source_config, with dummy fallback when credentials are empty."
+    description = "Goodocs 문서 기반 source job을 실행하고, 인증 또는 문서 설정이 없으면 dummy fallback으로 대체합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="user_id", display_name="USER_ID", value=""),
         MessageTextInput(name="token_source", display_name="TOKEN_SOURCE", value=""),
         MessageTextInput(name="token_key", display_name="TOKEN_KEY", value=""),
         MessageTextInput(name="goodocs_module_name", display_name="Goodocs Module Name", value="", advanced=True),
+
         MessageTextInput(name="fetch_limit", display_name="Fetch Limit", value="5000", advanced=True),
     ]
     outputs = [Output(name="retrieval_payload", display_name="Retrieval Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: Goodocs 문서 기반 source job을 실행하고, 인증 또는 문서 설정이 없으면 dummy fallback으로 대체합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         return Data(
             data=retrieve_goodocs_data(

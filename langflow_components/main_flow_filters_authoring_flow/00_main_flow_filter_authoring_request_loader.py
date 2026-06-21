@@ -1,3 +1,7 @@
+# 파일 설명: 00 Main Flow Filter Authoring Request Loader Langflow custom component 파일입니다.
+# 흐름 역할: 자연어 main-flow-filter 등록 요청을 시작하고 필요하면 기존 filter item을 MongoDB에서 요약 로드합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import os
@@ -18,6 +22,9 @@ DUPLICATE_ACTION_OPTIONS = ["ask", "merge", "replace", "skip", "create_new"]
 LOAD_EXISTING_OPTIONS = ["true", "false"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 자연어 main-flow-filter 등록 요청을 시작하고 필요하면 기존 filter item을 MongoDB에서 요약 로드합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_main_flow_filter_authoring_request(
     raw_text: Any,
     mongo_uri: str = "",
@@ -154,9 +161,12 @@ def _clean(value: Any) -> str:
     return str(value or "").strip()
 
 
+# 컴포넌트 설명: 00 Main Flow Filter Authoring Request Loader
+# Langflow 표시 설명: 자연어 main-flow-filter 등록 요청을 시작하고 필요하면 기존 filter item을 MongoDB에서 요약 로드합니다.
 class MainFlowFilterAuthoringRequestLoader(Component):
+
     display_name = "00 Main Flow Filter Authoring Request Loader"
-    description = "Starts a main-flow-filter authoring request and optionally loads existing filter items from MongoDB."
+    description = "자연어 main-flow-filter 등록 요청을 시작하고 필요하면 기존 filter item을 MongoDB에서 요약 로드합니다."
     inputs = [
         MessageTextInput(name="raw_text", display_name="Natural Language Filter Description", required=True),
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value=""),
@@ -165,9 +175,13 @@ class MainFlowFilterAuthoringRequestLoader(Component):
         DropdownInput(name="duplicate_action", display_name="Duplicate Action", options=DUPLICATE_ACTION_OPTIONS, value="ask", advanced=True),
         DropdownInput(name="load_existing", display_name="Load Existing Items", options=LOAD_EXISTING_OPTIONS, value="true", advanced=True),
         MessageTextInput(name="load_limit", display_name="Load Limit", value="200", advanced=True),
+
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 자연어 main-flow-filter 등록 요청을 시작하고 필요하면 기존 filter item을 MongoDB에서 요약 로드합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = build_main_flow_filter_authoring_request(
             raw_text=getattr(self, "raw_text", ""),

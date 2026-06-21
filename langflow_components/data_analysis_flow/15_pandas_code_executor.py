@@ -1,3 +1,7 @@
+# 파일 설명: 15 Pandas Code Executor Langflow custom component 파일입니다.
+# 흐름 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import ast
@@ -51,6 +55,9 @@ AGGREGATE_STEP_OPERATIONS = {
 }
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
@@ -1519,9 +1526,12 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 15 Pandas Code Executor
+# Langflow 표시 설명: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
 class PandasCodeExecutor(Component):
+
     display_name = "15 Pandas Code Executor"
-    description = "Parses Gemini/LLM pandas JSON, checks code safety, and executes it against runtime source DataFrames."
+    description = "LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="llm_response", display_name="LLM Response", required=True),
@@ -1530,9 +1540,16 @@ class PandasCodeExecutor(Component):
         Output(name="payload_out", display_name="Payload", method="build_payload"),
     ]
 
+
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         return Data(data=self._result())
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def _result(self) -> dict[str, Any]:
         cached = getattr(self, "_cached_result", None)
         if isinstance(cached, dict):
@@ -1542,6 +1559,9 @@ class PandasCodeExecutor(Component):
         self._set_status(result)
         return result
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def _set_status(self, result: dict[str, Any]) -> None:
         analysis = result.get("analysis", {})
         repair = result.get("pandas_repair") if isinstance(result.get("pandas_repair"), dict) else {}

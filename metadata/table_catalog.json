@@ -225,7 +225,7 @@
         "query_template": "SELECT BAY_ID, EQPID, EQP_MODEL, PRESS_CNT, MODE, DEN, TECH, PKG1, PKG2, LEAD, ORG, PKGSIZE, MCPSALENO, DEVICE, DEVICE_DESC, LOT_ID, EQP_OPERATYN, PI, RECIPE_ID FROM EQP_TABLE WHERE 1=1"
       },
       "required_params": [],
-      "primary_quantity_column": ["EQPID", "PRESS_CNT"],
+      "primary_quantity_column": "EQPID",
       "filter_mappings": {
         "MODE": ["MODE"],
         "TECH": ["TECH"],
@@ -245,7 +245,7 @@
         "PKG_TYPE2": ["PKG2"],
         "MCP_NO": ["MCPSALENO"]
       },
-      "default_detail_columns": ["EQPID", "EQP_MODEL", "PRESS_CNT", "MODE", "TECH", "DEN", "MCPSALENO", "RECIPE_ID"],
+      "default_detail_columns": ["EQPID", "EQP_MODEL", "MODE", "TECH", "DEN", "MCPSALENO", "RECIPE_ID"],
       "columns": ["BAY_ID", "EQPID", "EQP_MODEL", "PRESS_CNT", "MODE", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "PKGSIZE", "MCPSALENO", "DEVICE", "DEVICE_DESC", "LOT_ID", "EQP_OPERATYN", "PI", "RECIPE_ID"]
     },
     "capacity": {

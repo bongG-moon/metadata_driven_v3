@@ -1,3 +1,7 @@
+# 파일 설명: 20 Answer Message Adapter Langflow custom component 파일입니다.
+# 흐름 역할: 답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -72,6 +76,9 @@ VALUE_LABELS = {
 }
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_playground_message(payload_value: Any) -> str:
     payload = _payload(payload_value)
     answer = _escape_markdown_tilde(str(payload.get("answer_message") or "").strip())
@@ -701,11 +708,17 @@ def _truncate(text: str, limit: int) -> str:
 
 
 
+# 컴포넌트 설명: 20 Answer Message Adapter
+# Langflow 표시 설명: 답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다.
 class AnswerMessageAdapter(Component):
+
     display_name = "20 Answer Message Adapter"
-    description = "Builds a playground-friendly Message with answer text, result table, intent analysis, and pandas code."
+    description = "답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="message", display_name="Message", method="build_message")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_message(self) -> Message:
         return Message(text=build_playground_message(self.payload))

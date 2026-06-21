@@ -1,3 +1,7 @@
+# 파일 설명: 07 Domain Review Writer Langflow custom component 파일입니다.
+# 흐름 역할: 최종 review JSON을 정규화하고 승인된 domain metadata를 MongoDB에 upsert합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import hashlib
@@ -10,18 +14,20 @@ from importlib import import_module
 from typing import Any
 
 from lfx.custom.custom_component.component import Component
-from lfx.io import DataInput, DropdownInput, MessageTextInput, Output
+from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
 DEFAULT_COLLECTION_NAME = "agent_v3_domain_items"
 COLLECTION_ENV_KEY = "MONGODB_DOMAIN_COLLECTION"
 LEGACY_COLLECTION_SUFFIX = "domain_items"
-DUPLICATE_ACTION_OPTIONS = ["use_payload", "ask", "merge", "replace", "skip", "create_new"]
 METADATA_DOC_SCHEMA_VERSION = "metadata-doc.v1"
 AGENT_VERSION = "metadata_driven_v3"
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 최종 review JSON을 정규화하고 승인된 domain metadata를 MongoDB에 upsert합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def review_and_write_domain_payload(
     payload_value: Any,
     llm_response_value: Any,
@@ -29,10 +35,9 @@ def review_and_write_domain_payload(
     mongo_database: str = "",
     collection_prefix: str = "",
     collection_name: str = "",
-    duplicate_action: str = "",
 ) -> dict[str, Any]:
     payload = _payload(payload_value)
-    action = _action_from_override(duplicate_action, payload)
+    action = _action((payload.get("duplicate_decision") or {}).get("action") or "ask")
     review = _normalize_review(_text(llm_response_value), payload, action)
     config = payload.get("mongo_config") if isinstance(payload.get("mongo_config"), dict) else {}
     database = _clean(mongo_database or config.get("database") or os.getenv("MONGODB_DATABASE") or "metadata_driven_agent_v3")
@@ -62,15 +67,16 @@ def review_and_write_domain_payload(
 
 def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -> dict[str, Any]:
     parsed = _extract_json_object(text)
-    duplicate_resolved = _duplicate_choice_required(payload) and action in {"merge", "replace", "create_new"}
+    duplicate_action_chosen = action in {"merge", "replace", "skip", "create_new"}
+    duplicate_waiting_for_user = _duplicate_choice_required(payload) and action == "ask"
     supplement = []
     duplicate_supplement_count = 0
     for item in _as_list(parsed.get("supplement_requests")):
-        if duplicate_resolved and _is_duplicate_action_request(item):
+        if not duplicate_waiting_for_user and _is_duplicate_action_request(item):
             duplicate_supplement_count += 1
             continue
         supplement.append(item)
-    if _duplicate_choice_required(payload) and action == "ask":
+    if duplicate_waiting_for_user:
         supplement.append(
             {
                 "field": "duplicate_action",
@@ -81,7 +87,7 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
     if not payload.get("items"):
         supplement.append({"field": "items", "reason": "저장할 domain item이 없습니다.", "example_user_input": "추가할 용어와 의미를 설명해 주세요."})
     errors = list(payload.get("errors", []))
-    only_duplicate_blockers = duplicate_resolved and duplicate_supplement_count > 0 and not supplement
+    only_duplicate_blockers = duplicate_action_chosen and duplicate_supplement_count > 0 and not supplement
     ready = (bool(parsed.get("ready_to_save", False)) or only_duplicate_blockers) and not supplement and not errors
     return {
         "ready_to_save": ready,
@@ -233,7 +239,8 @@ def _duplicate_choice_required(payload: dict[str, Any]) -> bool:
 
 def _is_duplicate_action_request(item: Any) -> bool:
     if isinstance(item, dict):
-        if _clean(item.get("field")) == "duplicate_action":
+        field = _clean(item.get("field")).lower()
+        if field == "duplicate_action" or field.startswith("duplicate_decision"):
             return True
         text = " ".join(_clean(item.get(key)) for key in ("reason", "example_user_input"))
     else:
@@ -249,13 +256,6 @@ def _resolved_duplicate_decision(payload: dict[str, Any], action: str) -> dict[s
         decision["requires_user_choice"] = False
         decision["message"] = ""
     return decision
-
-
-def _action_from_override(value: Any, payload: dict[str, Any]) -> str:
-    override = _clean(value).lower()
-    if override in {"", "use_payload"}:
-        return _action((payload.get("duplicate_decision") or {}).get("action") or "ask")
-    return _action(override)
 
 
 def _text(value: Any) -> str:
@@ -300,19 +300,25 @@ def _resolve_collection_name(collection_name: Any = "", collection_prefix: Any =
     return DEFAULT_COLLECTION_NAME
 
 
+# 컴포넌트 설명: 07 Domain Review Writer
+# Langflow 표시 설명: 최종 review JSON을 정규화하고 승인된 domain metadata를 MongoDB에 upsert합니다.
 class DomainReviewWriter(Component):
+
     display_name = "07 Domain Review Writer"
-    description = "Normalizes the final review JSON and writes approved domain metadata to MongoDB."
+    description = "최종 review JSON을 정규화하고 승인된 domain metadata를 MongoDB에 upsert합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="llm_response", display_name="Review LLM Response", required=True),
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value="", advanced=True),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value="", advanced=True),
         MessageTextInput(name="collection_name", display_name="Collection Name", value="", advanced=True),
-        DropdownInput(name="duplicate_action", display_name="Duplicate Action Override", options=DUPLICATE_ACTION_OPTIONS, value="use_payload", advanced=True),
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 최종 review JSON을 정규화하고 승인된 domain metadata를 MongoDB에 upsert합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = review_and_write_domain_payload(
             getattr(self, "payload", None),
@@ -321,7 +327,6 @@ class DomainReviewWriter(Component):
             getattr(self, "mongo_database", ""),
             "",
             getattr(self, "collection_name", ""),
-            getattr(self, "duplicate_action", ""),
         )
         self.status = {
             "ready": (result.get("review") or {}).get("ready_to_save", False),

@@ -1,3 +1,7 @@
+# 파일 설명: 18 Answer Prompt Builder Langflow custom component 파일입니다.
+# 흐름 역할: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -10,6 +14,9 @@ from lfx.schema.data import Data
 from lfx.schema.message import Message
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
@@ -97,17 +104,24 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 18 Answer Prompt Builder
+# Langflow 표시 설명: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
 class AnswerPromptBuilder(Component):
+
     display_name = "18 Answer Prompt Builder"
-    description = "Builds the prompt that should be sent to the Langflow Gemini/LLM node for final answer writing."
+    description = "분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [
         Output(name="answer_prompt", display_name="Answer Prompt", method="build_prompt"),
         Output(name="prompt_payload", display_name="Prompt Payload", method="build_prompt_payload"),
     ]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
         prompt_payload = build_answer_prompt_payload(getattr(self, "payload", None))
+
         context = prompt_payload.get("answer_context", {})
         self.status = {
             "prompt_type": prompt_payload.get("prompt_type", "final_answer"),
@@ -116,5 +130,8 @@ class AnswerPromptBuilder(Component):
         }
         return Message(text=prompt_payload["prompt"])
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt_payload(self) -> Data:
         return Data(data=build_answer_prompt_payload(getattr(self, "payload", None)))

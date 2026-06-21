@@ -6,14 +6,14 @@
 
 | External input | Connect to |
 | --- | --- |
-| 사용자 질문 | `00 MongoDB Session State Loader.Question`, `00 Metadata QA Request Loader.Question` |
+| 사용자 질문 | API 대상이면 `Text Input.Text`, 단독 Playground면 `Chat Input.Chat Message`를 `00 MongoDB Session State Loader.Question`, `00 Metadata QA Request Loader.Question`에 연결 |
 
-metadata route나 router payload는 더 이상 00번 loader에 넣지 않습니다. `02 Metadata QA Response Builder`가 질문과 metadata를 보고 `catalog_list`, `dataset_query`, `dataset_examples`, `dataset_detail`, `domain_search`, `help/greeting` 중 하나를 내부에서 판단합니다.
+metadata route나 router payload는 더 이상 00번 loader에 넣지 않습니다. `02 Metadata QA Prompt Builder`가 질문과 metadata summary로 QA 전용 LLM prompt를 만들고, LLM 응답을 `03 Metadata QA Response Builder`가 정규화해 `catalog_list`, `dataset_query`, `dataset_examples`, `dataset_detail`, `domain_search`, `help/greeting` 중 하나로 답변을 조립합니다.
 
 ## Recommended Wiring
 
 ```text
-Chat Input.Chat Message
+Text Input.Text 또는 Chat Input.Chat Message
   -> 00 MongoDB Session State Loader.Question
   -> 00 Metadata QA Request Loader.Question
 
@@ -24,28 +24,36 @@ Chat Input.Chat Message
   -> 01 Metadata Context Loader.Payload
 
 01 Metadata Context Loader.Payload
-  -> 02 Metadata QA Response Builder.Payload
+  -> 02 Metadata QA Prompt Builder.Payload
 
-02 Metadata QA Response Builder.Payload
-  -> 03 Metadata QA Message Adapter.Payload
-  -> 04 Metadata QA API Response Builder.Payload
+02 Metadata QA Prompt Builder.Metadata QA Prompt
+  -> Metadata QA LLM.Input
 
-03 Metadata QA Message Adapter.Message
+01 Metadata Context Loader.Payload
+  -> 03 Metadata QA Response Builder.Payload
+
+Metadata QA LLM.Output
+  -> 03 Metadata QA Response Builder.LLM Response
+
+03 Metadata QA Response Builder.Payload
+  -> 04 Metadata QA Message Adapter.Payload
+  -> 05 Metadata QA API Response Builder.Payload
+
+04 Metadata QA Message Adapter.Message
   -> Chat Output
 
-04 Metadata QA API Response Builder.API Response
+05 Metadata QA API Response Builder.API Response
   -> 01 MongoDB Session State Writer.Response Payload
 ```
 
-`00 Metadata QA Request Loader`에는 `Question`과 `Previous State`만 남아 있습니다. session id는 Chat/Run Flow message 또는 state 안에서 자동 추론합니다.
+`00 Metadata QA Request Loader`에는 `Question`과 `Previous State`만 남아 있습니다. session id는 Chat/API message 또는 state 안에서 자동 추론합니다.
 
 ## Outputs
 
 | Output | Use |
 | --- | --- |
-| `03 Metadata QA Message Adapter.Message` | Chat Output |
-| `04 Metadata QA API Response Builder.API Response` | Session State Writer 또는 API/Data output |
-| `04 Metadata QA API Response Builder.API Message` | API response JSON을 message로 확인할 때만 사용 |
+| `04 Metadata QA Message Adapter.Message` | Chat Output |
+| `05 Metadata QA API Response Builder.API Response` | Session State Writer 또는 API/Data output |
 
 ## Supported Actions
 
@@ -56,4 +64,4 @@ Chat Input.Chat Message
 | `dataset_examples` | 특정 dataset 활용 질문 예시 |
 | `dataset_detail` | 컬럼, 필터, source type, 필수 파라미터 등 상세 정보 |
 | `dataset_query` | 등록된 query template/API 조회 정보 |
-| `domain_search` | 등록된 domain/alias/condition 검색 |
+| `domain_search` | 등록된 domain/alias/condition 검색. `공정 그룹` 같은 섹션 질문은 `process_groups` 섹션 전체를 안내 |

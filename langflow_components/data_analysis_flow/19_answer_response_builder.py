@@ -1,3 +1,7 @@
+# 파일 설명: 19 Answer Response Builder Langflow custom component 파일입니다.
+# 흐름 역할: LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -10,6 +14,9 @@ from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_answer_response_payload(payload_value: Any, llm_response_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
@@ -352,17 +359,24 @@ def _unique(values: list[Any]) -> list[str]:
     return result
 
 
+# 컴포넌트 설명: 19 Answer Response Builder
+# Langflow 표시 설명: LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다.
 class AnswerResponseBuilder(Component):
+
     display_name = "19 Answer Response Builder"
-    description = "Combines the Langflow Gemini/LLM answer with result data, applied scope, and next-turn state."
+    description = "LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="llm_response", display_name="LLM Response", required=True),
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = build_answer_response_payload(getattr(self, "payload", None), getattr(self, "llm_response", ""))
+
         self.status = {
             "status": result.get("status"),
             "rows": (result.get("data") or {}).get("row_count", 0),

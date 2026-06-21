@@ -154,11 +154,8 @@ def test_metadata_authoring_duplicate_action_inputs_are_dropdowns() -> None:
     ]
     override_files = [
         "domain_authoring_flow/05_domain_similarity_checker.py",
-        "domain_authoring_flow/07_domain_review_writer.py",
         "table_catalog_authoring_flow/05_table_catalog_similarity_checker.py",
-        "table_catalog_authoring_flow/07_table_catalog_review_writer.py",
         "main_flow_filters_authoring_flow/05_main_flow_filter_similarity_checker.py",
-        "main_flow_filters_authoring_flow/07_main_flow_filter_review_writer.py",
     ]
 
     for relative_path in request_loader_files:
@@ -172,6 +169,15 @@ def test_metadata_authoring_duplicate_action_inputs_are_dropdowns() -> None:
         assert duplicate_input.__class__.__name__ == "_DropdownField"
         assert duplicate_input.value == "use_payload"
         assert duplicate_input.options == ["use_payload", "ask", "merge", "replace", "skip", "create_new"]
+
+    writer_files = [
+        "domain_authoring_flow/07_domain_review_writer.py",
+        "table_catalog_authoring_flow/07_table_catalog_review_writer.py",
+        "main_flow_filters_authoring_flow/07_main_flow_filter_review_writer.py",
+    ]
+    for relative_path in writer_files:
+        writer_inputs = {getattr(item, "name", None) for item in _component_class(relative_path).inputs}
+        assert "duplicate_action" not in writer_inputs
 
 
 def test_fixed_choice_inputs_are_dropdowns() -> None:
@@ -235,6 +241,25 @@ def test_data_analysis_prompt_builders_use_single_prompt_output_pattern() -> Non
         output_item = outputs[output_name]
         assert getattr(output_item, "group_outputs", False) is False
         assert not any(name.endswith("_prompt_text") for name in outputs)
+
+
+def test_metadata_authoring_variable_builders_expose_prompt_template_variables() -> None:
+    expected_outputs = {
+        "domain_authoring_flow/01_domain_text_refinement_variables_builder.py": ["raw_text"],
+        "domain_authoring_flow/03_domain_authoring_variables_builder.py": ["authoring_context"],
+        "domain_authoring_flow/06_domain_review_variables_builder.py": ["review_input_json"],
+        "table_catalog_authoring_flow/01_table_catalog_text_refinement_variables_builder.py": ["raw_text"],
+        "table_catalog_authoring_flow/03_table_catalog_authoring_variables_builder.py": ["authoring_context"],
+        "table_catalog_authoring_flow/06_table_catalog_review_variables_builder.py": ["review_input_json"],
+        "main_flow_filters_authoring_flow/01_main_flow_filter_text_refinement_variables_builder.py": ["raw_text"],
+        "main_flow_filters_authoring_flow/03_main_flow_filter_authoring_variables_builder.py": ["authoring_context"],
+        "main_flow_filters_authoring_flow/06_main_flow_filter_review_variables_builder.py": ["review_input_json"],
+    }
+
+    for relative_path, output_names in expected_outputs.items():
+        outputs = _component_outputs(relative_path)
+        assert list(outputs) == output_names
+        assert not any(name.endswith("_prompt") for name in outputs)
 
 
 def test_source_retrieval_merger_exposes_dummy_input_for_local_validation() -> None:

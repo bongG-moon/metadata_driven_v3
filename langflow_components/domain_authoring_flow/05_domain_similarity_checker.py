@@ -1,3 +1,7 @@
+# 파일 설명: 05 Domain Similarity Checker Langflow custom component 파일입니다.
+# 흐름 역할: 저장 전 같은 key, alias 겹침, process 겹침 같은 domain metadata 충돌 가능성을 찾습니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from typing import Any
@@ -10,6 +14,9 @@ from lfx.schema.data import Data
 DUPLICATE_ACTION_OPTIONS = ["use_payload", "ask", "merge", "replace", "skip", "create_new"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 저장 전 같은 key, alias 겹침, process 겹침 같은 domain metadata 충돌 가능성을 찾습니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def check_domain_similarity(payload_value: Any, duplicate_action: str = "") -> dict[str, Any]:
     payload = _payload(payload_value)
     action = _action_from_override(duplicate_action, payload)
@@ -100,17 +107,24 @@ def _clean(value: Any) -> str:
     return str(value or "").strip()
 
 
+# 컴포넌트 설명: 05 Domain Similarity Checker
+# Langflow 표시 설명: 저장 전 같은 key, alias 겹침, process 겹침 같은 domain metadata 충돌 가능성을 찾습니다.
 class DomainSimilarityChecker(Component):
+
     display_name = "05 Domain Similarity Checker"
-    description = "Warns about same or confusingly similar domain metadata before saving."
+    description = "저장 전 같은 key, alias 겹침, process 겹침 같은 domain metadata 충돌 가능성을 찾습니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         DropdownInput(name="duplicate_action", display_name="Duplicate Action Override", options=DUPLICATE_ACTION_OPTIONS, value="use_payload", advanced=True),
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 저장 전 같은 key, alias 겹침, process 겹침 같은 domain metadata 충돌 가능성을 찾습니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = check_domain_similarity(getattr(self, "payload", None), getattr(self, "duplicate_action", ""))
+
         self.status = {
             "matches": len(result.get("existing_matches", [])),
             "warnings": len(result.get("conflict_warnings", [])),

@@ -1,3 +1,7 @@
+# 파일 설명: 02 Diagnosis Rule Evaluator Langflow custom component 파일입니다.
+# 흐름 역할: 수집된 운영 신호를 진단 finding과 권장 확인 항목으로 변환합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -18,6 +22,9 @@ RECOMMENDATIONS = {
 }
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 수집된 운영 신호를 진단 finding과 권장 확인 항목으로 변환합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def evaluate_diagnosis_rules(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     diagnosis = deepcopy(payload.get("diagnosis")) if isinstance(payload.get("diagnosis"), dict) else {}
@@ -62,13 +69,19 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 02 Diagnosis Rule Evaluator
+# Langflow 표시 설명: 수집된 운영 신호를 진단 finding과 권장 확인 항목으로 변환합니다.
 class DiagnosisRuleEvaluator(Component):
+
     display_name = "02 Diagnosis Rule Evaluator"
-    description = "Turns collected operational signals into diagnosis findings and recommended next checks."
+    description = "수집된 운영 신호를 진단 finding과 권장 확인 항목으로 변환합니다."
     icon = "Stethoscope"
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 수집된 운영 신호를 진단 finding과 권장 확인 항목으로 변환합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = evaluate_diagnosis_rules(getattr(self, "payload", None))
         self.status = {"findings": len((result.get("diagnosis") or {}).get("findings", []))}

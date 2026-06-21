@@ -1,3 +1,7 @@
+# 파일 설명: 00 MongoDB Session State Loader Langflow custom component 파일입니다.
+# 흐름 역할: 대화 session_id 기준으로 이전 compact state를 MongoDB에서 읽어 router 또는 subflow에 전달합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -18,6 +22,9 @@ DEFAULT_STATE_PREVIEW_LIMIT = 5
 ENABLED_OPTIONS = ["true", "false"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 대화 session_id 기준으로 이전 compact state를 MongoDB에서 읽어 router 또는 subflow에 전달합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def load_session_state_payload(
     question: Any = "",
     state: Any = None,
@@ -328,9 +335,12 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# 컴포넌트 설명: 00 MongoDB Session State Loader
+# Langflow 표시 설명: 대화 session_id 기준으로 이전 compact state를 MongoDB에서 읽어 router 또는 subflow에 전달합니다.
 class MongoDBSessionStateLoader(Component):
+
     display_name = "00 MongoDB Session State Loader"
-    description = "Loads compact previous state for a session before router or analysis flow execution."
+    description = "대화 session_id 기준으로 이전 compact state를 MongoDB에서 읽어 router 또는 subflow에 전달합니다."
     icon = "Database"
     name = "MongoDBSessionStateLoader"
 
@@ -339,14 +349,15 @@ class MongoDBSessionStateLoader(Component):
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value="", advanced=True),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value=DEFAULT_DATABASE, advanced=True),
         MessageTextInput(name="session_collection_name", display_name="Session State Collection", value=DEFAULT_SESSION_COLLECTION, advanced=True),
+
         DropdownInput(name="enabled", display_name="Enabled", options=ENABLED_OPTIONS, value="true", advanced=True),
         MessageTextInput(name="preview_row_limit", display_name="Preview Row Limit", value=str(DEFAULT_STATE_PREVIEW_LIMIT), advanced=True),
     ]
-    outputs = [
-        Output(name="payload", display_name="Payload", method="build_payload", types=["Data"]),
-        Output(name="loaded_state", display_name="Loaded State", method="build_state", types=["Data"]),
-    ]
+    outputs = [Output(name="loaded_state", display_name="Loaded State", method="build_state", types=["Data"])]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 대화 session_id 기준으로 이전 compact state를 MongoDB에서 읽어 router 또는 subflow에 전달합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def _result(self) -> dict[str, Any]:
         cached = getattr(self, "_cached_session_state_payload", None)
         if isinstance(cached, dict):
@@ -364,8 +375,8 @@ class MongoDBSessionStateLoader(Component):
         self.status = result.get("session_state_load", {})
         return result
 
-    def build_payload(self) -> Data:
-        return Data(data=self._result())
-
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 대화 session_id 기준으로 이전 compact state를 MongoDB에서 읽어 router 또는 subflow에 전달합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_state(self) -> Data:
         return Data(data=deepcopy(self._result().get("state", {})))

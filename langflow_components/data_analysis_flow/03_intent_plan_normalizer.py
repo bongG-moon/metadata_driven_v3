@@ -1,3 +1,7 @@
+# 파일 설명: 03 Intent Plan Normalizer Langflow custom component 파일입니다.
+# 흐름 역할: LLM의 의도 분석 JSON을 정규화해 조회 작업, 필터, pandas 분석 계획으로 변환합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -11,6 +15,9 @@ from lfx.custom.custom_component.component import Component
 from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: LLM의 의도 분석 JSON을 정규화해 조회 작업, 필터, pandas 분석 계획으로 변환합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
@@ -2056,17 +2063,24 @@ def _unique(values: Any) -> list[str]:
     return result
 
 
+# 컴포넌트 설명: 03 Intent Plan Normalizer
+# Langflow 표시 설명: LLM의 의도 분석 JSON을 정규화해 조회 작업, 필터, pandas 분석 계획으로 변환합니다.
 class IntentPlanNormalizer(Component):
+
     display_name = "03 Intent Plan Normalizer"
-    description = "Normalizes the Gemini/LLM intent JSON into retrieval jobs for the next Langflow nodes."
+    description = "LLM의 의도 분석 JSON을 정규화해 조회 작업, 필터, pandas 분석 계획으로 변환합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="llm_response", display_name="LLM Response", required=True),
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: LLM의 의도 분석 JSON을 정규화해 조회 작업, 필터, pandas 분석 계획으로 변환합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = normalize_intent_payload(getattr(self, "payload", None), getattr(self, "llm_response", ""))
+
         plan = result.get("intent_plan", {})
         self.status = {
             "analysis_kind": plan.get("analysis_kind"),

@@ -1,3 +1,7 @@
+# 파일 설명: 16A Pandas Repair Payload Builder Langflow custom component 파일입니다.
+# 흐름 역할: pandas 실행 실패가 LLM repair 대상인지 판단하고 repair용 payload를 구성합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -13,6 +17,9 @@ DEFAULT_REPAIR_MAX_ATTEMPTS = 1
 REPAIR_ATTEMPT_OPTIONS = ["0", "1", "2"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: pandas 실행 실패가 LLM repair 대상인지 판단하고 repair용 payload를 구성합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_pandas_repair_payload(payload_value: Any, max_attempts: Any = DEFAULT_REPAIR_MAX_ATTEMPTS) -> dict[str, Any]:
     payload = _payload(payload_value)
     decision = _pandas_repair_decision(payload, max_attempts)
@@ -166,9 +173,12 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 16A Pandas Repair Payload Builder
+# Langflow 표시 설명: pandas 실행 실패가 LLM repair 대상인지 판단하고 repair용 payload를 구성합니다.
 class PandasRepairPayloadBuilder(Component):
+
     display_name = "16A Pandas Repair Payload Builder"
-    description = "Decides whether failed pandas execution needs LLM repair and passes the repair payload forward."
+    description = "pandas 실행 실패가 LLM repair 대상인지 판단하고 repair용 payload를 구성합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         DropdownInput(
@@ -177,12 +187,16 @@ class PandasRepairPayloadBuilder(Component):
             options=REPAIR_ATTEMPT_OPTIONS,
             value=str(DEFAULT_REPAIR_MAX_ATTEMPTS),
             advanced=True,
+
         ),
     ]
     outputs = [
         Output(name="payload_out", display_name="Repair Payload", method="build_payload"),
     ]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: pandas 실행 실패가 LLM repair 대상인지 판단하고 repair용 payload를 구성합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = build_pandas_repair_payload(
             getattr(self, "payload", None),

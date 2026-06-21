@@ -1,6 +1,6 @@
 # Data Analysis Flow Connection Guide
 
-`data_analysis_flow`는 실제 데이터 조회, pandas 분석, 결과 저장, 최종 답변 생성을 담당하는 독립 subflow입니다. main router는 이 flow를 선택만 하고, 이 flow에는 사용자 질문 하나를 Run Flow input으로 넘깁니다.
+`data_analysis_flow`는 실제 데이터 조회, pandas 분석, 결과 저장, 최종 답변 생성을 담당하는 독립 subflow입니다. main router는 이 flow를 선택만 하고, 이 flow에는 사용자 질문 하나를 API input으로 넘깁니다.
 
 ## External Inputs
 
@@ -38,7 +38,7 @@ Intent LLM.Output
   -> 03 Intent Plan Normalizer.Intent LLM Response
 ```
 
-`00 Analysis Request Loader`에는 `Question`과 `Previous State`만 남아 있습니다. session id는 Chat/Run Flow message 또는 state 안에서 자동 추론합니다.
+`00 Analysis Request Loader`에는 `Question`과 `Previous State`만 남아 있습니다. session id는 Chat/API message 또는 state 안에서 자동 추론합니다.
 
 ## Previous Result Restore
 

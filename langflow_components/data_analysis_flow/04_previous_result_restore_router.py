@@ -1,3 +1,7 @@
+# 파일 설명: 04 Previous Result Restore Router Langflow custom component 파일입니다.
+# 흐름 역할: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -7,6 +11,9 @@ from lfx.custom.custom_component.component import Component
 from lfx.io import DataInput, Output
 from lfx.schema.data import Data
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def route_previous_result_restore(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
@@ -137,9 +144,12 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 04 Previous Result Restore Router
+# Langflow 표시 설명: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
 class PreviousResultRestoreRouter(Component):
+
     display_name = "04 Previous Result Restore Router"
-    description = "Decides whether previous MongoDB data_ref rows must be restored before retrieval and pandas execution."
+    description = "이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다."
     icon = "GitBranch"
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [
@@ -148,16 +158,29 @@ class PreviousResultRestoreRouter(Component):
         Output(name="restore_decision", display_name="Restore Decision", method="build_restore_decision"),
     ]
 
+
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def _result(self) -> dict[str, Any]:
         return route_previous_result_restore(getattr(self, "payload", None))
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = self._result()
         self.status = result.get("restore_decision", {})
         return Data(data=result["payload"])
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_restore_payload(self) -> Data:
         return Data(data=self._result()["restore_payload"])
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 이전 결과 data_ref를 지금 질문에서 복원해야 하는지 판단하고 복원 branch payload를 분리합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_restore_decision(self) -> Data:
         return Data(data=self._result()["restore_decision"])

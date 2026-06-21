@@ -157,9 +157,11 @@ def test_session_state_loader_component_hides_explicit_state_input() -> None:
 
     input_names = [item.name for item in loader.MongoDBSessionStateLoader.inputs]
     display_names = [item.display_name for item in loader.MongoDBSessionStateLoader.inputs]
+    output_names = [item.name for item in loader.MongoDBSessionStateLoader.outputs]
 
     assert "state" not in input_names
     assert "Explicit State" not in display_names
+    assert output_names == ["loaded_state"]
 
 
 def test_session_state_writer_accepts_api_response_wrapper(monkeypatch: Any) -> None:

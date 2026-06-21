@@ -1,3 +1,7 @@
+# 파일 설명: 01 MongoDB Session State Writer Langflow custom component 파일입니다.
+# 흐름 역할: route/subflow 실행 후 다음 질문에서 재사용할 compact state를 MongoDB에 저장합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -19,6 +23,9 @@ DEFAULT_HISTORY_LIMIT = 10
 ENABLED_OPTIONS = ["true", "false"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: route/subflow 실행 후 다음 질문에서 재사용할 compact state를 MongoDB에 저장합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def write_session_state_payload(
     response_payload_value: Any,
     mongo_uri: Any = "",
@@ -306,9 +313,12 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# 컴포넌트 설명: 01 MongoDB Session State Writer
+# Langflow 표시 설명: route/subflow 실행 후 다음 질문에서 재사용할 compact state를 MongoDB에 저장합니다.
 class MongoDBSessionStateWriter(Component):
+
     display_name = "01 MongoDB Session State Writer"
-    description = "Saves compact next-turn state after a routed flow or final API response."
+    description = "route/subflow 실행 후 다음 질문에서 재사용할 compact state를 MongoDB에 저장합니다."
     icon = "DatabaseZap"
     name = "MongoDBSessionStateWriter"
 
@@ -317,12 +327,16 @@ class MongoDBSessionStateWriter(Component):
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value="", advanced=True),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value=DEFAULT_DATABASE, advanced=True),
         MessageTextInput(name="session_collection_name", display_name="Session State Collection", value=DEFAULT_SESSION_COLLECTION, advanced=True),
+
         DropdownInput(name="enabled", display_name="Enabled", options=ENABLED_OPTIONS, value="true", advanced=True),
         MessageTextInput(name="preview_row_limit", display_name="Preview Row Limit", value=str(DEFAULT_STATE_PREVIEW_LIMIT), advanced=True),
         MessageTextInput(name="history_limit", display_name="History Limit", value=str(DEFAULT_HISTORY_LIMIT), advanced=True),
     ]
     outputs = [Output(name="payload", display_name="Payload", method="build_payload", types=["Data"])]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: route/subflow 실행 후 다음 질문에서 재사용할 compact state를 MongoDB에 저장합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         payload = write_session_state_payload(
             getattr(self, "response_payload", None),

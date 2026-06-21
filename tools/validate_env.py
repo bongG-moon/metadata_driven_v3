@@ -41,6 +41,28 @@ def main() -> int:
     else:
         checks.append(("RUN_LLM_VALIDATION", "skip", "set true to require LLM variables"))
 
+    if _is_true(os.getenv("RUN_LANGFLOW_API_VALIDATION")):
+        checks.extend(
+            [
+                _check_present("LANGFLOW_BASE_URL"),
+                _check_api_url_or_flow_id("LANGFLOW_ROUTER", "LANGFLOW_ROUTER_API_URL", "LANGFLOW_ROUTER_FLOW_ID"),
+                _check_api_url_or_flow_id("LANGFLOW_METADATA_QA", "LANGFLOW_METADATA_QA_API_URL", "LANGFLOW_METADATA_QA_FLOW_ID"),
+                _check_api_url_or_flow_id("LANGFLOW_DATA_ANALYSIS", "LANGFLOW_DATA_ANALYSIS_API_URL", "LANGFLOW_DATA_ANALYSIS_FLOW_ID"),
+                _check_api_url_or_flow_id(
+                    "LANGFLOW_REPORT_GENERATION",
+                    "LANGFLOW_REPORT_GENERATION_API_URL",
+                    "LANGFLOW_REPORT_GENERATION_FLOW_ID",
+                ),
+                _check_api_url_or_flow_id(
+                    "LANGFLOW_OPERATIONS_DIAGNOSIS",
+                    "LANGFLOW_OPERATIONS_DIAGNOSIS_API_URL",
+                    "LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID",
+                ),
+            ]
+        )
+    else:
+        checks.append(("RUN_LANGFLOW_API_VALIDATION", "skip", "set true to require Langflow flow ids or API URLs"))
+
     failed = [item for item in checks if item[1] == "fail"]
     for key, status, message in checks:
         print(f"{status.upper():4} {key}: {message}")
@@ -74,6 +96,19 @@ def _check_any_present(label: str, keys: list[str]) -> tuple[str, str, str]:
         if value:
             return label, "pass", f"provided by {key}"
     return label, "fail", "missing; checked " + ", ".join(keys)
+
+
+def _check_api_url_or_flow_id(label: str, api_url_key: str, flow_id_key: str) -> tuple[str, str, str]:
+    api_url = os.getenv(api_url_key, "").strip()
+    flow_id = os.getenv(flow_id_key, "").strip()
+    base_url = os.getenv("LANGFLOW_BASE_URL", "").strip()
+    if api_url:
+        return label, "pass", f"provided by {api_url_key}"
+    if base_url and flow_id:
+        return label, "pass", f"provided by LANGFLOW_BASE_URL + {flow_id_key}"
+    if flow_id and not base_url:
+        return label, "fail", f"{flow_id_key} is set, but LANGFLOW_BASE_URL is missing"
+    return label, "fail", f"missing; set {api_url_key} or LANGFLOW_BASE_URL + {flow_id_key}"
 
 
 def _check_expected(key: str, expected: str, actual: str) -> tuple[str, str, str]:

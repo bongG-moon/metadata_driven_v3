@@ -1,3 +1,7 @@
+# 파일 설명: 09 H API Retriever Langflow custom component 파일입니다.
+# 흐름 역할: metadata source_config의 H-API job을 실행하고, token 또는 URL이 없으면 dummy fallback으로 대체합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -11,6 +15,9 @@ from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: metadata source_config의 H-API job을 실행하고, token 또는 URL이 없으면 dummy fallback으로 대체합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def retrieve_h_api_data(payload_value: Any, api_token: str = "", fetch_limit: Any = "5000") -> dict[str, Any]:
     payload = _payload(payload_value)
     plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else payload
@@ -261,9 +268,12 @@ def _payload(value: Any) -> dict[str, Any]:
     return {}
 
 
+# 컴포넌트 설명: 09 H API Retriever
+# Langflow 표시 설명: metadata source_config의 H-API job을 실행하고, token 또는 URL이 없으면 dummy fallback으로 대체합니다.
 class HApiRetriever(Component):
+
     display_name = "09 H API Retriever"
-    description = "Executes H-API jobs from metadata source_config, with dummy fallback when token is empty."
+    description = "metadata source_config의 H-API job을 실행하고, token 또는 URL이 없으면 dummy fallback으로 대체합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="api_token", display_name="H-API Token", value=""),
@@ -271,5 +281,9 @@ class HApiRetriever(Component):
     ]
     outputs = [Output(name="retrieval_payload", display_name="Retrieval Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: metadata source_config의 H-API job을 실행하고, token 또는 URL이 없으면 dummy fallback으로 대체합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
+
         return Data(data=retrieve_h_api_data(getattr(self, "payload", None), self.api_token, self.fetch_limit))

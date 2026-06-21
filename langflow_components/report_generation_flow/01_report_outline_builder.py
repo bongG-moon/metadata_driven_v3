@@ -1,3 +1,7 @@
+# 파일 설명: 01 Report Outline Builder Langflow custom component 파일입니다.
+# 흐름 역할: 질문에서 리포트 제목, 형식, 포함할 section outline을 구성합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import re
@@ -12,6 +16,9 @@ from lfx.schema.data import Data
 DEFAULT_SECTIONS = ["요약", "주요 지표", "상세 근거", "권장 조치"]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 질문에서 리포트 제목, 형식, 포함할 section outline을 구성합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_report_outline(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     question = str((payload.get("request") or {}).get("question") or "")
@@ -62,13 +69,19 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
+# 컴포넌트 설명: 01 Report Outline Builder
+# Langflow 표시 설명: 질문에서 리포트 제목, 형식, 포함할 section outline을 구성합니다.
 class ReportOutlineBuilder(Component):
+
     display_name = "01 Report Outline Builder"
-    description = "Creates a report title, target format, and section outline."
+    description = "질문에서 리포트 제목, 형식, 포함할 section outline을 구성합니다."
     icon = "ListTree"
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 질문에서 리포트 제목, 형식, 포함할 section outline을 구성합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = build_report_outline(getattr(self, "payload", None))
         self.status = result.get("report", {})

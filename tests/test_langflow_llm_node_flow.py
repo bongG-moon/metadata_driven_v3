@@ -1202,7 +1202,7 @@ def test_intent_normalizer_applies_top_wip_product_oldest_lot_recipe(monkeypatch
     assert "IN_TAT" in jobs["lot_status"]["required_columns"]
 
 
-def test_intent_normalizer_adds_primary_quantity_to_equipment_columns(monkeypatch: Any) -> None:
+def test_intent_normalizer_adds_eqpid_primary_quantity_to_equipment_columns(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
@@ -1217,7 +1217,7 @@ def test_intent_normalizer_adds_primary_quantity_to_equipment_columns(monkeypatc
             {
                 "dataset_key": "equipment_status",
                 "source_alias": "equipment_data",
-                "required_columns": ["EQP_MODEL", "EQPID"],
+                "required_columns": ["EQP_MODEL"],
                 "filters": [{"field": "PKG_TYPE1", "op": "eq", "value": "HBM"}],
             }
         ],
@@ -1225,7 +1225,7 @@ def test_intent_normalizer_adds_primary_quantity_to_equipment_columns(monkeypatc
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
-    assert payload["retrieval_jobs"][0]["required_columns"] == ["EQP_MODEL", "EQPID", "PRESS_CNT"]
+    assert payload["retrieval_jobs"][0]["required_columns"] == ["EQP_MODEL", "EQPID"]
 
 
 def test_pandas_executor_normalizes_llm_result_column_names() -> None:

@@ -192,7 +192,6 @@ def run_domain_authoring_flow(raw_text: str, items: list[dict[str, Any]], monkey
         checked,
         json.dumps({"ready_to_save": True, "supplement_requests": []}, ensure_ascii=False),
         mongo_uri="mongodb://fake",
-        duplicate_action="merge",
     )
     return written, store
 
@@ -222,7 +221,6 @@ def run_table_authoring_flow(raw_text: str, items: list[dict[str, Any]], monkeyp
         checked,
         json.dumps({"ready_to_save": True, "supplement_requests": []}, ensure_ascii=False),
         mongo_uri="mongodb://fake",
-        duplicate_action="merge",
     )
     return written, store
 
@@ -252,12 +250,11 @@ def run_filter_authoring_flow(raw_text: str, items: list[dict[str, Any]], monkey
         checked,
         json.dumps({"ready_to_save": True, "supplement_requests": []}, ensure_ascii=False),
         mongo_uri="mongodb://fake",
-        duplicate_action="merge",
     )
     return written, store
 
 
-def test_domain_writer_duplicate_override_merge_resolves_review_blocker(monkeypatch: Any) -> None:
+def test_domain_writer_uses_payload_duplicate_decision_to_resolve_review_blocker(monkeypatch: Any) -> None:
     writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
     store = install_fake_mongo(monkeypatch, writer)
     store[("metadata_driven_agent_v3", "agent_v3_domain_items")] = {
@@ -279,7 +276,7 @@ def test_domain_writer_duplicate_override_merge_resolves_review_blocker(monkeypa
             }
         ],
         "duplicate_decision": {
-            "action": "ask",
+            "action": "merge",
             "requires_user_choice": True,
             "allowed_actions": ["merge", "replace", "skip", "create_new"],
         },
@@ -301,7 +298,6 @@ def test_domain_writer_duplicate_override_merge_resolves_review_blocker(monkeypa
         payload,
         json.dumps(review_json, ensure_ascii=False),
         mongo_uri="mongodb://fake",
-        duplicate_action="merge",
     )
 
     assert written["review"]["ready_to_save"] is True
@@ -312,6 +308,62 @@ def test_domain_writer_duplicate_override_merge_resolves_review_blocker(monkeypa
     assert written["write_result"]["saved_count"] == 1
     doc = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]["domain:product_terms:automotive"]
     assert doc["payload"]["aliases"] == ["AUTO향", "오토모티브향", "오토향"]
+
+
+def test_domain_writer_ignores_duplicate_message_request_when_action_is_resolved(monkeypatch: Any) -> None:
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    store = install_fake_mongo(monkeypatch, writer)
+    payload = {
+        "metadata_type": "domain",
+        "items": [
+            {
+                "section": "product_terms",
+                "key": "pop",
+                "status": "active",
+                "payload": {
+                    "display_name": "POP 제품",
+                    "aliases": ["POP 제품"],
+                    "condition": {"MODE": {"starts_with": "LP"}},
+                },
+                "confidence": "high",
+            }
+        ],
+        "duplicate_decision": {
+            "action": "replace",
+            "requires_user_choice": False,
+            "allowed_actions": ["merge", "replace", "skip", "create_new"],
+            "message": "",
+        },
+        "existing_matches": [],
+        "conflict_warnings": [],
+        "errors": [],
+    }
+    review_json = {
+        "ready_to_save": False,
+        "summary": "저장 보류 중: 중복 처리 결정에 대한 설명이 필요합니다.",
+        "supplement_requests": [
+            {
+                "field": "duplicate_decision.message",
+                "reason": "기존 항목을 어떻게 처리할지에 대한 설명 메시지가 비어 있습니다.",
+                "example_user_input": "기존 POP 제품을 새 정의로 교체합니다.",
+            }
+        ],
+        "item_reviews": [{"section": "product_terms", "key": "pop", "decision": "pass"}],
+    }
+
+    written = writer.review_and_write_domain_payload(
+        payload,
+        json.dumps(review_json, ensure_ascii=False),
+        mongo_uri="mongodb://fake",
+    )
+
+    assert written["review"]["ready_to_save"] is True
+    assert written["review"]["supplement_requests"] == []
+    assert written["duplicate_decision"]["action"] == "replace"
+    assert written["write_result"]["status"] == "ok"
+    assert written["write_result"]["saved_count"] == 1
+    doc = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]["domain:product_terms:pop"]
+    assert doc["payload"]["display_name"] == "POP 제품"
 
 
 def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeypatch: Any) -> None:
@@ -423,6 +475,8 @@ def test_worker_bulk_table_text_input_saves_all_current_datasets(monkeypatch: An
     assert docs["table_catalog:target"]["payload"]["standard_column_aliases"]["OUT_PLAN"] == ["OUT계획", "TARGET"]
     assert docs["table_catalog:equipment_status"]["payload"]["filter_mappings"]["MCP_NO"] == ["MCPSALENO", "MCP_NO"]
     assert docs["table_catalog:equipment_status"]["payload"]["standard_column_aliases"]["MCP_NO"] == ["MCPSALENO"]
+    assert docs["table_catalog:equipment_status"]["payload"]["primary_quantity_column"] == "EQPID"
+    assert "PRESS_CNT" not in docs["table_catalog:equipment_status"]["payload"]["default_detail_columns"]
 
 
 def test_worker_single_table_text_input_saves_hold_history(monkeypatch: Any) -> None:

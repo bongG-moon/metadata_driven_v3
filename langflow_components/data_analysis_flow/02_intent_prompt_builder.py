@@ -1,3 +1,7 @@
+# 파일 설명: 02 Intent Prompt Builder Langflow custom component 파일입니다.
+# 흐름 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -31,6 +35,9 @@ SUPPORTED_ANALYSIS_KINDS = [
 ]
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     if _direct_response_ready(payload):
@@ -299,19 +306,29 @@ def _direct_response_ready(payload: dict[str, Any]) -> bool:
     return bool(payload.get("direct_response_ready"))
 
 
+# 컴포넌트 설명: 02 Intent Prompt Builder
+# Langflow 표시 설명: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
 class IntentPromptBuilder(Component):
+
     display_name = "02 Intent Prompt Builder"
-    description = "Builds the prompt that should be sent to the Langflow Gemini/LLM node for intent planning."
+    description = "질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [
         Output(name="intent_prompt", display_name="Intent Prompt", method="build_prompt"),
         Output(name="prompt_payload", display_name="Prompt Payload", method="build_prompt_payload"),
     ]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
         prompt_payload = build_intent_prompt_payload(getattr(self, "payload", None))
+
         self.status = {"prompt_type": prompt_payload.get("prompt_type", "intent"), "chars": len(prompt_payload["prompt"])}
         return Message(text=prompt_payload["prompt"])
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt_payload(self) -> Data:
         return Data(data=build_intent_prompt_payload(getattr(self, "payload", None)))

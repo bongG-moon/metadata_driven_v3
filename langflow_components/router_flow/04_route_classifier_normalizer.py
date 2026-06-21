@@ -1,3 +1,7 @@
+# 파일 설명: 04 Route Classifier Normalizer Langflow custom component 파일입니다.
+# 흐름 역할: 선택적 route LLM 응답을 정규화해 metadata QA, data analysis, report, diagnosis 중 하나로 확정합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -11,11 +15,21 @@ from lfx.schema.data import Data
 
 
 ALLOWED_ROUTES = {"direct_answer", "metadata_qa", "data_analysis", "report_generation", "operations_diagnosis"}
+FLOW_BY_ROUTE = {
+    "direct_answer": "metadata_qa_flow",
+    "metadata_qa": "metadata_qa_flow",
+    "data_analysis": "data_analysis_flow",
+    "report_generation": "report_generation_flow",
+    "operations_diagnosis": "operations_diagnosis_flow",
+}
 DIRECT_ACTIONS = {"greeting", "help"}
 METADATA_ACTIONS = {"catalog_list", "dataset_examples", "dataset_detail", "dataset_query", "domain_search"}
 ALL_ACTIONS = DIRECT_ACTIONS | METADATA_ACTIONS
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 선택적 route LLM 응답을 정규화해 metadata QA, data analysis, report, diagnosis 중 하나로 확정합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def normalize_route_classifier_payload(payload_value: Any, llm_response_value: Any = "") -> dict[str, Any]:
     payload = _payload(payload_value)
     metadata_route = deepcopy(payload.get("metadata_route")) if isinstance(payload.get("metadata_route"), dict) else {}
@@ -112,11 +126,17 @@ def _normalize_llm_route(
     confidence = str(llm_json.get("confidence") or "medium").strip().lower()
     if confidence not in {"high", "medium", "low"}:
         confidence = "medium"
+    selected_flow = _clean(llm_json.get("selected_flow")) or _clean(rule_route.get("selected_flow")) or FLOW_BY_ROUTE.get(route, "")
+    api_url = _clean(llm_json.get("api_url") or llm_json.get("target_api_url") or rule_route.get("api_url"))
+    flow_id = _clean(llm_json.get("flow_id") or rule_route.get("flow_id"))
 
     normalized = deepcopy(rule_route)
     normalized.update(
         {
             "route": route,
+            "selected_flow": selected_flow,
+            "api_url": api_url,
+            "flow_id": flow_id,
             "metadata_action": action,
             "metadata_question_type": action if route == "metadata_qa" else "",
             "target_dataset": target_dataset,
@@ -201,6 +221,15 @@ def _normalize(text: Any) -> str:
     return re.sub(r"[\s\-_/.]+", "", str(text or "").lower())
 
 
+def _clean(value: Any) -> str:
+    text = str(value or "").strip()
+    if text.lower() in {"none", "null", "n/a", "na"}:
+        return ""
+    if text.startswith("<") and text.endswith(">"):
+        return ""
+    return text
+
+
 def _payload(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return deepcopy(value)
@@ -220,9 +249,12 @@ def _text(value: Any) -> str:
     return str(value or "")
 
 
+# 컴포넌트 설명: 04 Route Classifier Normalizer
+# Langflow 표시 설명: 선택적 route LLM 응답을 정규화해 metadata QA, data analysis, report, diagnosis 중 하나로 확정합니다.
 class RouteClassifierNormalizer(Component):
+
     display_name = "04 Route Classifier Normalizer"
-    description = "Normalizes the optional lightweight LLM route decision before metadata QA or data analysis."
+    description = "선택적 route LLM 응답을 정규화해 metadata QA, data analysis, report, diagnosis 중 하나로 확정합니다."
     icon = "Route"
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
@@ -230,7 +262,11 @@ class RouteClassifierNormalizer(Component):
     ]
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 선택적 route LLM 응답을 정규화해 metadata QA, data analysis, report, diagnosis 중 하나로 확정합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
+
         result = normalize_route_classifier_payload(getattr(self, "payload", None), getattr(self, "llm_response", ""))
         route = result.get("metadata_route", {}) if isinstance(result, dict) else {}
         self.status = {
@@ -240,5 +276,3 @@ class RouteClassifierNormalizer(Component):
             "llm_used": route.get("route_llm_used", False),
         }
         return Data(data=result)
-
-

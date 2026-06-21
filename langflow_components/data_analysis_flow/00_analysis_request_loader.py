@@ -1,3 +1,7 @@
+# 파일 설명: 00 Analysis Request Loader Langflow custom component 파일입니다.
+# 흐름 역할: 채팅 또는 Text 입력, session_id, 이전 state를 합쳐 데이터 분석 flow가 사용할 compact request payload를 만듭니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -13,6 +17,9 @@ from lfx.schema.data import Data
 DEFAULT_STATE_PREVIEW_LIMIT = 5
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 채팅 또는 Text 입력, session_id, 이전 state를 합쳐 데이터 분석 flow가 사용할 compact request payload를 만듭니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_request_payload(
     question: str,
     session_id: str = "",
@@ -191,17 +198,24 @@ def _text_value(value: Any) -> str:
 
 
 
+# 컴포넌트 설명: 00 Analysis Request Loader
+# Langflow 표시 설명: 채팅 또는 Text 입력, session_id, 이전 state를 합쳐 데이터 분석 flow가 사용할 compact request payload를 만듭니다.
 class RequestStateLoader(Component):
+
     display_name = "00 Analysis Request Loader"
-    description = "Builds the compact request payload from chat input and previous state."
+    description = "채팅 또는 Text 입력, session_id, 이전 state를 합쳐 데이터 분석 flow가 사용할 compact request payload를 만듭니다."
     inputs = [
         MessageTextInput(name="question", display_name="Question", required=False),
         DataInput(name="state", display_name="Previous State", required=False),
     ]
     outputs = [Output(name="payload", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 채팅 또는 Text 입력, session_id, 이전 state를 합쳐 데이터 분석 flow가 사용할 compact request payload를 만듭니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         state = getattr(self.state, "data", self.state) if getattr(self, "state", None) else None
+
         payload = build_request_payload(
             getattr(self, "question", ""),
             state=state,

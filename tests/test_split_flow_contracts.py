@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -27,18 +28,18 @@ def test_split_flow_folders_have_expected_numbered_files() -> None:
             "00_router_request_loader.py",
             "01_metadata_context_loader.py",
             "02_route_candidate_builder.py",
-            "03_route_classifier_prompt_builder.py",
+            "03a_route_prompt_context_builder.py",
             "04_route_classifier_normalizer.py",
             "05_orchestrator_response_builder.py",
-            "06_run_flow_text_switch.py",
-            "07_selected_run_flow_message_merger.py",
+            "06_selected_flow_api_runner.py",
         ],
         "metadata_qa_flow": [
             "00_metadata_qa_request_loader.py",
             "01_metadata_context_loader.py",
-            "02_metadata_qa_response_builder.py",
-            "03_metadata_qa_message_adapter.py",
-            "04_metadata_qa_api_response_builder.py",
+            "02_metadata_qa_prompt_builder.py",
+            "03_metadata_qa_response_builder.py",
+            "04_metadata_qa_message_adapter.py",
+            "05_metadata_qa_api_response_builder.py",
         ],
         "data_analysis_flow": [
             "00_analysis_request_loader.py",
@@ -76,6 +77,8 @@ def test_split_flow_folders_have_expected_numbered_files() -> None:
             "01_diagnosis_signal_collector.py",
             "02_diagnosis_rule_evaluator.py",
             "03_diagnosis_response_builder.py",
+            "04_diagnosis_message_adapter.py",
+            "05_diagnosis_api_response_builder.py",
         ],
         "session_state_flow": [
             "00_mongodb_session_state_loader.py",
@@ -85,6 +88,26 @@ def test_split_flow_folders_have_expected_numbered_files() -> None:
     for folder, files in expected.items():
         actual = [path.name for path in sorted((ROOT / "langflow_components" / folder).glob("*.py"))]
         assert actual == files
+
+
+def test_route_prompt_template_uses_only_one_langflow_variable() -> None:
+    template_paths = [
+        ROOT / "langflow_components" / "router_flow" / "ROUTE_CLASSIFIER_PROMPT_TEMPLATE.md",
+        ROOT / "langflow_components" / "router_flow" / "ROUTE_CLASSIFIER_PROMPT_TEMPLATE_KO.md",
+    ]
+
+    for template_path in template_paths:
+        template = template_path.read_text(encoding="utf-8")
+        variables = set(re.findall(r"(?<!\{)\{([^{}]+)\}(?!\})", template))
+
+        assert variables == {"route_prompt_context"}
+        assert '"route":' not in template
+
+
+def test_route_prompt_context_builder_exposes_one_output() -> None:
+    prompt_context_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
+
+    assert [item.name for item in prompt_context_builder.RoutePromptContextBuilder.outputs] == ["route_prompt_context"]
 
 
 def test_router_flow_maps_routes_to_selected_subflows() -> None:
@@ -109,56 +132,288 @@ def test_router_flow_maps_routes_to_selected_subflows() -> None:
         response = orchestrator.build_orchestrator_response(classified)
         assert response["selected_flow"] == selected_flow
         assert response["request"]["question"] == "make an operations diagnosis"
+        assert response["subflow_call"]["selected_flow"] == selected_flow
+        assert response["subflow_call"]["input_value"] == "make an operations diagnosis"
+        assert response["subflow_call"]["session_id"] == "s1"
 
 
-def test_run_flow_text_switch_outputs_question_for_selected_flow_only() -> None:
-    text_switch = load_component("langflow_components/router_flow/06_run_flow_text_switch.py")
-    route_response = {
-        "selected_flow": "report_generation_flow",
-        "request": {"question": "방금 결과로 리포트 만들어줘", "session_id": "s1"},
+def test_router_flow_can_take_api_url_from_prompt_template_response() -> None:
+    normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
+    orchestrator = load_component("langflow_components/router_flow/05_orchestrator_response_builder.py")
+    payload = {
+        "request": {"question": "현재 조회 가능한 데이터 알려줘", "session_id": "s1"},
+        "metadata_route": {"route": "metadata_qa", "route_llm_required": True},
     }
 
-    selected = text_switch.run_flow_text_payload(route_response, "report_generation_flow")
-    skipped = text_switch.run_flow_text_payload(route_response, "data_analysis_flow")
+    classified = normalizer.normalize_route_classifier_payload(
+        payload,
+        json.dumps(
+            {
+                "route": "metadata_qa",
+                "selected_flow": "metadata_qa_flow",
+                "api_url": "http://localhost:7860/api/v1/run/metadata-flow",
+                "metadata_action": "catalog_list",
+                "confidence": "high",
+                "reason": "Catalog question.",
+            }
+        ),
+    )
+    response = orchestrator.build_orchestrator_response(classified)
 
-    assert selected == {
-        "selected": True,
-        "selected_flow": "report_generation_flow",
-        "target_flow": "report_generation_flow",
-        "question": "방금 결과로 리포트 만들어줘",
-    }
-    assert skipped["selected"] is False
-    assert skipped["question"] == "방금 결과로 리포트 만들어줘"
+    assert classified["metadata_route"]["api_url"] == "http://localhost:7860/api/v1/run/metadata-flow"
+    assert response["selected_flow"] == "metadata_qa_flow"
+    assert response["subflow_call"]["api_url"] == "http://localhost:7860/api/v1/run/metadata-flow"
 
 
-def test_selected_run_flow_message_merger_returns_only_selected_output() -> None:
-    merger = load_component("langflow_components/router_flow/07_selected_run_flow_message_merger.py")
-    route_response = {"selected_flow": "data_analysis_flow", "route": "data_analysis"}
+def test_orchestrator_response_builds_subflow_call_from_env(monkeypatch: Any) -> None:
+    orchestrator = load_component("langflow_components/router_flow/05_orchestrator_response_builder.py")
+    monkeypatch.delenv("LANGFLOW_SUBFLOW_INPUT_TYPE", raising=False)
+    monkeypatch.delenv("LANGFLOW_INPUT_TYPE", raising=False)
+    monkeypatch.delenv("LANGFLOW_SUBFLOW_OUTPUT_TYPE", raising=False)
+    monkeypatch.delenv("LANGFLOW_OUTPUT_TYPE", raising=False)
+    monkeypatch.setenv("LANGFLOW_BASE_URL", "http://localhost:7860")
+    monkeypatch.setenv("LANGFLOW_METADATA_QA_FLOW_ID", "metadata-flow-id")
 
-    result = merger.selected_run_flow_message(
-        route_response,
-        metadata_qa_output="metadata answer",
-        data_analysis_output=SimpleNamespace(text="analysis answer"),
-        report_generation_output="report answer",
-        operations_diagnosis_output="diagnosis answer",
+    response = orchestrator.build_orchestrator_response(
+        {
+            "request": {"question": "공정 그룹관련해서 등록된 도메인정보들 알려줘", "session_id": "s1"},
+            "metadata_route": {"route": "metadata_qa", "confidence": "high"},
+        }
     )
 
-    assert result == {
-        "selected_flow": "data_analysis_flow",
-        "message": "analysis answer",
-        "has_selected_output": True,
+    assert response["api_url"] == "http://localhost:7860/api/v1/run/metadata-flow-id"
+    assert response["subflow_call"] == {
+        "selected_flow": "metadata_qa_flow",
+        "api_url": "http://localhost:7860/api/v1/run/metadata-flow-id",
+        "api_url_env": "LANGFLOW_METADATA_QA_API_URL",
+        "flow_id_env": "LANGFLOW_METADATA_QA_FLOW_ID",
+        "prompt": "공정 그룹관련해서 등록된 도메인정보들 알려줘",
+        "input_value": "공정 그룹관련해서 등록된 도메인정보들 알려줘",
+        "input_type": "chat",
+        "output_type": "chat",
+        "session_id": "s1",
     }
 
 
-def test_selected_run_flow_message_merger_extracts_text_from_nested_payload() -> None:
-    merger = load_component("langflow_components/router_flow/07_selected_run_flow_message_merger.py")
-    route_response = {"selected_flow": "metadata_qa_flow", "route": "metadata_qa"}
-    run_output = {"api_response": {"answer_message": "metadata nested answer"}}
+def test_selected_flow_api_runner_calls_only_selected_flow() -> None:
+    runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
+    route_response = {
+        "selected_flow": "metadata_qa_flow",
+        "request": {"question": "공정 그룹관련해서 등록된 도메인정보들 알려줘", "session_id": "s1"},
+        "subflow_call": {
+            "selected_flow": "metadata_qa_flow",
+            "api_url": "http://127.0.0.1:7860/api/v1/run/metadata-flow",
+            "input_value": "공정 그룹관련해서 등록된 도메인정보들 알려줘",
+            "input_type": "chat",
+            "output_type": "chat",
+            "session_id": "s1",
+        },
+    }
+    calls: list[dict[str, Any]] = []
 
-    result = merger.selected_run_flow_message(route_response, metadata_qa_output=run_output)
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
 
+        def json(self) -> dict[str, Any]:
+            return {"api_response": {"answer_message": "metadata answer"}}
+
+    def fake_post(url: str, json: dict[str, Any], headers: dict[str, str], timeout: int) -> FakeResponse:
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    result = runner.run_selected_flow_api(
+        route_response,
+        timeout_seconds="33",
+        post_func=fake_post,
+    )
+
+    assert result["status"] == "ok"
+    assert result["selected_flow"] == "metadata_qa_flow"
+    assert result["message"] == "metadata answer"
+    assert len(calls) == 1
+    assert calls[0]["url"].endswith("/metadata-flow")
+    assert calls[0]["json"] == {
+        "input_value": "공정 그룹관련해서 등록된 도메인정보들 알려줘",
+        "input_type": "chat",
+        "output_type": "chat",
+        "session_id": "s1",
+    }
+    assert calls[0]["timeout"] == 33
+
+
+def test_selected_flow_api_runner_builds_url_from_base_and_flow_id(monkeypatch: Any) -> None:
+    runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
+    monkeypatch.setenv("LANGFLOW_BASE_URL", "http://localhost:7860/")
+    monkeypatch.setenv("LANGFLOW_METADATA_QA_FLOW_ID", "metadata-flow-id")
+    route_response = {
+        "selected_flow": "metadata_qa_flow",
+        "flow_id_env": "LANGFLOW_METADATA_QA_FLOW_ID",
+        "request": {"question": "등록된 데이터 알려줘", "session_id": "s1"},
+    }
+
+    call = runner.build_selected_flow_api_call(route_response)
+
+    assert call["api_url"] == "http://localhost:7860/api/v1/run/metadata-flow-id"
+    assert call["request"]["input_value"] == "등록된 데이터 알려줘"
+
+
+def test_selected_flow_api_runner_prefers_subflow_call() -> None:
+    runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
+    route_response = {
+        "selected_flow": "data_analysis_flow",
+        "request": {"question": "fallback question", "session_id": "fallback-session"},
+        "subflow_call": {
+            "selected_flow": "metadata_qa_flow",
+            "api_url": "http://localhost:7860/api/v1/run/metadata-flow",
+            "input_value": "등록된 메타데이터 알려줘",
+            "input_type": "chat",
+            "output_type": "chat",
+            "session_id": "s1",
+        },
+    }
+    calls: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {"message": "metadata answer"}
+
+    def fake_post(url: str, json: dict[str, Any], headers: dict[str, str], timeout: int) -> FakeResponse:
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return FakeResponse()
+
+    result = runner.run_selected_flow_api(route_response, post_func=fake_post)
+
+    assert result["status"] == "ok"
+    assert result["selected_flow"] == "metadata_qa_flow"
+    assert result["message"] == "metadata answer"
+    assert calls == [
+        {
+            "url": "http://localhost:7860/api/v1/run/metadata-flow",
+            "json": {
+                "input_value": "등록된 메타데이터 알려줘",
+                "input_type": "chat",
+                "output_type": "chat",
+                "session_id": "s1",
+            },
+            "headers": {"Content-Type": "application/json"},
+            "timeout": 180,
+        }
+    ]
+
+
+def test_selected_flow_api_runner_extracts_nested_langflow_message() -> None:
+    runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
+    route_response = {
+        "selected_flow": "metadata_qa_flow",
+        "request": {"question": "등록된 데이터 알려줘", "session_id": "s1"},
+        "subflow_call": {
+            "selected_flow": "metadata_qa_flow",
+            "api_url": "http://localhost:7860/api/v1/run/metadata-flow",
+            "input_value": "등록된 데이터 알려줘",
+            "input_type": "chat",
+            "output_type": "chat",
+            "session_id": "s1",
+        },
+    }
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, Any]:
+            return {
+                "outputs": [
+                    {
+                        "outputs": [
+                            {
+                                "results": {
+                                    "message": {
+                                        "data": {
+                                            "text": "metadata nested answer",
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+
+    result = runner.run_selected_flow_api(route_response, post_func=lambda *args, **kwargs: FakeResponse())
+
+    assert result["status"] == "ok"
     assert result["message"] == "metadata nested answer"
-    assert result["has_selected_output"] is True
+
+
+def test_selected_flow_api_runner_accepts_flow_id_from_route_response_api_url(monkeypatch: Any) -> None:
+    runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
+    monkeypatch.setenv("LANGFLOW_BASE_URL", "http://localhost:7860")
+    route_response = {
+        "selected_flow": "metadata_qa_flow",
+        "api_url": "a4ea11e1-18d2-44e4-9f7a-d149cfeb0c54",
+        "request": {"question": "등록된 데이터 알려줘", "session_id": "s1"},
+    }
+
+    call = runner.build_selected_flow_api_call(route_response)
+
+    assert call["api_url"] == "http://localhost:7860/api/v1/run/a4ea11e1-18d2-44e4-9f7a-d149cfeb0c54"
+
+
+def test_selected_flow_api_runner_exposes_no_api_url_inputs() -> None:
+    runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
+
+    assert [item.name for item in runner.SelectedFlowApiRunner.inputs] == ["route_response", "api_key", "timeout_seconds"]
+
+
+def test_api_response_builders_expose_only_data_output() -> None:
+    analysis_api_builder = load_component("langflow_components/data_analysis_flow/21_api_response_builder.py")
+    metadata_api_builder = load_component("langflow_components/metadata_qa_flow/05_metadata_qa_api_response_builder.py")
+
+    assert [item.name for item in analysis_api_builder.MainFlowApiResponseBuilder.outputs] == ["api_response"]
+    assert [item.name for item in metadata_api_builder.MainFlowApiResponseBuilder.outputs] == ["api_response"]
+
+
+def test_diagnosis_response_flow_splits_payload_message_and_api_outputs() -> None:
+    diagnosis_builder = load_component("langflow_components/operations_diagnosis_flow/03_diagnosis_response_builder.py")
+    message_adapter = load_component("langflow_components/operations_diagnosis_flow/04_diagnosis_message_adapter.py")
+    api_builder = load_component("langflow_components/operations_diagnosis_flow/05_diagnosis_api_response_builder.py")
+
+    assert [item.name for item in diagnosis_builder.DiagnosisResponseBuilder.outputs] == ["payload_out"]
+    assert [item.name for item in message_adapter.DiagnosisMessageAdapter.outputs] == ["message"]
+    assert [item.name for item in api_builder.DiagnosisApiResponseBuilder.outputs] == ["api_response"]
+
+    payload = diagnosis_builder.build_diagnosis_response(
+        {
+            "diagnosis": {
+                "findings": [
+                    {"signal": "wip_accumulation", "severity": "warning", "recommendation": "WB 공정 병목 여부를 확인하세요."},
+                    {
+                        "signal": "previous_result_available",
+                        "severity": "info",
+                        "recommendation": "이전 분석 결과를 조건으로 삼아 필요한 추가 source만 조회합니다.",
+                    },
+                ]
+            },
+            "state": {"current_data": {"row_count": 5}},
+        }
+    )
+    message = message_adapter.build_diagnosis_playground_message(payload)
+    api_response = api_builder.build_diagnosis_api_response(payload)["api_response"]
+
+    assert "### 운영 진단 리포트" in message
+    assert "#### 요약" in message
+    assert "#### 관찰 신호" in message
+    assert "#### 권장 확인 순서" in message
+    assert "[주의] 재공 증가 가능성" in message
+    assert "[참고] 이전 분석 결과 활용 가능" in message
+    assert "previous_result_available" not in message
+    assert "| signal |" not in message
+    assert api_response["response_type"] == "operations_diagnosis"
+    assert api_response["row_count"] == 2
 
 
 def test_request_loaders_inherit_session_id_from_state() -> None:

@@ -23,11 +23,12 @@ or another conditional block. The code can be standalone without sibling imports
 
 The recommended Langflow shape is now a routed split flow with independently runnable subflows:
 
-1. `router_flow/` classifies the user request and sends text to exactly one selected Run Flow branch.
-2. A main Langflow canvas uses `06 Run Flow Text Switch` plus Run Flow to call one of `metadata_qa_flow/`, `data_analysis_flow/`, `report_generation_flow/`, or `operations_diagnosis_flow/`.
-3. `07 Selected Run Flow Message Merger` passes only the selected Run Flow message to the single Chat Output.
-4. Each subflow should remain runnable on its own with one Chat Input and one Chat Output.
-5. The old combined `main_flow/` canvas has been removed; new wiring should use the split flows directly.
+1. `router_flow/` classifies the user request and produces `selected_flow`.
+2. `05 Orchestrator Response Builder` packages the selected subflow API call as `subflow_call.api_url + subflow_call.input_value`.
+3. A direct Langflow router canvas uses `06 Selected Flow API Runner` to call exactly one selected subflow API.
+4. `06 Selected Flow API Runner.Message` goes to the single Chat Output.
+5. Each subflow should remain runnable on its own with one Chat Input and one Chat Output.
+6. The old combined `main_flow/` canvas has been removed; new wiring should use the split flows directly.
 
 This keeps metadata/help/catalog questions out of the heavy data-analysis path and makes future request types additive.
 
@@ -45,24 +46,28 @@ This keeps metadata/help/catalog questions out of the heavy data-analysis path a
 
 Detailed wiring guides now live with each flow folder:
 
-- `../docs/ROUTED_RUN_FLOW_SESSION_WIRING_GUIDE.md` for the full router + Run Flow + session-state wiring
+- `../docs/ROUTED_RUN_FLOW_SESSION_WIRING_GUIDE.md` for the full router + selected subflow + session-state wiring
 - `router_flow/CONNECTION_GUIDE.md`
 - `metadata_qa_flow/CONNECTION_GUIDE.md`
 - `data_analysis_flow/CONNECTION_GUIDE.md`
 - `report_generation_flow/CONNECTION_GUIDE.md`
+- `report_generation_flow/example_questions.md`
 - `operations_diagnosis_flow/CONNECTION_GUIDE.md`
+- `operations_diagnosis_flow/example_questions.md`
 - `domain_authoring_flow/CONNECTION_GUIDE.md`
 - `table_catalog_authoring_flow/CONNECTION_GUIDE.md`
 - `main_flow_filters_authoring_flow/CONNECTION_GUIDE.md`
 
+`report_generation_flow` and `operations_diagnosis_flow` examples are written as E2E business requests. They should look like complete report/diagnosis tasks, not only follow-up prompts such as "방금 결과로 ...".
+
 ## Split Runtime LLM Node Pattern
 
-Start with `router_flow/`, then call the selected subflow through Run Flow. Data-analysis questions use `data_analysis_flow/`.
+Start with `router_flow/`, then call the selected subflow through `06 Selected Flow API Runner` or the web backend's second API call. Data-analysis questions use `data_analysis_flow/`.
 
 Use Langflow's Gemini/LLM nodes for the actual reasoning calls:
 
-1. `router_flow/00~07` classify the request, pass the original question text to one selected Run Flow, and pass only the selected Run Flow message to Chat Output; call a small Gemini/LLM route classifier only when `route_llm_required=true`.
-2. `router_flow/04 Route Classifier Normalizer -> 05 Orchestrator Response Builder -> 06 Run Flow Text Switch -> selected Run Flow -> 07 Selected Run Flow Message Merger`.
+1. `router_flow/00~05` classify the request and produce one `selected_flow`; use `03A Route Prompt Context Builder` plus a built-in Prompt Template where the route/API catalog can be edited directly.
+2. `router_flow/04 Route Classifier Normalizer -> 05 Orchestrator Response Builder -> 06 Selected Flow API Runner -> Chat Output`.
 3. For metadata questions, call `metadata_qa_flow/`.
 4. For analysis questions, call `data_analysis_flow/02 Intent Prompt Builder -> Gemini/LLM -> 03 Intent Plan Normalizer`.
 5. `data_analysis_flow/07~12` retriever/merger nodes -> `13 Retrieval Payload Adapter`.
@@ -74,9 +79,6 @@ Use Langflow's Gemini/LLM nodes for the actual reasoning calls:
 The final adapter formats one playground-friendly Markdown message from the existing final payload.
 It includes the answer, result table, intent summary, retrieval/step plan summary, pandas execution
 status, and generated pandas code without adding another payload branch.
-
-The deterministic files under `demo_flow/` are fallback examples for local checks. They are not the
-recommended production Langflow path.
 
 ## Metadata Authoring Flow Pattern
 

@@ -1,8 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
-from web_app.langflow_client import normalize_authoring_response, normalize_query_response
+from web_app.langflow_client import (
+    LangflowSettings,
+    build_authoring_node_input_settings,
+    normalize_authoring_response,
+    normalize_query_response,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_normalize_query_response_accepts_current_api_response_shape() -> None:
@@ -10,26 +20,23 @@ def test_normalize_query_response_accepts_current_api_response_shape() -> None:
         "outputs": [
             {
                 "results": {
-                    "api_message": {
-                        "text": json.dumps(
-                            {
-                                "api_response": {
-                                    "status": "ok",
-                                    "answer_message": "현재 DA 재공 상위 제품입니다.",
-                                    "data": {
-                                        "columns": ["PRODUCT", "WIP"],
-                                        "rows": [{"PRODUCT": "A", "WIP": 50}],
-                                        "row_count": 5,
-                                        "data_ref": {"store": "mongodb", "ref_id": "result-1"},
-                                    },
-                                    "applied_scope": {"datasets": ["wip_today"]},
-                                    "intent": {"intent_type": "single_source_analysis"},
-                                    "analysis": {"analysis_code": "result_df = df.head()"},
-                                    "state": {"current_data": {"data_ref": {"ref_id": "result-1"}}},
-                                }
-                            },
-                            ensure_ascii=False,
-                        )
+                    "api_response": {
+                        "data": {
+                            "api_response": {
+                                "status": "ok",
+                                "answer_message": "현재 DA 재공 상위 제품입니다.",
+                                "data": {
+                                    "columns": ["PRODUCT", "WIP"],
+                                    "rows": [{"PRODUCT": "A", "WIP": 50}],
+                                    "row_count": 5,
+                                    "data_ref": {"store": "mongodb", "ref_id": "result-1"},
+                                },
+                                "applied_scope": {"datasets": ["wip_today"]},
+                                "intent": {"intent_type": "single_source_analysis"},
+                                "analysis": {"analysis_code": "result_df = df.head()"},
+                                "state": {"current_data": {"data_ref": {"ref_id": "result-1"}}},
+                            }
+                        }
                     }
                 }
             }
@@ -163,3 +170,96 @@ def test_normalize_authoring_response_accepts_legacy_trace_list() -> None:
     assert result["ui_status"] == "saved"
     assert result["trace"]["raw_text"] == "wip_today"
     assert result["trace"]["stages"][1]["refined_text"] == "wip_today dataset"
+
+
+def test_env_example_contains_langflow_web_api_settings() -> None:
+    keys = {
+        line.split("=", 1)[0].strip()
+        for line in (ROOT / ".env.example").read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.lstrip().startswith("#")
+    }
+
+    assert {
+        "LANGFLOW_BASE_URL",
+        "LANGFLOW_API_KEY",
+        "LANGFLOW_INPUT_TYPE",
+        "LANGFLOW_OUTPUT_TYPE",
+        "LANGFLOW_TIMEOUT_SECONDS",
+        "LANGFLOW_ROUTER_FLOW_ID",
+        "LANGFLOW_ROUTER_API_URL",
+        "LANGFLOW_METADATA_QA_FLOW_ID",
+        "LANGFLOW_METADATA_QA_API_URL",
+        "LANGFLOW_DATA_ANALYSIS_FLOW_ID",
+        "LANGFLOW_DATA_ANALYSIS_API_URL",
+        "LANGFLOW_REPORT_GENERATION_FLOW_ID",
+        "LANGFLOW_REPORT_GENERATION_API_URL",
+        "LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID",
+        "LANGFLOW_OPERATIONS_DIAGNOSIS_API_URL",
+        "LANGFLOW_DOMAIN_AUTHORING_FLOW_ID",
+        "LANGFLOW_DOMAIN_AUTHORING_API_URL",
+        "LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID",
+        "LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL",
+        "LANGFLOW_MAIN_FILTER_AUTHORING_FLOW_ID",
+        "LANGFLOW_MAIN_FILTER_AUTHORING_API_URL",
+        "RUN_LANGFLOW_API_VALIDATION",
+    } <= keys
+
+
+def test_langflow_settings_builds_urls_from_base_url_and_flow_ids(monkeypatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("LANGFLOW_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("LANGFLOW_BASE_URL", "http://127.0.0.1:7860")
+    monkeypatch.setenv("LANGFLOW_ROUTER_FLOW_ID", "router-id")
+    monkeypatch.setenv("LANGFLOW_METADATA_QA_FLOW_ID", "metadata-id")
+    monkeypatch.setenv("LANGFLOW_DATA_ANALYSIS_FLOW_ID", "analysis-id")
+    monkeypatch.setenv("LANGFLOW_REPORT_GENERATION_FLOW_ID", "report-id")
+    monkeypatch.setenv("LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID", "diagnosis-id")
+    monkeypatch.setenv("LANGFLOW_DOMAIN_AUTHORING_FLOW_ID", "domain-id")
+    monkeypatch.setenv("LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID", "table-id")
+    monkeypatch.setenv("LANGFLOW_MAIN_FILTER_AUTHORING_FLOW_ID", "filter-id")
+
+    settings = LangflowSettings.from_env()
+
+    assert settings.router_api_url == "http://127.0.0.1:7860/api/v1/run/router-id"
+    assert settings.metadata_qa_api_url == "http://127.0.0.1:7860/api/v1/run/metadata-id"
+    assert settings.data_analysis_api_url == "http://127.0.0.1:7860/api/v1/run/analysis-id"
+    assert settings.report_generation_api_url == "http://127.0.0.1:7860/api/v1/run/report-id"
+    assert settings.operations_diagnosis_api_url == "http://127.0.0.1:7860/api/v1/run/diagnosis-id"
+    assert settings.domain_authoring_api_url == "http://127.0.0.1:7860/api/v1/run/domain-id"
+    assert settings.table_catalog_authoring_api_url == "http://127.0.0.1:7860/api/v1/run/table-id"
+    assert settings.main_flow_filter_authoring_api_url == "http://127.0.0.1:7860/api/v1/run/filter-id"
+
+
+def test_authoring_settings_do_not_send_duplicate_action_to_writers(monkeypatch) -> None:
+    monkeypatch.delenv("MONGODB_DOMAIN_COLLECTION", raising=False)
+    monkeypatch.delenv("MONGODB_TABLE_CATALOG_COLLECTION", raising=False)
+    monkeypatch.delenv("MONGODB_MAIN_FLOW_FILTER_COLLECTION", raising=False)
+
+    expected = {
+        "domain": (
+            "00 Domain Authoring Request Loader",
+            "05 Domain Similarity Checker",
+            "07 Domain Review Writer",
+            "agent_v3_domain_items",
+        ),
+        "table_catalog": (
+            "00 Table Catalog Authoring Request Loader",
+            "05 Table Catalog Similarity Checker",
+            "07 Table Catalog Review Writer",
+            "agent_v3_table_catalog_items",
+        ),
+        "main_flow_filter": (
+            "00 Main Flow Filter Authoring Request Loader",
+            "05 Main Flow Filter Similarity Checker",
+            "07 Main Flow Filter Review Writer",
+            "agent_v3_main_flow_filters",
+        ),
+    }
+
+    for metadata_type, (request_loader, similarity_checker, writer, collection_name) in expected.items():
+        settings = build_authoring_node_input_settings(metadata_type, "merge")
+
+        assert settings[request_loader]["duplicate_action"] == "merge"
+        assert settings[similarity_checker]["duplicate_action"] == "merge"
+        assert settings[writer] == {"collection_name": collection_name}

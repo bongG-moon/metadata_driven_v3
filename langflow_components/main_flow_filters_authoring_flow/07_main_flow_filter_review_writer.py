@@ -1,3 +1,7 @@
+# 파일 설명: 07 Main Flow Filter Review Writer Langflow custom component 파일입니다.
+# 흐름 역할: 최종 review JSON을 정규화하고 승인된 main-flow-filter metadata를 MongoDB에 upsert합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import hashlib
@@ -10,18 +14,20 @@ from importlib import import_module
 from typing import Any
 
 from lfx.custom.custom_component.component import Component
-from lfx.io import DataInput, DropdownInput, MessageTextInput, Output
+from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
 DEFAULT_COLLECTION_NAME = "agent_v3_main_flow_filters"
 COLLECTION_ENV_KEY = "MONGODB_MAIN_FLOW_FILTER_COLLECTION"
 LEGACY_COLLECTION_SUFFIX = "main_flow_filters"
-DUPLICATE_ACTION_OPTIONS = ["use_payload", "ask", "merge", "replace", "skip", "create_new"]
 METADATA_DOC_SCHEMA_VERSION = "metadata-doc.v1"
 AGENT_VERSION = "metadata_driven_v3"
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: 최종 review JSON을 정규화하고 승인된 main-flow-filter metadata를 MongoDB에 upsert합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def review_and_write_main_flow_filter_payload(
     payload_value: Any,
     llm_response_value: Any,
@@ -29,10 +35,9 @@ def review_and_write_main_flow_filter_payload(
     mongo_database: str = "",
     collection_prefix: str = "",
     collection_name: str = "",
-    duplicate_action: str = "",
 ) -> dict[str, Any]:
     payload = _payload(payload_value)
-    action = _action_from_override(duplicate_action, payload)
+    action = _action((payload.get("duplicate_decision") or {}).get("action") or "ask")
     review = _normalize_review(_text(llm_response_value), payload, action)
     config = payload.get("mongo_config") if isinstance(payload.get("mongo_config"), dict) else {}
     database = _clean(mongo_database or config.get("database") or os.getenv("MONGODB_DATABASE") or "metadata_driven_agent_v3")
@@ -235,13 +240,6 @@ def _resolved_duplicate_decision(payload: dict[str, Any], action: str) -> dict[s
     return decision
 
 
-def _action_from_override(value: Any, payload: dict[str, Any]) -> str:
-    override = _clean(value).lower()
-    if override in {"", "use_payload"}:
-        return _action((payload.get("duplicate_decision") or {}).get("action") or "ask")
-    return _action(override)
-
-
 def _text(value: Any) -> str:
     if value is None:
         return ""
@@ -284,19 +282,25 @@ def _resolve_collection_name(collection_name: Any = "", collection_prefix: Any =
     return DEFAULT_COLLECTION_NAME
 
 
+# 컴포넌트 설명: 07 Main Flow Filter Review Writer
+# Langflow 표시 설명: 최종 review JSON을 정규화하고 승인된 main-flow-filter metadata를 MongoDB에 upsert합니다.
 class MainFlowFilterReviewWriter(Component):
+
     display_name = "07 Main Flow Filter Review Writer"
-    description = "Normalizes the final review JSON and writes approved main flow filter metadata to MongoDB."
+    description = "최종 review JSON을 정규화하고 승인된 main-flow-filter metadata를 MongoDB에 upsert합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="llm_response", display_name="Review LLM Response", required=True),
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value="", advanced=True),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value="", advanced=True),
         MessageTextInput(name="collection_name", display_name="Collection Name", value="", advanced=True),
-        DropdownInput(name="duplicate_action", display_name="Duplicate Action Override", options=DUPLICATE_ACTION_OPTIONS, value="use_payload", advanced=True),
     ]
+
     outputs = [Output(name="payload_out", display_name="Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: 최종 review JSON을 정규화하고 승인된 main-flow-filter metadata를 MongoDB에 upsert합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
         result = review_and_write_main_flow_filter_payload(
             getattr(self, "payload", None),
@@ -305,7 +309,6 @@ class MainFlowFilterReviewWriter(Component):
             getattr(self, "mongo_database", ""),
             "",
             getattr(self, "collection_name", ""),
-            getattr(self, "duplicate_action", ""),
         )
         self.status = {
             "ready": (result.get("review") or {}).get("ready_to_save", False),

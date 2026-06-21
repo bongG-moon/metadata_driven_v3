@@ -1,3 +1,7 @@
+# 파일 설명: 04 Metadata QA Message Adapter Langflow custom component 파일입니다.
+# 흐름 역할: metadata QA 최종 payload를 Langflow Chat Output에 연결하기 좋은 Message로 변환합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import json
@@ -19,6 +23,9 @@ CELL_TEXT_LIMIT = 120
 CODE_TEXT_LIMIT = 4000
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: metadata QA 최종 payload를 Langflow Chat Output에 연결하기 좋은 Message로 변환합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_playground_message(payload_value: Any) -> str:
     payload = _payload(payload_value)
     answer = _escape_markdown_tilde(str(payload.get("answer_message") or "").strip())
@@ -70,15 +77,15 @@ def _result_table_section(payload: dict[str, Any]) -> str:
 
     if not rows:
         if columns:
-            return "### 결과 테이블\n표시할 결과 행은 없고, 컬럼만 확인되었습니다: " + ", ".join(str(item) for item in columns)
-        return "### 결과 테이블\n표시할 결과 데이터가 없습니다."
+            return "### 참고 정보\n표시할 참고 행은 없고, 컬럼만 확인되었습니다: " + ", ".join(str(item) for item in columns)
+        return "### 참고 정보\n표시할 참고 데이터가 없습니다."
 
     preview_rows = rows[:TABLE_PREVIEW_LIMIT]
     table = _markdown_table(preview_rows, columns)
     note = f"\n\n총 {row_count}건 중 {len(preview_rows)}건을 표시했습니다."
     if row_count <= len(preview_rows):
         note = f"\n\n총 {row_count}건입니다."
-    return "### 결과 테이블\n" + table + note
+    return "### 참고 정보\n" + table + note
 
 
 def _intent_section(payload: dict[str, Any]) -> str:
@@ -265,11 +272,17 @@ def _truncate(text: str, limit: int) -> str:
 
 
 
+# 컴포넌트 설명: 04 Metadata QA Message Adapter
+# Langflow 표시 설명: metadata QA 최종 payload를 Langflow Chat Output에 연결하기 좋은 Message로 변환합니다.
 class AnswerMessageAdapter(Component):
-    display_name = "03 Metadata QA Message Adapter"
-    description = "Builds a playground-friendly Message with answer text, result table, intent analysis, and pandas code."
+
+    display_name = "04 Metadata QA Message Adapter"
+    description = "metadata QA 최종 payload를 Langflow Chat Output에 연결하기 좋은 Message로 변환합니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="message", display_name="Message", method="build_message")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: metadata QA 최종 payload를 Langflow Chat Output에 연결하기 좋은 Message로 변환합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_message(self) -> Message:
         return Message(text=build_playground_message(self.payload))

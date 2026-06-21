@@ -20,16 +20,16 @@ def load_component(path: str):
     return module
 
 
-def test_metadata_qa_lists_catalog_without_expanding_examples(monkeypatch: Any) -> None:
+def test_metadata_qa_lists_catalog_with_descriptive_examples(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
-    route_prompt_builder = load_component("langflow_components/router_flow/03_route_classifier_prompt_builder.py")
+    route_prompt_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
     api_builder = load_component("langflow_components/data_analysis_flow/21_api_response_builder.py")
 
     payload = seed_payload("현재 조회 가능한 DATA LIST를 알려줄래?", monkeypatch)
     routed = router.route_metadata_question(payload)
-    prompt_payload = route_prompt_builder.build_route_classifier_prompt_payload(routed)
+    prompt_payload = route_prompt_builder.build_route_prompt_context(routed)
     routed = classify_route(route_normalizer, routed, metadata_action="catalog_list")
     result = response_builder.build_metadata_qa_response(routed)
     api_response = api_builder.build_main_flow_api_response(result)["api_response"]
@@ -38,19 +38,21 @@ def test_metadata_qa_lists_catalog_without_expanding_examples(monkeypatch: Any) 
     assert routed["metadata_route"]["metadata_action"] == "catalog_list"
     assert routed["metadata_route"]["route_llm_required"] is True
     assert routed["metadata_route"]["route_llm_used"] is True
-    assert prompt_payload["prompt_type"] == "route_classifier"
+    assert prompt_payload["prompt_type"] == "route_prompt_context"
     assert result["direct_response_ready"] is True
     assert result["metadata_qa"]["route_source"] == "llm"
     assert result["data"]["row_count"] >= 5
     assert "production_today" in {row["DATASET_KEY"] for row in result["data"]["rows"]}
+    assert "가능한 조회/질문 범위" in result["answer_message"]
+    assert "업무 용어로 물어보면" in result["answer_message"]
     assert "활용 예시 알려줘" in result["answer_message"]
-    assert "오늘 DA공정 생산량을 제품별로 보여줘" not in result["answer_message"]
+    assert "오늘 DA공정 생산량을 제품별로 보여줘" in result["answer_message"]
     assert api_response["success"] is True
     assert api_response["intent"]["analysis_kind"] == "catalog_list"
 
 
 def test_metadata_qa_standalone_infers_catalog_list_without_route_payload(monkeypatch: Any) -> None:
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("현재 조회 가능한 DATA LIST를 알려줄래?", monkeypatch)
     result = response_builder.build_metadata_qa_response(payload)
@@ -59,11 +61,87 @@ def test_metadata_qa_standalone_infers_catalog_list_without_route_payload(monkey
     assert result["metadata_route"]["route"] == "metadata_qa"
     assert result["metadata_route"]["route_source"] == "metadata_qa_standalone"
     assert result["metadata_qa"]["metadata_action"] == "catalog_list"
+    assert "바로 써볼 수 있는 질문 예시" in result["answer_message"]
     assert "production_today" in {row["DATASET_KEY"] for row in result["data"]["rows"]}
 
 
+def test_metadata_qa_prompt_builder_creates_llm_planning_prompt(monkeypatch: Any) -> None:
+    prompt_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_prompt_builder.py")
+
+    payload = seed_payload("생산량 데이터를 조회하는 쿼리를 알려줘", monkeypatch)
+    prompt_payload = prompt_builder.build_metadata_qa_prompt_payload(payload)
+
+    assert prompt_payload["prompt_type"] == "metadata_qa_planner"
+    assert "dataset_query" in prompt_payload["prompt"]
+    assert "production_today" in prompt_payload["prompt"]
+    assert "생산량 데이터를 조회하는 쿼리를 알려줘" in prompt_payload["prompt"]
+    assert "helpful guidance first" in prompt_payload["prompt"]
+    assert "what the user can ask or do" in prompt_payload["prompt"]
+    assert "answer_style" in prompt_payload["prompt"]
+    assert "suggested_questions" in prompt_payload["prompt"]
+    assert "reference_table_role" in prompt_payload["prompt"]
+    assert "process_groups" in prompt_payload["prompt"]
+    assert "공정 그룹" in prompt_payload["prompt"]
+    assert "metadata.table_catalog.datasets[dataset_key]" in prompt_payload["prompt"]
+    assert "metadata.domain_items.process_groups[GROUP_KEY]" in prompt_payload["prompt"]
+    assert "metadata.domain_items.product_terms[TERM_KEY]" in prompt_payload["prompt"]
+    assert "metadata.main_flow_filters[FIELD_KEY]" in prompt_payload["prompt"]
+    assert "query_template_preview" in prompt_payload["prompt"]
+    assert "filter_mappings" in prompt_payload["prompt"]
+
+
+def test_metadata_qa_uses_subflow_llm_response(monkeypatch: Any) -> None:
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
+
+    payload = seed_payload("생산량 데이터를 조회하는 쿼리를 알려줘", monkeypatch)
+    llm_response = json.dumps(
+        {
+            "route": "metadata_qa",
+            "metadata_action": "dataset_query",
+            "target_dataset": "production_today",
+            "target_family": "",
+            "target_term": "",
+            "answer_style": "query_template",
+            "user_facing_focus": "생산 데이터가 어떤 쿼리 템플릿으로 조회되고 어떤 후속 질문으로 이어질 수 있는지 안내합니다.",
+            "suggested_questions": [
+                "production_today 활용 예시 알려줘",
+                "오늘 DA공정 생산량을 제품별로 보여줘",
+            ],
+            "reference_table_role": "reference_only",
+            "confidence": "high",
+            "reason": "The user asks for the registered production query template.",
+        },
+        ensure_ascii=False,
+    )
+    result = response_builder.build_metadata_qa_response(payload, llm_response)
+
+    assert result["metadata_qa"]["route_source"] == "metadata_qa_llm"
+    assert result["metadata_qa"]["route_llm_used"] is True
+    assert result["metadata_qa"]["metadata_action"] == "dataset_query"
+    assert result["metadata_qa"]["target_dataset"] == "production_today"
+    assert result["metadata_qa"]["answer_style"] == "query_template"
+    assert result["metadata_qa"]["reference_table_role"] == "reference_only"
+    assert result["metadata_route"]["suggested_questions"][0] == "production_today 활용 예시 알려줘"
+    assert "FROM PRODUCTION_TODAY" in result["answer_message"]
+    assert "추가 안내" in result["answer_message"]
+    assert "production_today 활용 예시 알려줘" in result["answer_message"]
+
+
+def test_metadata_qa_message_adapter_uses_reference_table_label(monkeypatch: Any) -> None:
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
+    message_adapter = load_component("langflow_components/metadata_qa_flow/04_metadata_qa_message_adapter.py")
+
+    payload = seed_payload("현재 조회 가능한 DATA LIST를 알려줄래?", monkeypatch)
+    result = response_builder.build_metadata_qa_response(payload)
+    message = message_adapter.build_playground_message(result)
+
+    assert "### 답변" in message
+    assert "### 참고 정보" in message
+    assert "### 결과 테이블" not in message
+
+
 def test_metadata_qa_standalone_maps_quantity_query_without_route_payload(monkeypatch: Any) -> None:
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("생산량 데이터를 조회하는 쿼리를 알려줘", monkeypatch)
     result = response_builder.build_metadata_qa_response(payload)
@@ -77,7 +155,7 @@ def test_metadata_qa_standalone_maps_quantity_query_without_route_payload(monkey
 def test_metadata_qa_shows_examples_for_requested_dataset(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("production_today 활용 예시 알려줘", monkeypatch)
     routed = classify_route(route_normalizer, router.route_metadata_question(payload), metadata_action="dataset_examples", target_dataset="production_today")
@@ -87,13 +165,14 @@ def test_metadata_qa_shows_examples_for_requested_dataset(monkeypatch: Any) -> N
     assert result["metadata_qa"]["target_dataset"] == "production_today"
     assert result["data"]["row_count"] >= 3
     assert all(row["DATASET_KEY"] == "production_today" for row in result["data"]["rows"])
-    assert "production_today 활용 예시" in result["answer_message"]
+    assert "아래처럼 자연어로 물어볼 수 있습니다" in result["answer_message"]
+    assert "오늘 DA공정 생산량을 제품별로 보여줘" in result["answer_message"]
 
 
 def test_metadata_qa_returns_registered_query_template(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("production_today 조회 쿼리문 알려줘", monkeypatch)
     routed = classify_route(route_normalizer, router.route_metadata_question(payload), metadata_action="dataset_query", target_dataset="production_today")
@@ -107,13 +186,13 @@ def test_metadata_qa_returns_registered_query_template(monkeypatch: Any) -> None
 
 def test_metadata_qa_maps_natural_quantity_term_to_dataset_query(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
-    route_prompt_builder = load_component("langflow_components/router_flow/03_route_classifier_prompt_builder.py")
+    route_prompt_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("생산량 데이터를 조회하는 쿼리를 알려줘", monkeypatch)
     routed = router.route_metadata_question(payload)
-    prompt_payload = route_prompt_builder.build_route_classifier_prompt_payload(routed)
+    prompt_payload = route_prompt_builder.build_route_prompt_context(routed)
     routed = classify_route(route_normalizer, routed, metadata_action="dataset_query")
     result = response_builder.build_metadata_qa_response(routed)
 
@@ -123,7 +202,7 @@ def test_metadata_qa_maps_natural_quantity_term_to_dataset_query(monkeypatch: An
     assert routed["metadata_route"]["candidate_target_dataset"] == "production_today"
     assert routed["metadata_route"]["route_llm_required"] is True
     assert routed["metadata_route"]["route_llm_used"] is True
-    assert prompt_payload["prompt_type"] == "route_classifier"
+    assert prompt_payload["prompt_type"] == "route_prompt_context"
     assert result["metadata_qa"]["target_dataset"] == "production_today"
     assert "FROM PRODUCTION_TODAY" in result["answer_message"]
 
@@ -131,7 +210,7 @@ def test_metadata_qa_maps_natural_quantity_term_to_dataset_query(monkeypatch: An
 def test_metadata_qa_searches_domain_items(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("AUTO향 관련 등록 정보 알려줘", monkeypatch)
     routed = classify_route(route_normalizer, router.route_metadata_question(payload), metadata_action="domain_search", target_term="AUTO향")
@@ -142,10 +221,41 @@ def test_metadata_qa_searches_domain_items(monkeypatch: Any) -> None:
     assert "automotive" in result["answer_message"]
 
 
+def test_metadata_qa_searches_domain_section_by_natural_name(monkeypatch: Any) -> None:
+    router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
+    route_prompt_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
+    route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
+    orchestrator = load_component("langflow_components/router_flow/05_orchestrator_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
+
+    payload = seed_payload("공정 그룹관련해서 등록된 도메인정보들 알려줘", monkeypatch)
+    routed = router.route_metadata_question(payload)
+    prompt_payload = route_prompt_builder.build_route_prompt_context(routed)
+    fallback_classified = route_normalizer.normalize_route_classifier_payload(routed, "")
+    route_response = orchestrator.build_orchestrator_response(fallback_classified)
+    result = response_builder.build_metadata_qa_response(fallback_classified)
+
+    assert routed["metadata_route"]["route"] == "metadata_qa"
+    assert routed["metadata_route"]["metadata_action"] == "domain_search"
+    assert routed["metadata_route"]["target_term"] == "process_groups"
+    assert routed["metadata_route"]["route_llm_required"] is True
+    assert '"question": "공정 그룹관련해서 등록된 도메인정보들 알려줘"' in prompt_payload["route_prompt_context_json"]
+    assert '"target_term": "process_groups"' in prompt_payload["route_prompt_context_json"]
+    assert '"section": "process_groups"' in prompt_payload["route_prompt_context_json"]
+    assert '"label": "공정 그룹"' in prompt_payload["route_prompt_context_json"]
+    assert fallback_classified["metadata_route"]["route"] == "metadata_qa"
+    assert route_response["selected_flow"] == "metadata_qa_flow"
+    assert result["metadata_qa"]["metadata_action"] == "domain_search"
+    assert result["metadata_qa"]["target_term"] == "process_groups"
+    assert {"DA", "WB"}.issubset({row["KEY"] for row in result["data"]["rows"] if row["SECTION"] == "process_groups"})
+    assert "공정 그룹" in result["answer_message"]
+    assert "process_groups" in result["answer_message"]
+
+
 def test_metadata_qa_does_not_overwrite_previous_current_data(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     previous_current_data = {
         "columns": ["MODE", "WIP"],
@@ -173,7 +283,7 @@ def test_metadata_qa_does_not_overwrite_previous_current_data(monkeypatch: Any) 
 def test_metadata_qa_passes_analysis_question_to_existing_flow(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("오늘 DA공정에서 재공, 생산량과 목표값 그리고 생산달성률을 보여줘", monkeypatch)
     routed = classify_route(route_normalizer, router.route_metadata_question(payload), route="data_analysis")
@@ -188,17 +298,18 @@ def test_metadata_qa_passes_analysis_question_to_existing_flow(monkeypatch: Any)
 
 def test_ambiguous_dataset_usage_question_uses_route_classifier(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
-    route_prompt_builder = load_component("langflow_components/router_flow/03_route_classifier_prompt_builder.py")
+    route_prompt_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
 
     payload = seed_payload("production_today로 뭘 볼 수 있어?", monkeypatch)
     routed = router.route_metadata_question(payload)
-    prompt_payload = route_prompt_builder.build_route_classifier_prompt_payload(routed)
+    prompt_payload = route_prompt_builder.build_route_prompt_context(routed)
 
-    assert routed["metadata_route"]["route"] == "data_analysis"
+    assert routed["metadata_route"]["route"] == "metadata_qa"
+    assert routed["metadata_route"]["metadata_action"] == "dataset_examples"
     assert routed["metadata_route"]["route_llm_required"] is True
-    assert prompt_payload["prompt_type"] == "route_classifier"
+    assert prompt_payload["prompt_type"] == "route_prompt_context"
 
     llm_route = json.dumps(
         {
@@ -224,9 +335,9 @@ def test_ambiguous_dataset_usage_question_uses_route_classifier(monkeypatch: Any
 
 def test_direct_metadata_response_passes_through_downstream_nodes(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
-    route_prompt_builder = load_component("langflow_components/router_flow/03_route_classifier_prompt_builder.py")
+    route_prompt_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
-    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+    response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
     intent_prompt_builder = load_component("langflow_components/data_analysis_flow/02_intent_prompt_builder.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
     retrieval_adapter = load_component("langflow_components/data_analysis_flow/13_retrieval_payload_adapter.py")
@@ -238,7 +349,7 @@ def test_direct_metadata_response_passes_through_downstream_nodes(monkeypatch: A
 
     payload = seed_payload("production_today 조회 쿼리문 알려줘", monkeypatch)
     routed = router.route_metadata_question(payload)
-    prompt_payload = route_prompt_builder.build_route_classifier_prompt_payload(routed)
+    prompt_payload = route_prompt_builder.build_route_prompt_context(routed)
     routed = classify_route(route_normalizer, routed, metadata_action="dataset_query", target_dataset="production_today")
     payload = response_builder.build_metadata_qa_response(routed)
     original_answer = payload["answer_message"]
@@ -363,4 +474,3 @@ def install_fake_pymongo(monkeypatch: Any, docs_by_collection: dict[str, list[di
         return FakeClient(docs_by_collection)
 
     monkeypatch.setitem(sys.modules, "pymongo", types.SimpleNamespace(MongoClient=mongo_client))
-

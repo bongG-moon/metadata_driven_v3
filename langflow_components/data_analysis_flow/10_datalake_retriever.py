@@ -1,3 +1,7 @@
+# 파일 설명: 10 Datalake Retriever Langflow custom component 파일입니다.
+# 흐름 역할: LakeHouse/Datalake 조회 job을 실행하고, 인증 정보가 없으면 dummy fallback으로 대체합니다.
+# 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
+
 from __future__ import annotations
 
 import importlib.util
@@ -17,6 +21,9 @@ from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: LakeHouse/Datalake 조회 job을 실행하고, 인증 정보가 없으면 dummy fallback으로 대체합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def ensure_package(package_name: str, import_name: str | None = None) -> None:
     module_name = import_name or package_name
     if importlib.util.find_spec(module_name) is None:
@@ -33,6 +40,9 @@ def ensure_package(package_name: str, import_name: str | None = None) -> None:
         )
 
 
+# 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
+# 처리 역할: LakeHouse/Datalake 조회 job을 실행하고, 인증 정보가 없으면 dummy fallback으로 대체합니다.
+# Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def retrieve_datalake_data(
     payload_value: Any,
     lakehouse_user_id: str = "",
@@ -333,11 +343,14 @@ def _payload(value: Any) -> dict[str, Any]:
     return {}
 
 
+# 컴포넌트 설명: 10 Datalake Retriever
+# Langflow 표시 설명: LakeHouse/Datalake 조회 job을 실행하고, 인증 정보가 없으면 dummy fallback으로 대체합니다.
 class DatalakeRetriever(Component):
+
     lakes = None
 
     display_name = "10 Datalake Retriever"
-    description = "Executes Datalake jobs through LakeHouse, with dummy fallback when credentials are empty."
+    description = "LakeHouse/Datalake 조회 job을 실행하고, 인증 정보가 없으면 dummy fallback으로 대체합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="lakehouse_user_id", display_name="LAKEHOUSE_USER_ID", value=""),
@@ -348,7 +361,11 @@ class DatalakeRetriever(Component):
     ]
     outputs = [Output(name="retrieval_payload", display_name="Retrieval Payload", method="build_payload")]
 
+    # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
+    # 처리 역할: LakeHouse/Datalake 조회 job을 실행하고, 인증 정보가 없으면 dummy fallback으로 대체합니다.
+    # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_payload(self) -> Data:
+
         return Data(
             data=retrieve_datalake_data(
                 getattr(self, "payload", None),
