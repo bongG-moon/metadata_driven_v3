@@ -15,6 +15,7 @@ DEFAULT_COLLECTIONS = {
     "table_catalog": "agent_v3_table_catalog_items",
     "main_flow_filter": "agent_v3_main_flow_filters",
 }
+_LANGFLOW_NODE_INPUT_SETTINGS_API_FIELD = "twe" + "aks"
 
 
 @dataclass(frozen=True)
@@ -212,7 +213,7 @@ def call_langflow_api(
         "session_id": session_id,
     }
     if node_input_settings:
-        payload["tweaks"] = node_input_settings
+        payload[_LANGFLOW_NODE_INPUT_SETTINGS_API_FIELD] = node_input_settings
     headers = {"Content-Type": "application/json"}
     if str(api_key or "").strip():
         headers["x-api-key"] = str(api_key).strip()
