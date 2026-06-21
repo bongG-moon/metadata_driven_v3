@@ -1,0 +1,28 @@
+[
+  {
+    "WORK_DT": "20260611",
+    "OPER_NAME": "P/KG OUT",
+    "TECH": "FC",
+    "DEN": "128G",
+    "MODE": "LPDDR5",
+    "PKG_TYPE1": "UFBGA",
+    "PKG_TYPE2": "MOBILE",
+    "LEAD": "LF",
+    "MCP_NO": "AUTO-I",
+    "TSV_DIE_TYP": "",
+    "PRODUCTION": 14500
+  },
+  {
+    "WORK_DT": "20260611",
+    "OPER_NAME": "P/KG OUT",
+    "TECH": "TSV",
+    "DEN": "2048G",
+    "MODE": "HBM3E",
+    "PKG_TYPE1": "HBM",
+    "PKG_TYPE2": "HBM",
+    "LEAD": "LF",
+    "MCP_NO": "H-HBM16E",
+    "TSV_DIE_TYP": "8Hi",
+    "PRODUCTION": 19100
+  }
+]

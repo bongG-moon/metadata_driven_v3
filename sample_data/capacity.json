@@ -1,0 +1,24 @@
+[
+  {
+    "BASE_DT": "20260612",
+    "EQPID": "EQP1001",
+    "EQP_MODEL": "DA-MODEL-A",
+    "RECIPE_ID": "R-DA-HBM-01",
+    "AVG_UPH_VAL": 920,
+    "MODE": "HBM3E",
+    "TECH": "TSV",
+    "DEN": "2048G",
+    "MCP_NO": "H-HBM16E"
+  },
+  {
+    "BASE_DT": "20260612",
+    "EQPID": "EQP2001",
+    "EQP_MODEL": "WB-MODEL-A",
+    "RECIPE_ID": "R-WB-LP5-01",
+    "AVG_UPH_VAL": 1320,
+    "MODE": "LPDDR5",
+    "TECH": "FC",
+    "DEN": "128G",
+    "MCP_NO": "EMPTY"
+  }
+]

@@ -1,0 +1,503 @@
+{
+  "process_groups": {
+    "DA": {
+      "display_name": "D/A",
+      "aliases": ["DA", "D/A", "da", "d/a"],
+      "processes": ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
+    },
+    "WB": {
+      "display_name": "W/B",
+      "aliases": ["WB", "W/B", "wb", "w/b"],
+      "processes": ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
+    },
+    "DP": {
+      "display_name": "D/P",
+      "aliases": ["DP", "D/P", "dp", "d/p"],
+      "processes": ["D/P1", "D/P2"]
+    },
+    "BG": {
+      "display_name": "B/G",
+      "aliases": ["BG", "B/G", "b/g"],
+      "processes": ["B/G1", "B/G2"]
+    },
+    "WSD": {
+      "display_name": "WSD",
+      "aliases": ["WSD", "wsd"],
+      "processes": ["WSD1", "WSD2"]
+    },
+    "DS": {
+      "display_name": "D/S",
+      "aliases": ["DS", "D/S", "ds", "d/s"],
+      "processes": ["D/S1", "D/S2"]
+    },
+    "FCB": {
+      "display_name": "FCB",
+      "aliases": ["FCB", "fcb"],
+      "processes": ["FCB1", "FCB2"]
+    },
+    "FCBH": {
+      "display_name": "FCBH",
+      "aliases": ["FCBH", "fcbh"],
+      "processes": ["FCBH1", "FCBH2"]
+    },
+    "BM": {
+      "display_name": "B/M",
+      "aliases": ["BM", "B/M", "비엠", "bm", "b/m"],
+      "processes": ["B/M1", "B/M2"]
+    }
+  },
+  "product_terms": {
+    "hbm": {
+      "display_name": "HBM/3DS/TSV 제품",
+      "aliases": ["HBM", "3DS", "TSV", "HBM제품", "HBM 제품"],
+      "condition": {"TSV_DIE_TYP": {"exists": true, "not_in": [null, ""]}},
+      "condition_by_family": {
+        "production": {"PKG_TYPE1": "HBM"},
+        "wip": {"PKG_TYPE1": "HBM"},
+        "target": {"PKG_TYPE1": "HBM"},
+        "lot": {"PKG_TYPE1": "HBM"},
+        "equipment": {"PKG_TYPE1": "HBM"}
+      }
+    },
+    "lpddr5": {
+      "display_name": "LPDDR5 제품",
+      "aliases": ["LPDDR5", "LPDDR5제품", "LPDDR5 제품"],
+      "condition": {"MODE": "LPDDR5"}
+    },
+    "automotive": {
+      "display_name": "AUTO향 제품",
+      "aliases": ["AUTO향", "오토모티브향", "오토향"],
+      "condition": {"MCP_NO": {"exists": true, "last_char_in": ["I", "O", "N", "P", "Q", "V"]}}
+    }
+  },
+  "quantity_terms": {
+    "production": {
+      "aliases": ["생산량", "생산실적", "실적"],
+      "dataset_family": "production",
+      "quantity_column": "PRODUCTION",
+      "aggregation": "sum"
+    },
+    "wip": {
+      "aliases": ["재공", "재공수량", "WIP", "공정 물량"],
+      "dataset_family": "wip",
+      "quantity_column": "WIP",
+      "aggregation": "sum"
+    },
+    "target": {
+      "aliases": ["목표값", "목표", "계획", "생산계획", "OUT계획", "INPUT계획"],
+      "dataset_family": "target",
+      "quantity_column": ["INPUT_PLAN", "OUT_PLAN"],
+      "aggregation": "sum",
+      "output_column": "OUT_PLAN"
+    },
+    "lot_count": {
+      "aliases": ["Lot 수량", "LOT 수량", "Lot 개수", "lot count"],
+      "dataset_key": "lot_status",
+      "dataset_family": "lot",
+      "quantity_column": "LOT_ID",
+      "aggregation": "nunique",
+      "output_column": "LOT_COUNT"
+    },
+    "hold_lot_count": {
+      "aliases": ["hold LOT 수", "hold LOT 수량", "HOLD Lot 개수", "홀드 Lot 수량"],
+      "dataset_key": "lot_status",
+      "dataset_family": "lot",
+      "quantity_column": "LOT_ID",
+      "condition": {"LOT_HOLD_STAT_CD": ["HOLD", "OnHold"]},
+      "aggregation": "nunique",
+      "output_column": "HOLD_LOT_COUNT"
+    },
+    "in_tat": {
+      "aliases": ["IN TAT", "in tat", "IN_TAT", "평균 in tat"],
+      "dataset_key": "lot_status",
+      "dataset_family": "lot",
+      "quantity_column": "IN_TAT",
+      "aggregation": "mean",
+      "output_column": "AVG_IN_TAT"
+    },
+    "wafer_qty": {
+      "aliases": ["Wafer 수량", "WAFER 수량", "wafer", "wafer 개수", "wafer 몇개"],
+      "dataset_key": "lot_status",
+      "dataset_family": "lot",
+      "quantity_column": "WF_QTY",
+      "aggregation": "sum",
+      "output_column": "WF_QTY"
+    },
+    "die_qty": {
+      "aliases": ["Die 수량", "DIE 수량", "die", "die수량", "die 개수"],
+      "dataset_key": "lot_status",
+      "dataset_family": "lot",
+      "quantity_column": "SUB_PROD_QTY",
+      "aggregation": "sum",
+      "output_column": "DIE_QTY"
+    },
+    "equipment_count": {
+      "aliases": ["장비 대수", "설비 대수", "장비 수", "설비 수", "장비수", "설비수", "몇 대", "몇대", "EQP_COUNT"],
+      "dataset_key": "equipment_status",
+      "dataset_family": "equipment",
+      "quantity_column": "EQPID",
+      "aggregation": "nunique",
+      "output_column": "EQP_COUNT"
+    }
+  },
+  "metric_terms": {
+    "achievement_rate": {
+      "aliases": ["생산달성률", "달성율", "달성률"],
+      "formula": "sum(PRODUCTION) / sum(OUT_PLAN) * 100",
+      "calculation_rule": "aggregate_first",
+      "required_quantity_terms": ["production", "target"],
+      "output_column": "ACHIEVEMENT_RATE"
+    },
+    "target_gap": {
+      "aliases": ["목표 미달", "부족분"],
+      "formula": "max(sum(OUT_PLAN) - sum(PRODUCTION), 0)",
+      "calculation_rule": "aggregate_first",
+      "required_quantity_terms": ["production", "target"],
+      "output_column": "BALANCE"
+    },
+    "dynamic_tat": {
+      "aliases": ["동적TAT", "dynamic TAT"],
+      "formula": "sum(WIP) / sum(PRODUCTION)",
+      "calculation_rule": "aggregate_first",
+      "required_quantity_terms": ["wip", "production"],
+      "output_column": "DYNAMIC_TAT"
+    }
+  },
+  "analysis_recipes": {
+    "production_wip_target_rate": {
+      "display_name": "생산/재공/목표/달성률 분석",
+      "aliases": ["생산달성률", "생산달성율", "달성률", "달성율", "재공 생산량 목표값 달성율"],
+      "question_cues": ["재공", "생산량", "목표"],
+      "intent_type": "multi_source_analysis",
+      "default_analysis_kind": "production_wip_target_rate",
+      "required_quantity_terms": ["production", "wip", "target"],
+      "required_dataset_families": ["production", "wip", "target"],
+      "metric_terms": ["achievement_rate"],
+      "grain_policy": "question_or_product_grain",
+      "source_aliases_by_family": {
+        "production": "production_data",
+        "wip": "wip_data",
+        "target": "target_data"
+      },
+      "output_columns": ["WIP", "PRODUCTION", "OUT_PLAN", "ACHIEVEMENT_RATE"]
+    },
+    "low_output_vs_target": {
+      "display_name": "계획 대비 생산 저조 분석",
+      "aliases": ["저조", "목표값 대비", "계획 대비", "INPUT계획대비", "생산량 저조", "목표 미달"],
+      "question_cues": ["생산량", "저조"],
+      "intent_type": "multi_source_analysis",
+      "default_analysis_kind": "low_output_vs_target",
+      "required_quantity_terms": ["production", "target"],
+      "required_dataset_families": ["production", "target"],
+      "metric_terms": ["achievement_rate", "target_gap"],
+      "grain_policy": "question_or_product_grain",
+      "source_aliases_by_family": {
+        "production": "production_data",
+        "target": "target_data"
+      },
+      "defaults": {
+        "threshold": 1.0,
+        "production_column": "PRODUCTION",
+        "target_column": "OUT_PLAN",
+        "input_target_column": "INPUT_PLAN"
+      },
+      "output_columns": ["PRODUCTION", "TARGET_QTY", "ACHIEVEMENT_RATE", "BALANCE", "LOW_OUTPUT_FLAG"]
+    },
+    "overall_production_wip_target": {
+      "display_name": "전체 생산/재공/목표 요약",
+      "aliases": ["생산량 재공 목표", "생산량/재공/목표", "전체 생산량 재공 목표"],
+      "question_cues": ["생산량", "재공", "목표"],
+      "intent_type": "multi_source_analysis",
+      "default_analysis_kind": "overall_production_wip_target",
+      "required_quantity_terms": ["production", "wip", "target"],
+      "required_dataset_families": ["production", "wip", "target"],
+      "grain_policy": "aggregate_total",
+      "source_aliases_by_family": {
+        "production": "production_data",
+        "wip": "wip_data",
+        "target": "target_data"
+      },
+      "output_columns": ["SCOPE", "PRODUCTION", "WIP", "OUT_PLAN"]
+    },
+    "date_split_production_plan_gap": {
+      "display_name": "서로 다른 날짜의 생산/계획 차이 분석",
+      "aliases": ["어제 생산량 오늘 생산계획 차이", "생산계획 차이수량", "계획 차이"],
+      "question_cues": ["어제", "오늘", "계획", "차이"],
+      "intent_type": "multi_source_analysis",
+      "default_analysis_kind": "date_split_production_plan_gap",
+      "required_quantity_terms": ["production", "target"],
+      "required_dataset_families": ["production", "target"],
+      "metric_terms": ["target_gap"],
+      "grain_policy": "question_or_product_grain",
+      "source_aliases_by_family": {
+        "production": "production_data",
+        "target": "target_data"
+      },
+      "output_columns": ["PRODUCTION", "OUT_PLAN", "BALANCE"]
+    },
+    "lot_quantity_summary": {
+      "display_name": "Lot/Wafer/Die 수량 요약",
+      "aliases": ["lot wafer die", "lot wafer die 수량", "재공 lot wafer die", "lot wafer die 요약"],
+      "question_cues": ["lot", "wafer", "die"],
+      "intent_type": "single_retrieval_analysis",
+      "default_analysis_kind": "lot_quantity_summary",
+      "required_quantity_terms": ["lot_count", "wafer_qty", "die_qty"],
+      "required_dataset_families": ["lot"],
+      "grain_policy": "aggregate_total",
+      "source_aliases_by_family": {
+        "lot": "lot_data"
+      },
+      "output_columns": ["LOT_COUNT", "WF_QTY", "DIE_QTY"]
+    },
+    "top_wip_process_hold_lot_in_tat": {
+      "display_name": "재공 상위 공정 Hold Lot/In TAT 분석",
+      "aliases": ["재공 상위 공정 hold lot in tat", "재공 많은 공정 hold lot", "hold LOT 평균 in tat", "hold LOT", "평균 in tat", "재공 top 공정"],
+      "question_cues": ["재공", "공정", "hold", "in tat"],
+      "required_question_cues": [
+        ["재공", "WIP", "wip"],
+        ["공정", "세부공정", "OPER_NAME", "process"],
+        ["hold", "HOLD", "홀드"],
+        ["in tat", "IN TAT", "IN_TAT"]
+      ],
+      "forbidden_question_cues": ["생산량 상위", "생산량 top", "장비 대수", "설비 대수", "장비 수", "설비 수", "할당 장비"],
+      "intent_type": "multi_step_analysis",
+      "default_analysis_kind": "top_wip_process_hold_lot_in_tat",
+      "override_analysis_kinds": ["lot_count_by_process", "rank_top_n", "aggregate_wip_total", "generic_analysis"],
+      "required_quantity_terms": ["wip", "hold_lot_count", "in_tat"],
+      "required_dataset_families": ["wip", "lot"],
+      "grain_policy": "recipe_step_grain",
+      "source_aliases_by_family": {
+        "wip": "wip_data",
+        "lot": "lot_status_data"
+      },
+      "required_columns_by_family": {
+        "wip": ["WORK_DT", "OPER_NAME", "WIP"],
+        "lot": ["OPER_SHORT_DESC", "LOT_ID", "LOT_HOLD_STAT_CD", "IN_TAT"]
+      },
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "top_n_policy": "question_or_default",
+      "blocked_filter_fields": ["LOT_HOLD_STAT_CD", "LOT_STAT_CD"],
+      "defaults": {
+        "top_n": 3
+      },
+      "step_plan_template": [
+        {
+          "step_id": "rank_top_wip_processes",
+          "operation": "rank_top_n",
+          "source_family": "wip",
+          "metric": "WIP",
+          "group_by": ["OPER_NAME"],
+          "rename_columns": {"OPER_NAME": "OPER_SHORT_DESC"},
+          "rank_order": "desc",
+          "top_n": "$top_n",
+          "output_columns": ["OPER_SHORT_DESC", "WIP"]
+        },
+        {
+          "step_id": "summarize_hold_lot_and_in_tat",
+          "operation": "hold_lot_in_tat_by_process",
+          "source_family": "lot",
+          "filter_from_step": "rank_top_wip_processes",
+          "join_key": "OPER_SHORT_DESC",
+          "group_by": ["OPER_SHORT_DESC"],
+          "hold_status_column": "LOT_HOLD_STAT_CD",
+          "count_column": "LOT_ID",
+          "tat_column": "IN_TAT",
+          "metrics": ["HOLD_LOT_COUNT", "AVG_IN_TAT"],
+          "output_columns": ["OPER_SHORT_DESC", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
+        },
+        {
+          "step_id": "join_top_wip_and_lot_metrics",
+          "operation": "left_join",
+          "left_step": "rank_top_wip_processes",
+          "right_step": "summarize_hold_lot_and_in_tat",
+          "join_key": "OPER_SHORT_DESC",
+          "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
+        }
+      ],
+      "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
+    },
+    "top_wip_product_oldest_lot": {
+      "display_name": "재공 상위 제품 기준 IN TAT 최장 LOT 분석",
+      "aliases": ["재공 가장 많은 제품 IN TAT 오래된 LOT", "재공 top 제품 오래된 LOT", "WIP top product oldest lot", "top WIP product IN_TAT"],
+      "question_cues": ["재공", "제품", "lot", "in tat", "오래된"],
+      "required_question_cues": [
+        ["재공", "WIP", "wip"],
+        ["제품", "product"],
+        ["LOT", "lot"],
+        ["in tat", "IN TAT", "IN_TAT"],
+        ["오래된", "가장 오래된", "최장", "oldest", "longest"]
+      ],
+      "intent_type": "multi_step_analysis",
+      "default_analysis_kind": "top_wip_product_oldest_lot",
+      "override_analysis_kinds": ["none", "custom_wip_lot_sequence", "rank_top_n", "aggregate_total", "aggregate_join", "generic_analysis"],
+      "required_quantity_terms": ["wip", "in_tat"],
+      "required_dataset_families": ["wip", "lot"],
+      "grain_policy": "question_or_product_grain",
+      "source_aliases_by_family": {
+        "wip": "wip_data",
+        "lot": "lot_data"
+      },
+      "required_columns_by_family": {
+        "wip": ["WORK_DT", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_NAME", "WIP"],
+        "lot": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_SHORT_DESC", "LOT_ID", "IN_TAT"]
+      },
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "top_n_policy": "question_or_default",
+      "defaults": {
+        "top_n": 1
+      },
+      "step_plan_template": [
+        {
+          "step_id": "rank_top_wip_product",
+          "operation": "rank_top_n",
+          "source_family": "wip",
+          "metric": "WIP",
+          "group_by": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "rank_order": "desc",
+          "top_n": 1,
+          "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "WIP"]
+        },
+        {
+          "step_id": "find_oldest_lot_for_top_product",
+          "operation": "rank_top_n",
+          "source_family": "lot",
+          "filter_from_step": "rank_top_wip_product",
+          "join_keys": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "metric": "IN_TAT",
+          "rank_order": "desc",
+          "top_n": 1,
+          "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "LOT_ID", "IN_TAT"]
+        },
+        {
+          "step_id": "join_top_product_and_oldest_lot",
+          "operation": "left_join",
+          "left_step": "rank_top_wip_product",
+          "right_step": "find_oldest_lot_for_top_product",
+          "join_keys": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "WIP", "LOT_ID", "IN_TAT"]
+        }
+      ],
+      "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "WIP", "LOT_ID", "IN_TAT"]
+    },
+    "top_production_products_equipment_count": {
+      "display_name": "생산량 상위 제품별 장비 대수 분석",
+      "aliases": ["생산량 상위 제품 장비 대수", "생산 top 제품 장비 수", "top production products equipment count"],
+      "question_cues": ["생산량", "제품", "장비", "대수"],
+      "required_question_cues": [
+        ["생산량", "생산", "PRODUCTION", "production"],
+        ["제품", "product"],
+        ["장비", "설비", "equipment"],
+        ["대수", "수", "몇 대", "몇대", "count"]
+      ],
+      "intent_type": "multi_step_analysis",
+      "default_analysis_kind": "top_production_products_equipment_count",
+      "override_analysis_kinds": ["rank_top_n", "aggregate_join", "generic_analysis", "none"],
+      "required_quantity_terms": ["production", "equipment_count"],
+      "required_dataset_families": ["production", "equipment"],
+      "grain_policy": "question_or_product_grain",
+      "source_aliases_by_family": {
+        "production": "production_data",
+        "equipment": "equipment_data"
+      },
+      "required_columns_by_family": {
+        "production": ["WORK_DT", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_NAME", "PRODUCTION"],
+        "equipment": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "EQPID"]
+      },
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "top_n_policy": "question_or_default",
+      "defaults": {
+        "top_n": 5
+      },
+      "step_plan_template": [
+        {
+          "step_id": "rank_top_production_products",
+          "operation": "rank_top_n",
+          "source_family": "production",
+          "metric": "PRODUCTION",
+          "group_by": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "rank_order": "desc",
+          "top_n": "$top_n",
+          "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "PRODUCTION"]
+        },
+        {
+          "step_id": "summarize_equipment_count_for_top_products",
+          "operation": "equipment_count_by_product",
+          "source_family": "equipment",
+          "filter_from_step": "rank_top_production_products",
+          "join_keys": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "group_by": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "count_column": "EQPID",
+          "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "EQP_COUNT"]
+        },
+        {
+          "step_id": "join_production_and_equipment_count",
+          "operation": "left_join",
+          "left_step": "rank_top_production_products",
+          "right_step": "summarize_equipment_count_for_top_products",
+          "join_keys": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+          "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "PRODUCTION", "EQP_COUNT"]
+        }
+      ],
+      "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "PRODUCTION", "EQP_COUNT"]
+    },
+    "equipment_for_previous_products": {
+      "display_name": "이전 제품 기준 장비 상세 현황",
+      "aliases": ["장비 현황", "설비 현황", "할당된 장비 현황", "물려 있는 장비", "배정된 장비", "장비 list", "장비 목록"],
+      "question_cues": ["이 제품", "그 제품", "해당 제품", "장비", "설비", "현황"],
+      "intent_type": "followup_transform",
+      "default_analysis_kind": "equipment_for_previous_products",
+      "required_dataset_families": ["equipment"],
+      "grain_policy": "previous_product_grain",
+      "source_aliases_by_family": {
+        "equipment": "equipment_for_previous_products"
+      },
+      "result_mode": "detail_rows",
+      "output_columns": ["EQPID", "EQP_MODEL", "PRESS_CNT", "LOT_ID", "RECIPE_ID"]
+    },
+    "equipment_count_for_previous_products": {
+      "display_name": "이전 제품 기준 장비 대수",
+      "aliases": ["장비 대수", "설비 대수", "장비 수", "설비 수", "몇 대", "몇대", "할당된 장비 대수"],
+      "question_cues": ["이 제품", "그 제품", "해당 제품", "장비", "설비", "대수"],
+      "intent_type": "followup_transform",
+      "default_analysis_kind": "equipment_count_for_previous_products",
+      "required_quantity_terms": ["equipment_count"],
+      "required_dataset_families": ["equipment"],
+      "grain_policy": "previous_product_grain",
+      "source_aliases_by_family": {
+        "equipment": "equipment_for_previous_products"
+      },
+      "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "EQP_COUNT"]
+    }
+  },
+  "status_terms": {
+    "hold_lot": {
+      "aliases": ["hold lot", "hold된 lot", "hold상태 lot", "Hold Lot"],
+      "dataset_key": "lot_status",
+      "condition": {"LOT_HOLD_STAT_CD": ["HOLD", "OnHold"]},
+      "result_mode": "detail_rows"
+    },
+    "waiting_lot": {
+      "aliases": ["작업대기 Lot", "작업대기 Lot 수량"],
+      "dataset_key": "lot_status",
+      "condition": {"LOT_STAT_CD": ["WAITING"]},
+      "quantity_column": "LOT_ID",
+      "aggregation": "nunique",
+      "output_column": "LOT_COUNT"
+    },
+    "running_lot": {
+      "aliases": ["작업중 Lot", "작업중 Lot 수량"],
+      "dataset_key": "lot_status",
+      "condition": {"LOT_STAT_CD": ["RUNNING"]},
+      "quantity_column": "LOT_ID",
+      "aggregation": "nunique",
+      "output_column": "LOT_COUNT"
+    }
+  },
+  "product_key_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+}

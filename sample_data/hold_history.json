@@ -1,0 +1,4 @@
+[
+  {"LOT_ID": "T1234567GEN1", "HOLD_TM": "2026-06-12 08:30:00", "HOLD_CD": "Q001", "HOLD_DESC": "품질 확인 대기", "HOLD_USER_ID": "qa_user", "EVENT_CD": "HOLD"},
+  {"LOT_ID": "LOT-00003-1", "HOLD_TM": "2026-06-12 09:10:00", "HOLD_CD": "P010", "HOLD_DESC": "공정 조건 확인", "HOLD_USER_ID": "prod_user", "EVENT_CD": "HOLD"}
+]

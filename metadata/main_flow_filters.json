@@ -1,0 +1,74 @@
+{
+  "DATE": {
+    "column_candidates": ["WORK_DT", "DATE", "BASE_DT"],
+    "description": "기준일"
+  },
+  "OPER_NAME": {
+    "column_candidates": ["OPER_NAME", "OPER_DESC", "OPER_ID", "OPER_SHORT_DESC"],
+    "description": "공정명"
+  },
+  "TECH": {
+    "column_candidates": ["TECH"],
+    "description": "제품 기술"
+  },
+  "DEN": {
+    "column_candidates": ["DEN"],
+    "description": "제품 용량"
+  },
+  "MODE": {
+    "column_candidates": ["MODE"],
+    "description": "제품 모드"
+  },
+  "PKG_TYPE1": {
+    "column_candidates": ["PKG_TYPE1"],
+    "description": "패키지 타입1"
+  },
+  "PKG_TYPE2": {
+    "column_candidates": ["PKG_TYPE2"],
+    "description": "패키지 타입2"
+  },
+  "LEAD": {
+    "column_candidates": ["LEAD"],
+    "description": "Lead"
+  },
+  "MCP_NO": {
+    "column_candidates": ["MCP_NO", "MCP NO", "MCP_SALE_CD", "MCPSALENO"],
+    "description": "제품 코드"
+  },
+  "DEVICE_DESC": {
+    "column_candidates": ["DEVICE_DESC", "DEVICE", "DEVICE_CODE"],
+    "description": "사용자가 device를 직접 언급했을 때만 사용하는 device 계열"
+  },
+  "TSV_DIE_TYP": {
+    "column_candidates": ["TSV_DIE_TYP", "TSV_DIE_TYPE"],
+    "description": "HBM/3DS/TSV 제품 판별용 컬럼"
+  },
+  "OPER_NUM": {
+    "column_candidates": ["OPER_NUM", "OPER_NO"],
+    "description": "공정 번호"
+  },
+  "LOT_ID": {
+    "column_candidates": ["LOT_ID"],
+    "description": "Lot ID"
+  },
+  "LOT_STAT_CD": {
+    "column_candidates": ["LOT_STAT_CD"],
+    "description": "Lot 작업 상태"
+  },
+  "LOT_HOLD_STAT_CD": {
+    "column_candidates": ["LOT_HOLD_STAT_CD"],
+    "description": "Lot hold 상태"
+  },
+  "EQP_ID": {
+    "column_candidates": ["EQP_ID", "EQPID"],
+    "description": "장비 ID"
+  },
+  "EQP_MODEL": {
+    "column_candidates": ["EQP_MODEL"],
+    "description": "장비 모델"
+  },
+  "RECIPE_ID": {
+    "column_candidates": ["RECIPE_ID"],
+    "description": "Recipe ID"
+  }
+}

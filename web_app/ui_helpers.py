@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+import html
+import json
+from typing import Any
+
+import pandas as pd
+
+
+TABLE_MIN_HEIGHT = 82
+TABLE_MAX_HEIGHT = 460
+TABLE_HEADER_HEIGHT = 34
+TABLE_ROW_HEIGHT = 32
+TABLE_VERTICAL_PADDING = 12
+TABLE_AUTO_HEIGHT_ROWS = 8
+QUANTITY_COLUMN_HINTS = (
+    "WIP",
+    "PRODUCTION",
+    "PLAN",
+    "OUT_PLAN",
+    "INPUT_PLAN",
+    "TARGET",
+    "QTY",
+    "COUNT",
+    "RATE",
+    "BALANCE",
+    "DIE",
+    "WF",
+)
+
+
+def json_text(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
+
+
+def compact_json_html(value: Any) -> str:
+    raw = html.escape(json_text(value))
+    raw = raw.replace("&quot;", '"')
+    return (
+        raw.replace("null", '<span class="compact-json-null">null</span>')
+        .replace("true", '<span class="compact-json-boolean">true</span>')
+        .replace("false", '<span class="compact-json-boolean">false</span>')
+    )
+
+
+def safe_markdown_text(value: Any) -> str:
+    text = str(value or "")
+    return text.replace("~~", "\\~\\~")
+
+
+def chat_table_visible_rows(max_height: int = TABLE_MAX_HEIGHT) -> int:
+    usable_height = max_height - TABLE_HEADER_HEIGHT - TABLE_VERTICAL_PADDING
+    return max(1, usable_height // TABLE_ROW_HEIGHT)
+
+
+def chat_table_height(row_count: int, max_height: int = TABLE_MAX_HEIGHT) -> int:
+    clean_count = max(0, int(row_count or 0))
+    if clean_count <= 0:
+        return TABLE_MIN_HEIGHT
+    visible_rows = chat_table_visible_rows(max_height)
+    if clean_count > visible_rows:
+        return max_height
+    content_height = TABLE_HEADER_HEIGHT + TABLE_VERTICAL_PADDING + clean_count * TABLE_ROW_HEIGHT
+    return max(TABLE_MIN_HEIGHT, min(max_height, content_height))
+
+
+def chat_dataframe_height(row_count: int, max_height: int = TABLE_MAX_HEIGHT) -> str | int:
+    clean_count = max(0, int(row_count or 0))
+    if 0 < clean_count <= TABLE_AUTO_HEIGHT_ROWS:
+        return "auto"
+    return chat_table_height(clean_count, max_height)
+
+
+def display_table_frame(frame: pd.DataFrame, number_mode: str = "comma") -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    result = frame.copy()
+    for column in result.columns:
+        if not _looks_quantity_column(column):
+            continue
+        result[column] = result[column].map(lambda value: _format_number(value, number_mode))
+    return result
+
+
+def _looks_quantity_column(column: Any) -> bool:
+    text = str(column or "").upper()
+    return any(hint in text for hint in QUANTITY_COLUMN_HINTS)
+
+
+def _format_number(value: Any, mode: str) -> Any:
+    if value is None or isinstance(value, bool):
+        return value
+    try:
+        number = float(value)
+    except Exception:
+        return value
+    if number != number:
+        return value
+    if mode == "k" and abs(number) >= 1000:
+        return f"{number / 1000:.1f}K"
+    if float(number).is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.1f}"
+

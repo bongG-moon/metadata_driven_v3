@@ -1,0 +1,218 @@
+[
+  {
+    "id": "multi_step_rank_wip_with_production",
+    "question": "오늘 DA, WB공정에서 각각 재공 상위 3개 제품을 뽑아주고 해당 제품들의 오늘 생산량도 보여줘",
+    "expected_intent_type": "multi_step_analysis",
+    "expected_analysis_kind": "rank_wip_then_join_production",
+    "expected_datasets": ["wip_today", "production_today"],
+    "expected_columns": ["RANK_GROUP", "WIP", "PRODUCTION"],
+    "expected_filter_fields": ["OPER_NAME"],
+    "expected_params_by_dataset": {
+      "wip_today": {"DATE": "20260612"},
+      "production_today": {"DATE": "20260612"}
+    }
+  },
+  {
+    "id": "hold_history_detail",
+    "question": "T1234567GEN1 LOT의 HOLD이력 알려줘",
+    "expected_intent_type": "detail_lookup",
+    "expected_analysis_kind": "detail_rows",
+    "expected_datasets": ["hold_history"],
+    "expected_columns": ["LOT_ID", "HOLD_TM", "HOLD_CD", "HOLD_DESC"],
+    "expected_params_by_dataset": {
+      "hold_history": {"LOT_ID": "T1234567GEN1"}
+    }
+  },
+  {
+    "id": "hold_lot_list",
+    "question": "현재 hold된 lot list 알려줘",
+    "expected_intent_type": "detail_lookup",
+    "expected_analysis_kind": "detail_rows",
+    "expected_datasets": ["lot_status"],
+    "expected_columns": ["LOT_ID", "LOT_HOLD_STAT_CD"],
+    "expected_filter_fields": ["LOT_HOLD_STAT_CD"]
+  },
+  {
+    "id": "da_wip_top_product",
+    "question": "현재 da에서 재공이 가장 많은 제품 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "rank_top_n",
+    "expected_datasets": ["wip_today"],
+    "expected_columns": ["WIP"],
+    "expected_filter_fields": ["OPER_NAME"]
+  },
+  {
+    "id": "followup_equipment_for_product",
+    "question": "이 제품에 할당된 장비 현황 알려줘",
+    "requires_state_from": "da_wip_top_product",
+    "expected_intent_type": "followup_transform",
+    "expected_analysis_kind": "equipment_for_previous_products",
+    "expected_datasets": ["equipment_status"],
+    "expected_columns": ["EQPID", "EQP_MODEL"],
+    "expected_filter_fields": ["PRODUCT_GRAIN"]
+  },
+  {
+    "id": "followup_equipment_count_for_product",
+    "question": "이 제품의 이 공정에 할당된 장비 대수를 알려줘",
+    "requires_state_from": "da_wip_top_product",
+    "expected_intent_type": "followup_transform",
+    "expected_analysis_kind": "equipment_count_for_previous_products",
+    "expected_datasets": ["equipment_status"],
+    "expected_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "EQP_COUNT"],
+    "expected_filter_fields": ["PRODUCT_GRAIN"]
+  },
+  {
+    "id": "lpddr5_wb_production_and_wip",
+    "question": "현재 MODE값이 LPDDR5인 제품의 W/B공정에서 생산량과 재공 수량 알려줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "aggregate_join",
+    "expected_datasets": ["production_today", "wip_today"],
+    "expected_columns": ["PRODUCTION", "WIP"],
+    "expected_filter_fields": ["MODE", "OPER_NAME"]
+  },
+  {
+    "id": "lpddr5_da_production_and_wip",
+    "question": "현재 MODE값이 LPDDR5인 제품의 D/A공정에서 생산량과 재공 수량 알려줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "aggregate_join",
+    "expected_datasets": ["production_today", "wip_today"],
+    "expected_columns": ["PRODUCTION", "WIP"],
+    "expected_filter_fields": ["MODE", "OPER_NAME"]
+  },
+  {
+    "id": "today_da_wip_production_target_rate",
+    "question": "오늘 DA공정에서 재공, 생산량과 목표값 그리고 생산달성율을 보여줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "production_wip_target_rate",
+    "expected_datasets": ["production_today", "wip_today", "target"],
+    "expected_columns": ["PRODUCTION", "WIP", "OUT_PLAN", "ACHIEVEMENT_RATE"],
+    "expected_filter_fields": ["OPER_NAME", "DATE"]
+  },
+  {
+    "id": "da1_low_output_vs_target",
+    "question": "오늘 D/A1공정에서 목표값 대비해서 생산량이 저조한 제품을 알려줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "low_output_vs_target",
+    "expected_datasets": ["production_today", "target"],
+    "expected_columns": ["PRODUCTION", "TARGET_QTY", "ACHIEVEMENT_RATE", "BALANCE", "LOW_OUTPUT_FLAG"],
+    "expected_filter_fields": ["OPER_NAME", "DATE"]
+  },
+  {
+    "id": "input_plan_vs_da_low_output",
+    "question": "오늘 INPUT계획대비 D/A공정에서 생산량이 저조한 제품을 알려줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "low_output_vs_target",
+    "expected_datasets": ["production_today", "target"],
+    "expected_columns": ["PRODUCTION", "TARGET_QTY", "ACHIEVEMENT_RATE", "BALANCE", "LOW_OUTPUT_FLAG"],
+    "expected_filter_fields": ["OPER_NAME", "DATE"]
+  },
+  {
+    "id": "waiting_lot_count_by_process",
+    "question": "현재 작업대기 Lot 수량을 공정별로 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "lot_count_by_process",
+    "expected_datasets": ["lot_status"],
+    "expected_columns": ["OPER_SHORT_DESC", "LOT_COUNT"],
+    "expected_filter_fields": ["LOT_STAT_CD"]
+  },
+  {
+    "id": "running_lot_count_by_process",
+    "question": "현재 작업중 Lot 수량을 공정별로 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "lot_count_by_process",
+    "expected_datasets": ["lot_status"],
+    "expected_columns": ["OPER_SHORT_DESC", "LOT_COUNT"],
+    "expected_filter_fields": ["LOT_STAT_CD"]
+  },
+  {
+    "id": "da_lot_wafer_die_summary",
+    "question": "현재 DA공정에서 재공 lot이 몇개인지, wafer가 몇개인지, die수량은 몇개인지 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "lot_quantity_summary",
+    "expected_datasets": ["lot_status"],
+    "expected_columns": ["LOT_COUNT", "WF_QTY", "DIE_QTY"],
+    "expected_filter_fields": ["OPER_NAME"]
+  },
+  {
+    "id": "wb_lot_wafer_die_summary",
+    "question": "현재 W/B공정에서 재공 lot이 몇개인지, wafer가 몇개인지, die수량은 몇개인지 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "lot_quantity_summary",
+    "expected_datasets": ["lot_status"],
+    "expected_columns": ["LOT_COUNT", "WF_QTY", "DIE_QTY"],
+    "expected_filter_fields": ["OPER_NAME"]
+  },
+  {
+    "id": "da_wip_quantity_uses_wip_dataset",
+    "question": "현재 DA공정 재공 수량 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "aggregate_wip_total",
+    "expected_datasets": ["wip_today"],
+    "expected_columns": ["SCOPE", "WIP"],
+    "expected_filter_fields": ["OPER_NAME"],
+    "forbidden_filter_fields": ["LOT_STAT_CD", "LOT_HOLD_STAT_CD"]
+  },
+  {
+    "id": "overall_wip_scope_reset_after_da",
+    "question": "전체 재공 수량 알려줘",
+    "requires_state_from": "da_wip_top_product",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "aggregate_wip_total",
+    "expected_datasets": ["wip_today"],
+    "expected_columns": ["SCOPE", "WIP"],
+    "forbidden_filter_fields": ["OPER_NAME", "LOT_STAT_CD", "LOT_HOLD_STAT_CD"]
+  },
+  {
+    "id": "today_total_production_wip_target",
+    "question": "오늘 생산량/재공/목표 값을 보여줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "overall_production_wip_target",
+    "expected_datasets": ["production_today", "wip_today", "target"],
+    "expected_columns": ["PRODUCTION", "WIP", "OUT_PLAN"]
+  },
+  {
+    "id": "yesterday_production_today_plan_gap",
+    "question": "어제 생산량과 오늘 생산계획의 차이수량을 제품별로 알려줘",
+    "expected_intent_type": "multi_source_analysis",
+    "expected_analysis_kind": "date_split_production_plan_gap",
+    "expected_datasets": ["production", "target"],
+    "expected_columns": ["PRODUCTION", "OUT_PLAN", "BALANCE"],
+    "expected_filter_fields": ["DATE"]
+  },
+  {
+    "id": "hbm_equipment_by_model",
+    "question": "오늘 HBM 장비 보유 현황을 EQP_MODEL별로 알려줘",
+    "expected_intent_type": "single_retrieval_analysis",
+    "expected_analysis_kind": "equipment_by_model",
+    "expected_datasets": ["equipment_status"],
+    "expected_columns": ["EQP_MODEL", "EQP_COUNT", "PRESS_CNT"],
+    "expected_filter_fields": ["PKG_TYPE1"]
+  },
+  {
+    "id": "top_wip_process_hold_lot_in_tat",
+    "question": "오늘 DA공정에서 재공이 많은 세부공정 top 3을 찾고, 해당 공정들의 hold LOT 수와 평균 in tat를 같이 보여줘.",
+    "expected_intent_type": "multi_step_analysis",
+    "expected_analysis_kind": "top_wip_process_hold_lot_in_tat",
+    "expected_datasets": ["wip_today", "lot_status"],
+    "expected_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+    "expected_filter_fields": ["OPER_NAME"]
+  },
+  {
+    "id": "da_top5_production_equipment_count",
+    "question": "오늘 DA공정에서 생산량 상위 5개 제품과 각 제품별 할당 장비 대수를 보여줘",
+    "expected_intent_type": "multi_step_analysis",
+    "expected_analysis_kind": "top_production_products_equipment_count",
+    "expected_datasets": ["production_today", "equipment_status"],
+    "expected_columns": ["PRODUCTION", "EQP_COUNT"],
+    "expected_filter_fields": ["OPER_NAME"]
+  },
+  {
+    "id": "wb_top_wip_product_oldest_in_tat_lot",
+    "question": "지금 WB에서 재공이 가장 많은 제품 기준으로 LOT의 IN TAT를 보고, IN TAT가 가장 오래된 LOT을 찾아줘",
+    "expected_intent_type": "multi_step_analysis",
+    "expected_analysis_kind": "top_wip_product_oldest_lot",
+    "expected_datasets": ["wip_today", "lot_status"],
+    "expected_columns": ["WIP", "LOT_ID", "IN_TAT"],
+    "expected_filter_fields": ["OPER_NAME"]
+  }
+]
