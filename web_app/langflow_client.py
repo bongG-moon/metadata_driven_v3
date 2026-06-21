@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable
 
 import requests
@@ -41,33 +42,37 @@ class LangflowSettings:
 
     @classmethod
     def from_env(cls) -> "LangflowSettings":
-        base_url = _env("LANGFLOW_BASE_URL") or _env("LANGFLOW_API_BASE_URL")
-        mongo_uri = _env("MONGODB_URI") or _env("MONGO_URI")
-        session_store = _env("WEB_SESSION_STORE") or ("mongodb" if mongo_uri else "disabled")
+        local_env = _load_local_env()
+        base_url = _env("LANGFLOW_BASE_URL", local_env) or _env("LANGFLOW_API_BASE_URL", local_env)
+        mongo_uri = _env("MONGODB_URI", local_env) or _env("MONGO_URI", local_env)
+        session_store = _env("WEB_SESSION_STORE", local_env) or ("mongodb" if mongo_uri else "disabled")
         return cls(
-            api_key=_env("LANGFLOW_API_KEY"),
-            router_api_url=_env("LANGFLOW_ROUTER_API_URL") or _flow_run_url(base_url, _env("LANGFLOW_ROUTER_FLOW_ID")),
-            data_analysis_api_url=_env("LANGFLOW_DATA_ANALYSIS_API_URL") or _flow_run_url(base_url, _env("LANGFLOW_DATA_ANALYSIS_FLOW_ID")),
-            metadata_qa_api_url=_env("LANGFLOW_METADATA_QA_API_URL") or _flow_run_url(base_url, _env("LANGFLOW_METADATA_QA_FLOW_ID")),
-            report_generation_api_url=_env("LANGFLOW_REPORT_GENERATION_API_URL")
-            or _flow_run_url(base_url, _env("LANGFLOW_REPORT_GENERATION_FLOW_ID")),
-            operations_diagnosis_api_url=_env("LANGFLOW_OPERATIONS_DIAGNOSIS_API_URL")
-            or _flow_run_url(base_url, _env("LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID")),
-            domain_authoring_api_url=_env("LANGFLOW_DOMAIN_AUTHORING_API_URL") or _flow_run_url(base_url, _env("LANGFLOW_DOMAIN_AUTHORING_FLOW_ID")),
-            table_catalog_authoring_api_url=_env("LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL")
-            or _flow_run_url(base_url, _env("LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID")),
-            main_flow_filter_authoring_api_url=_env("LANGFLOW_MAIN_FILTER_AUTHORING_API_URL")
-            or _env("LANGFLOW_MAIN_FLOW_FILTER_AUTHORING_API_URL")
-            or _flow_run_url(base_url, _env("LANGFLOW_MAIN_FILTER_AUTHORING_FLOW_ID")),
-            input_type=_env("LANGFLOW_INPUT_TYPE") or "chat",
-            output_type=_env("LANGFLOW_OUTPUT_TYPE") or "chat",
-            timeout=_int_env("LANGFLOW_TIMEOUT_SECONDS", 180),
+            api_key=_env("LANGFLOW_API_KEY", local_env),
+            router_api_url=_env("LANGFLOW_ROUTER_API_URL", local_env) or _flow_run_url(base_url, _env("LANGFLOW_ROUTER_FLOW_ID", local_env)),
+            data_analysis_api_url=_env("LANGFLOW_DATA_ANALYSIS_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_DATA_ANALYSIS_FLOW_ID", local_env)),
+            metadata_qa_api_url=_env("LANGFLOW_METADATA_QA_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_METADATA_QA_FLOW_ID", local_env)),
+            report_generation_api_url=_env("LANGFLOW_REPORT_GENERATION_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_REPORT_GENERATION_FLOW_ID", local_env)),
+            operations_diagnosis_api_url=_env("LANGFLOW_OPERATIONS_DIAGNOSIS_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID", local_env)),
+            domain_authoring_api_url=_env("LANGFLOW_DOMAIN_AUTHORING_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_DOMAIN_AUTHORING_FLOW_ID", local_env)),
+            table_catalog_authoring_api_url=_env("LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID", local_env)),
+            main_flow_filter_authoring_api_url=_env("LANGFLOW_MAIN_FILTER_AUTHORING_API_URL", local_env)
+            or _env("LANGFLOW_MAIN_FLOW_FILTER_AUTHORING_API_URL", local_env)
+            or _flow_run_url(base_url, _env("LANGFLOW_MAIN_FILTER_AUTHORING_FLOW_ID", local_env)),
+            input_type=_env("LANGFLOW_INPUT_TYPE", local_env) or "chat",
+            output_type=_env("LANGFLOW_OUTPUT_TYPE", local_env) or "chat",
+            timeout=_int_env("LANGFLOW_TIMEOUT_SECONDS", 180, local_env),
             session_store=session_store,
             mongo_uri=mongo_uri,
-            mongo_database=_env("MONGODB_DATABASE") or _env("MONGO_DB_NAME") or "metadata_driven_agent_v3",
-            session_state_collection=_env("MONGODB_SESSION_STATE_COLLECTION") or "agent_v3_session_states",
-            session_state_preview_row_limit=_int_env("SESSION_STATE_PREVIEW_ROW_LIMIT", 5),
-            session_state_history_limit=_int_env("SESSION_STATE_HISTORY_LIMIT", 10),
+            mongo_database=_env("MONGODB_DATABASE", local_env) or _env("MONGO_DB_NAME", local_env) or "metadata_driven_agent_v3",
+            session_state_collection=_env("MONGODB_SESSION_STATE_COLLECTION", local_env) or "agent_v3_session_states",
+            session_state_preview_row_limit=_int_env("SESSION_STATE_PREVIEW_ROW_LIMIT", 5, local_env),
+            session_state_history_limit=_int_env("SESSION_STATE_HISTORY_LIMIT", 10, local_env),
         )
 
     def authoring_url(self, metadata_type: str) -> str:
@@ -92,15 +97,6 @@ class LangflowSettings:
             "session_state": self.session_store == "mongodb" and bool(self.mongo_uri),
         }
 
-    def query_flow_url(self, selected_flow: str) -> str:
-        return {
-            "data_analysis_flow": self.data_analysis_api_url,
-            "metadata_qa_flow": self.metadata_qa_api_url,
-            "report_generation_flow": self.report_generation_api_url,
-            "operations_diagnosis_flow": self.operations_diagnosis_api_url,
-        }.get(str(selected_flow or ""), "")
-
-
 class LangflowApiClient:
     def __init__(self, settings: LangflowSettings | None = None) -> None:
         self.settings = settings or LangflowSettings.from_env()
@@ -110,44 +106,46 @@ class LangflowApiClient:
         effective_state = state if state is not None else self._load_session_state(session_id)
         if not self.settings.router_api_url:
             raise ValueError("LANGFLOW_ROUTER_API_URL or LANGFLOW_ROUTER_FLOW_ID is not configured.")
-        result = self.run_orchestrated_query(question, session_id, effective_state)
+        result = self.run_router_query(question, session_id, effective_state)
         return self._attach_and_save_session_state(result, session_id, question)
 
-    def run_orchestrated_query(self, question: str, session_id: str, state: dict[str, Any] | None = None) -> dict[str, Any]:
+    def run_router_query(self, question: str, session_id: str, state: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Call only the router flow; the router flow is responsible for any internal subflow API calls."""
         if not self.settings.router_api_url:
             raise ValueError("LANGFLOW_ROUTER_API_URL or LANGFLOW_ROUTER_FLOW_ID is not configured.")
-        raw_route_response = call_langflow_api(
-            self.settings.router_api_url,
-            api_key=self.settings.api_key,
-            input_value=question,
-            session_id=session_id,
-            input_type=self.settings.input_type,
-            output_type=self.settings.output_type,
-            node_input_settings=build_router_node_input_settings(state, session_id),
-            timeout=self.settings.timeout,
-        )
-        route_payload = normalize_route_response(raw_route_response)
-        selected_flow = str(route_payload.get("selected_flow") or "data_analysis_flow")
-        api_url = self.settings.query_flow_url(selected_flow)
-        if not api_url:
-            raise ValueError(f"{selected_flow} API URL is not configured.")
-        raw_flow_response = call_langflow_api(
-            api_url,
-            api_key=self.settings.api_key,
-            input_value=question,
-            session_id=session_id,
-            input_type=self.settings.input_type,
-            output_type=self.settings.output_type,
-            node_input_settings=build_split_flow_node_input_settings(selected_flow, route_payload, state, session_id),
-            timeout=self.settings.timeout,
-        )
-        result = normalize_query_response(raw_flow_response)
-        result["api_mode"] = "langflow_orchestrated"
+        try:
+            raw_route_response = call_langflow_api(
+                self.settings.router_api_url,
+                api_key=self.settings.api_key,
+                input_value=question,
+                session_id=session_id,
+                input_type=self.settings.input_type,
+                output_type=self.settings.output_type,
+                node_input_settings=build_router_node_input_settings(state, session_id),
+                timeout=self.settings.timeout,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise TimeoutError(
+                "Router Langflow API timed out. The web app now calls only the router flow, so check the router canvas, "
+                "its internal Selected Flow API Runner, and the Langflow Desktop logs for the nested flow failure."
+            ) from exc
+
+        router_executed_payload = extract_selected_flow_execution_payload(raw_route_response)
+        normalization_source = router_executed_payload.get("raw_response") or raw_route_response
+        result = normalize_query_response(normalization_source)
+        route_payload = normalize_route_response(router_executed_payload or raw_route_response)
+        selected_flow = str(route_payload.get("selected_flow") or router_executed_payload.get("selected_flow") or "")
+        if selected_flow:
+            _apply_selected_flow_defaults(result, selected_flow)
+            result["selected_flow"] = selected_flow
+        result["api_mode"] = "langflow_router_only"
         result["route_decision"] = route_payload
-        result["selected_flow"] = selected_flow
         result["raw_route_response"] = raw_route_response
-        result["raw_response"] = raw_flow_response
+        result["raw_response"] = raw_route_response
         return result
+
+    def run_orchestrated_query(self, question: str, session_id: str, state: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self.run_router_query(question, session_id, state)
 
     def _load_session_state(self, session_id: str) -> dict[str, Any]:
         if not self.session_state_store:
@@ -292,6 +290,7 @@ def build_authoring_node_input_settings(metadata_type: str, duplicate_action: st
 
 def normalize_query_response(api_response: Any) -> dict[str, Any]:
     payload = extract_main_payload(api_response)
+    structured_payload = _looks_like_query(payload)
     data = _query_data(payload)
     applied_scope = _as_dict(payload.get("applied_scope") or payload.get("scope"))
     intent_plan = _as_dict(payload.get("intent_plan"))
@@ -301,6 +300,8 @@ def normalize_query_response(api_response: Any) -> dict[str, Any]:
     errors = _unique_values([*_as_list(payload.get("errors")), *_as_list(analysis.get("errors"))])
     answer = _first_text(payload, ["answer_message", "message", "response", "answer", "text", "content"])
     if not answer:
+        answer = _extract_text_anywhere(api_response)
+    if not answer:
         answer = "응답 텍스트를 찾지 못했습니다. Raw payload를 확인하세요."
     metadata_qa = _as_dict(payload.get("metadata_qa"))
     metadata_route = _as_dict(payload.get("metadata_route"))
@@ -309,8 +310,9 @@ def normalize_query_response(api_response: Any) -> dict[str, Any]:
     result = {
         "status": str(payload.get("status") or analysis.get("status") or ("error" if errors else "ok")),
         "success": bool(payload.get("success", not errors)),
-        "response_type": str(payload.get("response_type") or ("metadata_qa" if direct_response_ready else "analysis")),
+        "response_type": str(payload.get("response_type") or ("metadata_qa" if direct_response_ready else "analysis" if structured_payload else "message")),
         "direct_response_ready": direct_response_ready,
+        "message_only": bool(answer and not structured_payload),
         "answer_message": answer,
         "message": answer,
         "data": data,
@@ -347,10 +349,11 @@ def normalize_route_response(api_response: Any) -> dict[str, Any]:
             "report_generation": "report_generation_flow",
             "operations_diagnosis": "operations_diagnosis_flow",
         }.get(route, "data_analysis_flow")
+    route = str(payload.get("route") or metadata_route.get("route") or _route_from_selected_flow(selected_flow) or "data_analysis")
     return {
         "status": str(payload.get("status") or "ok"),
         "response_type": str(payload.get("response_type") or "route_decision"),
-        "route": str(payload.get("route") or metadata_route.get("route") or "data_analysis"),
+        "route": route,
         "selected_flow": selected_flow,
         "flow_id_env": str(payload.get("flow_id_env") or ""),
         "route_confidence": payload.get("route_confidence") or metadata_route.get("route_confidence") or metadata_route.get("confidence"),
@@ -381,7 +384,9 @@ def normalize_authoring_response(api_response: Any) -> dict[str, Any]:
     return {
         "status": str(payload.get("status") or write_result.get("status") or ui_status),
         "ui_status": ui_status,
-        "message": _first_text(payload, ["message", "response", "answer_message"]) or _authoring_message(ui_status, write_result, review),
+        "message": _first_text(payload, ["message", "response", "answer_message"])
+        or _extract_text_anywhere(api_response)
+        or _authoring_message(ui_status, write_result, review),
         "metadata_type": kind,
         "items": [item for item in _as_list(payload.get("items")) if isinstance(item, dict)],
         "existing_matches": existing_matches,
@@ -440,6 +445,26 @@ def extract_authoring_payload(value: Any) -> dict[str, Any]:
     return _as_dict(value)
 
 
+def extract_selected_flow_execution_payload(value: Any) -> dict[str, Any]:
+    for item in _walk(value):
+        item = _parse_json_dict(item) if isinstance(item, str) else item
+        if not isinstance(item, dict):
+            continue
+        api_payload = item.get("api_response")
+        if isinstance(api_payload, dict):
+            nested = extract_selected_flow_execution_payload(api_payload)
+            if nested:
+                return nested
+        data_payload = item.get("data")
+        if isinstance(data_payload, dict):
+            nested = extract_selected_flow_execution_payload(data_payload)
+            if nested:
+                return nested
+        if _looks_like_selected_flow_execution(item):
+            return dict(item)
+    return {}
+
+
 def normalize_metadata_type(value: Any) -> str:
     text = str(value or "").strip().lower().replace("-", "_")
     if text in {"domain", "domains"}:
@@ -447,6 +472,12 @@ def normalize_metadata_type(value: Any) -> str:
     if text in {"table", "table_catalog", "catalog", "data_catalog"}:
         return "table_catalog"
     return "main_flow_filter"
+
+
+def _apply_selected_flow_defaults(result: dict[str, Any], selected_flow: str) -> None:
+    if selected_flow == "metadata_qa_flow" and result.get("message_only"):
+        result["response_type"] = "metadata_qa"
+        result["direct_response_ready"] = True
 
 
 def normalize_duplicate_action(value: Any) -> str:
@@ -611,11 +642,31 @@ def _looks_like_query(value: dict[str, Any]) -> bool:
 
 
 def _looks_like_route_decision(value: dict[str, Any]) -> bool:
+    if any(key in value for key in ("answer_message", "state", "analysis", "data_ref", "data_refs", "direct_response_ready")):
+        return False
+    data_value = value.get("data")
+    if isinstance(data_value, dict) and any(key in data_value for key in ("rows", "columns", "row_count", "data_ref")):
+        return False
+    if isinstance(data_value, list):
+        return False
     return bool(
         value.get("response_type") == "route_decision"
         or value.get("selected_flow")
         or (value.get("flow_inputs") and value.get("route"))
     )
+
+
+def _looks_like_selected_flow_execution(value: dict[str, Any]) -> bool:
+    return bool(value.get("raw_response") and value.get("selected_flow") and ("message" in value or "status" in value))
+
+
+def _route_from_selected_flow(selected_flow: str) -> str:
+    return {
+        "metadata_qa_flow": "metadata_qa",
+        "data_analysis_flow": "data_analysis",
+        "report_generation_flow": "report_generation",
+        "operations_diagnosis_flow": "operations_diagnosis",
+    }.get(str(selected_flow or ""), "")
 
 
 def _looks_like_authoring(value: dict[str, Any]) -> bool:
@@ -714,8 +765,45 @@ def _collection_name(metadata_type: str) -> str:
     return DEFAULT_COLLECTIONS[kind]
 
 
-def _env(name: str) -> str:
-    return str(os.getenv(name, "") or "").strip()
+def _env(name: str, local_env: dict[str, str] | None = None) -> str:
+    if name in os.environ:
+        return str(os.getenv(name, "") or "").strip()
+    values = local_env if local_env is not None else _load_local_env()
+    return str(values.get(name, "") or "").strip()
+
+
+def _load_local_env() -> dict[str, str]:
+    cwd = Path.cwd().resolve()
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [cwd / ".env"]
+    if cwd == repo_root or repo_root in cwd.parents:
+        candidates.append(repo_root / ".env")
+    seen: set[Path] = set()
+    values: dict[str, str] = {}
+    for path in candidates:
+        resolved = path.resolve()
+        if resolved in seen or not resolved.exists():
+            continue
+        seen.add(resolved)
+        for line in resolved.read_text(encoding="utf-8").splitlines():
+            key, value = _parse_env_line(line)
+            if key and key not in values:
+                values[key] = value
+    return values
+
+
+def _parse_env_line(line: str) -> tuple[str, str]:
+    text = str(line or "").strip()
+    if not text or text.startswith("#") or "=" not in text:
+        return "", ""
+    key, value = text.split("=", 1)
+    key = key.strip()
+    if not key or key.startswith("export "):
+        key = key.removeprefix("export ").strip()
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+        value = value[1:-1]
+    return key, value
 
 
 def _flow_run_url(base_url: str, flow_id: str) -> str:
@@ -724,9 +812,9 @@ def _flow_run_url(base_url: str, flow_id: str) -> str:
     return f"{base_url.rstrip('/')}/api/v1/run/{flow_id.strip()}"
 
 
-def _int_env(name: str, default: int) -> int:
+def _int_env(name: str, default: int, local_env: dict[str, str] | None = None) -> int:
     try:
-        return int(os.getenv(name, "") or default)
+        return int(_env(name, local_env) or default)
     except Exception:
         return default
 
@@ -736,6 +824,39 @@ def _first_text(payload: dict[str, Any], keys: list[str]) -> str:
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip()
+    return ""
+
+
+def _extract_text_anywhere(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    for attr in ("text", "content", "message"):
+        text = getattr(value, attr, None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    if isinstance(value, dict):
+        for key in ("answer_message", "message", "response", "answer", "text", "content", "output"):
+            nested = value.get(key)
+            text = _extract_text_anywhere(nested)
+            if text:
+                return text
+        for key in ("api_response", "data", "result", "results", "outputs", "artifacts"):
+            nested = value.get(key)
+            text = _extract_text_anywhere(nested)
+            if text:
+                return text
+        for nested in value.values():
+            if isinstance(nested, (dict, list)):
+                text = _extract_text_anywhere(nested)
+                if text:
+                    return text
+    if isinstance(value, list):
+        for item in value:
+            text = _extract_text_anywhere(item)
+            if text:
+                return text
     return ""
 
 

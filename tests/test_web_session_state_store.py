@@ -60,11 +60,10 @@ def test_langflow_client_loads_and_saves_mongodb_session_state(monkeypatch: Any)
 
     def fake_call_langflow_api(*args: Any, **kwargs: Any) -> dict[str, Any]:
         calls.append({"url": args[0], "node_input_settings": kwargs.get("node_input_settings")})
-        if args[0] == "http://fake-router":
-            return {"status": "ok", "route": "data_analysis", "selected_flow": "data_analysis_flow", "flow_inputs": {}}
-        if len([call for call in calls if call["url"] == "http://fake-data"]) == 1:
+        if len(calls) == 1:
             return {
                 "status": "ok",
+                "selected_flow": "data_analysis_flow",
                 "answer_message": "first",
                 "state": {
                     "current_data": {
@@ -86,6 +85,7 @@ def test_langflow_client_loads_and_saves_mongodb_session_state(monkeypatch: Any)
             }
         return {
             "status": "ok",
+            "selected_flow": "data_analysis_flow",
             "answer_message": "second",
             "state": {"current_data": {"columns": ["MODE"], "rows": [{"MODE": "A"}], "row_count": 1}},
         }
@@ -93,7 +93,6 @@ def test_langflow_client_loads_and_saves_mongodb_session_state(monkeypatch: Any)
     monkeypatch.setattr(langflow_client, "call_langflow_api", fake_call_langflow_api)
     settings = LangflowSettings(
         router_api_url="http://fake-router",
-        data_analysis_api_url="http://fake-data",
         session_store="mongodb",
         mongo_uri="mongodb://fake",
         mongo_database="metadata_driven_agent_v3",
@@ -107,14 +106,15 @@ def test_langflow_client_loads_and_saves_mongodb_session_state(monkeypatch: Any)
     second = client.run_query("second question", "session-1")
 
     assert calls[0]["node_input_settings"] is None
+    assert calls[1]["url"] == "http://fake-router"
+    assert calls[1]["node_input_settings"] is None
     assert first["session_state_store"]["write"]["saved"] is True
     assert stored_state["current_data"]["rows"] == [{"MODE": "A", "WIP": 1}, {"MODE": "B", "WIP": 2}]
     assert stored_state["current_data"]["data_ref"]["ref_id"] == "result-ref"
-    assert calls[3]["node_input_settings"]["00 Analysis Request Loader"]["state"]["current_data"]["data_ref"]["ref_id"] == "result-ref"
     assert second["session_state_store"]["load"]["loaded"] is True
 
 
-def test_langflow_client_prefers_explicit_state_over_session_store(monkeypatch: Any) -> None:
+def test_langflow_client_keeps_router_call_simple_with_explicit_state(monkeypatch: Any) -> None:
     collection = FakeCollection()
     collection.docs["session_state:session-1"] = {
         "_id": "session_state:session-1",
@@ -126,14 +126,11 @@ def test_langflow_client_prefers_explicit_state_over_session_store(monkeypatch: 
 
     def fake_call_langflow_api(*args: Any, **kwargs: Any) -> dict[str, Any]:
         calls.append({"url": args[0], "node_input_settings": kwargs.get("node_input_settings")})
-        if args[0] == "http://fake-router":
-            return {"status": "ok", "route": "data_analysis", "selected_flow": "data_analysis_flow", "flow_inputs": {}}
-        return {"status": "ok", "answer_message": "ok", "state": {"current_data": {"row_count": 0}}}
+        return {"status": "ok", "selected_flow": "data_analysis_flow", "answer_message": "ok", "state": {"current_data": {"row_count": 0}}}
 
     monkeypatch.setattr(langflow_client, "call_langflow_api", fake_call_langflow_api)
     settings = LangflowSettings(
         router_api_url="http://fake-router",
-        data_analysis_api_url="http://fake-data",
         session_store="mongodb",
         mongo_uri="mongodb://fake",
     )
@@ -141,4 +138,4 @@ def test_langflow_client_prefers_explicit_state_over_session_store(monkeypatch: 
 
     client.run_query("question", "session-1", state={"current_data": {"rows": [{"MODE": "NEW"}], "row_count": 1}})
 
-    assert calls[1]["node_input_settings"]["00 Analysis Request Loader"]["state"]["current_data"]["rows"] == [{"MODE": "NEW"}]
+    assert calls == [{"url": "http://fake-router", "node_input_settings": None}]

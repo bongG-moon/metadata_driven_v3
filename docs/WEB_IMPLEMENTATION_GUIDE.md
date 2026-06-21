@@ -9,11 +9,11 @@
 ```text
 Web/API
 -> router_flow
--> backend orchestrator
+-> router internal API runner
 -> metadata_qa_flow | data_analysis_flow | report_generation_flow | operations_diagnosis_flow
 ```
 
-combined `main_flow` canvas는 제거되었다. web backend는 router를 먼저 실행하고, router의 `selected_flow`에 따라 하위 flow를 한 번 더 호출한다.
+combined `main_flow` canvas는 제거되었다. web backend는 router flow 하나만 실행하고, router flow 내부에서 `selected_flow`에 따른 하위 flow API 호출까지 처리한다.
 
 대상 사용자는 Langflow, Python, JSON, MongoDB를 직접 다루지 않는 현업 작업자다. Web은 Langflow canvas 편집기를 노출하는 도구가 아니라, 자연어 질의, metadata 등록, 검토, 검증을 업무 화면으로 감싸는 얇은 운영 레이어여야 한다.
 
@@ -59,7 +59,7 @@ Browser UI
 -> MongoDB metadata collections and result store
 ```
 
-Query runtime은 split mode로 동작한다. Router가 만든 `selected_flow`에 따라 backend가 `metadata_qa_flow`, `data_analysis_flow`, `report_generation_flow`, `operations_diagnosis_flow` 중 하나를 호출한다.
+Query runtime은 router-owned split mode로 동작한다. Web backend는 router flow만 호출하고, Router가 만든 `selected_flow`에 따라 router flow 내부의 API Runner가 `metadata_qa_flow`, `data_analysis_flow`, `report_generation_flow`, `operations_diagnosis_flow` 중 하나를 호출한다.
 
 현재 `metadata_driven_v3`의 flow는 아래 다섯 묶음으로 본다.
 
@@ -93,16 +93,16 @@ Browser가 직접 하지 말아야 하는 일:
 
 ## 3. 현재 Query Flow 계약
 
-현재 query runtime은 router/subflow 연결 순서를 따른다.
+현재 query runtime은 router/subflow 연결 순서를 따른다. Web/API 검증에서는 router flow 내부에서 선택된 subflow API 호출까지 끝내는 구성을 기본으로 둔다.
 
 ```text
 Web/API
--> router_flow 00~05
--> selected subflow Run API
--> selected subflow API response
+-> router_flow 00~06
+-> selected subflow Run API, called inside router flow
+-> router flow final message/API response
 ```
 
-Web/API backend는 `05`의 route response JSON을 코드에서 읽고 다음 subflow API를 직접 호출한다. Langflow Playground에서 router canvas 자체를 끝까지 실행해야 할 때도 같은 원칙으로 `05 Orchestrator Response Builder.Route Response -> 06 Selected Flow API Runner.Route Response -> Chat Output`을 사용한다. 여러 native Run Flow output을 한 노드로 모으는 방식은 연결된 upstream을 모두 기다릴 수 있어 권장하지 않는다.
+Web/API backend는 router flow 하나만 호출한다. Router flow 안에서 `05 Orchestrator Response Builder.Route Response -> 06 Selected Flow API Runner.Route Response -> Chat Output`까지 연결하고, `06`이 `selected_flow`에 해당하는 subflow API를 호출한다. 만약 router flow가 route decision만 반환하면 web 화면에는 최종 답변/표/state가 부족하게 표시되므로, `LANGFLOW_ROUTER_FLOW_ID` 또는 `LANGFLOW_ROUTER_API_URL`은 `00~06`까지 연결된 router flow를 가리켜야 한다.
 
 `data_analysis_flow`가 선택된 경우 subflow 내부 순서는 다음과 같다.
 
@@ -498,7 +498,9 @@ WEB_SESSION_STORE=mongodb
 WEB_PENDING_AUTHORING_COLLECTION=agent_v3_pending_authoring
 ```
 
-`web_app.langflow_client`는 `LANGFLOW_BASE_URL + *_FLOW_ID`로 `/api/v1/run/{flow_id}` URL을 만들고, 이미 wrapper URL이 있으면 `LANGFLOW_ROUTER_API_URL`, `LANGFLOW_DATA_ANALYSIS_API_URL`, `LANGFLOW_METADATA_QA_API_URL`, `LANGFLOW_DOMAIN_AUTHORING_API_URL`, `LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL`, `LANGFLOW_MAIN_FILTER_AUTHORING_API_URL`을 우선 사용한다.
+`web_app.langflow_client`는 질의 화면에서 `LANGFLOW_ROUTER_API_URL` 또는 `LANGFLOW_BASE_URL + LANGFLOW_ROUTER_FLOW_ID`로 만든 `/api/v1/run/{flow_id}` URL만 호출한다. Router flow가 route decision과 `06 Selected Flow API Runner` 결과를 함께 반환해야 하며, web backend는 `selected_flow`별 subflow URL을 추가 호출하지 않는다. Authoring 화면은 별도 authoring flow URL(`LANGFLOW_DOMAIN_AUTHORING_API_URL`, `LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL`, `LANGFLOW_MAIN_FILTER_AUTHORING_API_URL`)을 사용한다.
+
+개별 subflow가 구조화 `api_response` Data output 대신 Chat/Message Output만 반환하는 경우도 지원한다. 이때 web app은 nested message text를 `answer_message`로 표시하고 `message_only=true`로 다룬다. 다만 결과 row, state, data_ref, intent, pandas code 같은 구조화 영역은 Message 안에 JSON으로 포함되어 있거나 별도 Data/API response output으로 반환될 때만 화면의 표/상세 탭에 안정적으로 표시된다.
 
 `MONGODB_RESULT_COLLECTION`은 metadata가 아니라 query result row 저장소다. `18 MongoDB Data Store`는 pandas 직후 source rows와 result rows를 저장한다. 다음 turn에서는 compact state를 그대로 넘기는 것이 기본이며, optional first `01 MongoDB Data Loader`는 이전 state에 `data_ref`만 있고 preview/summary가 없을 때 사용한다. 이전 결과 전체 rows가 필요한 후속 분석은 data analysis flow의 “이전 결과 복원” 브랜치에서 MongoDB loader를 실행한다.
 

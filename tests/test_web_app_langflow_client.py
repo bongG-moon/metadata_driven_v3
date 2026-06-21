@@ -4,11 +4,16 @@ import json
 import os
 from pathlib import Path
 
+import pytest
+import requests
+
 from web_app.langflow_client import (
+    LangflowApiClient,
     LangflowSettings,
     build_authoring_node_input_settings,
     normalize_authoring_response,
     normalize_query_response,
+    normalize_route_response,
 )
 
 
@@ -124,6 +129,32 @@ def test_normalize_query_response_preserves_metadata_qa_shape() -> None:
     assert result["data"]["rows"][0]["DATASET_KEY"] == "production_today"
 
 
+def test_normalize_query_response_accepts_chat_output_message_only() -> None:
+    result = normalize_query_response(
+        {
+            "outputs": [
+                {
+                    "outputs": [
+                        {
+                            "results": {
+                                "message": {
+                                    "data": {
+                                        "text": "현재 조회 가능한 데이터는 production_today와 wip_today입니다.",
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    assert result["answer_message"] == "현재 조회 가능한 데이터는 production_today와 wip_today입니다."
+    assert result["message_only"] is True
+    assert result["response_type"] == "message"
+
+
 def test_normalize_authoring_response_accepts_current_trace_dict() -> None:
     result = normalize_authoring_response(
         {
@@ -147,6 +178,30 @@ def test_normalize_authoring_response_accepts_current_trace_dict() -> None:
     assert result["metadata_type"] == "domain"
     assert result["ui_status"] == "duplicate_choice_required"
     assert result["trace"]["refined_text"] == "Lot 수량은 LOT_ID nunique"
+
+
+def test_normalize_authoring_response_accepts_message_only() -> None:
+    result = normalize_authoring_response(
+        {
+            "outputs": [
+                {
+                    "outputs": [
+                        {
+                            "results": {
+                                "message": {
+                                    "data": {
+                                        "text": "메타데이터 등록 결과를 확인했습니다.",
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+    )
+
+    assert result["message"] == "메타데이터 등록 결과를 확인했습니다."
 
 
 def test_normalize_authoring_response_accepts_legacy_trace_list() -> None:
@@ -205,10 +260,11 @@ def test_env_example_contains_langflow_web_api_settings() -> None:
     } <= keys
 
 
-def test_langflow_settings_builds_urls_from_base_url_and_flow_ids(monkeypatch) -> None:
+def test_langflow_settings_builds_urls_from_base_url_and_flow_ids(tmp_path, monkeypatch) -> None:
     for key in list(os.environ):
         if key.startswith("LANGFLOW_"):
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("LANGFLOW_BASE_URL", "http://127.0.0.1:7860")
     monkeypatch.setenv("LANGFLOW_ROUTER_FLOW_ID", "router-id")
     monkeypatch.setenv("LANGFLOW_METADATA_QA_FLOW_ID", "metadata-id")
@@ -229,6 +285,147 @@ def test_langflow_settings_builds_urls_from_base_url_and_flow_ids(monkeypatch) -
     assert settings.domain_authoring_api_url == "http://127.0.0.1:7860/api/v1/run/domain-id"
     assert settings.table_catalog_authoring_api_url == "http://127.0.0.1:7860/api/v1/run/table-id"
     assert settings.main_flow_filter_authoring_api_url == "http://127.0.0.1:7860/api/v1/run/filter-id"
+
+
+def test_langflow_settings_loads_local_env_file(tmp_path, monkeypatch) -> None:
+    for key in list(os.environ):
+        if key.startswith("LANGFLOW_"):
+            monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "LANGFLOW_BASE_URL=http://127.0.0.1:7860",
+                "LANGFLOW_ROUTER_FLOW_ID=router-from-env-file",
+                "LANGFLOW_METADATA_QA_API_URL='http://127.0.0.1:7860/api/v1/run/metadata-from-env-file'",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = LangflowSettings.from_env()
+
+    assert settings.router_api_url == "http://127.0.0.1:7860/api/v1/run/router-from-env-file"
+    assert settings.metadata_qa_api_url == "http://127.0.0.1:7860/api/v1/run/metadata-from-env-file"
+
+
+def test_langflow_client_uses_router_executed_result_without_second_api_call(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_call_langflow_api(*args, **kwargs) -> dict:
+        calls.append(args[0])
+        return {
+            "outputs": [
+                {
+                    "outputs": [
+                        {
+                            "results": {
+                                "api_response": {
+                                    "data": {
+                                        "status": "ok",
+                                        "selected_flow": "metadata_qa_flow",
+                                        "message": "metadata answer",
+                                        "raw_response": {
+                                            "api_response": {
+                                                "status": "ok",
+                                                "response_type": "metadata_qa",
+                                                "direct_response_ready": True,
+                                                "answer_message": "metadata answer",
+                                                "metadata_qa": {"handled": True},
+                                                "data": {"columns": [], "rows": [], "row_count": 0, "data_ref": {}},
+                                                "state": {"current_data": {"row_count": 0}},
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            ]
+        }
+
+    monkeypatch.setattr("web_app.langflow_client.call_langflow_api", fake_call_langflow_api)
+    client = LangflowApiClient(
+        LangflowSettings(
+            router_api_url="http://fake-router",
+            metadata_qa_api_url="http://fake-metadata-qa",
+        )
+    )
+
+    result = client.run_orchestrated_query("등록된 데이터 알려줘", "s1", {})
+
+    assert calls == ["http://fake-router"]
+    assert result["api_mode"] == "langflow_router_only"
+    assert result["answer_message"] == "metadata answer"
+    assert result["selected_flow"] == "metadata_qa_flow"
+    assert result["route_decision"]["route"] == "metadata_qa"
+
+
+def test_orchestrated_metadata_qa_message_only_is_marked_direct_response(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fake_call_langflow_api(*args, **kwargs) -> dict:
+        calls.append(args[0])
+        return {
+            "status": "ok",
+            "selected_flow": "metadata_qa_flow",
+            "message": "등록된 데이터 목록을 안내합니다.",
+            "raw_response": {
+                "outputs": [
+                    {
+                        "outputs": [
+                            {
+                                "results": {
+                                    "message": {
+                                        "data": {
+                                            "text": "등록된 데이터 목록을 안내합니다.",
+                                        }
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                ]
+            },
+        }
+
+    monkeypatch.setattr("web_app.langflow_client.call_langflow_api", fake_call_langflow_api)
+    client = LangflowApiClient(
+        LangflowSettings(
+            router_api_url="http://fake-router",
+            metadata_qa_api_url="http://fake-metadata-qa",
+        )
+    )
+
+    result = client.run_orchestrated_query("등록된 데이터 알려줘", "s1", {})
+
+    assert calls == ["http://fake-router"]
+    assert result["answer_message"] == "등록된 데이터 목록을 안내합니다."
+    assert result["message_only"] is True
+    assert result["response_type"] == "metadata_qa"
+    assert result["direct_response_ready"] is True
+
+
+def test_langflow_client_explains_router_timeout(monkeypatch) -> None:
+    def fake_call_langflow_api(*args, **kwargs) -> dict:
+        raise requests.exceptions.ReadTimeout("read timed out")
+
+    monkeypatch.setattr("web_app.langflow_client.call_langflow_api", fake_call_langflow_api)
+    client = LangflowApiClient(LangflowSettings(router_api_url="http://fake-router"))
+
+    with pytest.raises(TimeoutError) as error:
+        client.run_orchestrated_query("질문", "s1", {})
+
+    assert "calls only the router flow" in str(error.value)
+    assert "Selected Flow API Runner" in str(error.value)
+
+
+def test_normalize_route_response_infers_route_from_selected_flow() -> None:
+    result = normalize_route_response({"status": "ok", "selected_flow": "operations_diagnosis_flow"})
+
+    assert result["route"] == "operations_diagnosis"
+    assert result["selected_flow"] == "operations_diagnosis_flow"
 
 
 def test_authoring_settings_do_not_send_duplicate_action_to_writers(monkeypatch) -> None:

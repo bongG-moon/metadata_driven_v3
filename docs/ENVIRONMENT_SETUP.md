@@ -40,6 +40,7 @@ RUN_LLM_VALIDATION=true
 Langflow Desktop에서 각 flow를 만든 뒤, flow 우측 상단의 API/Share/Run API 화면에서 flow id를 확인한다.
 full URL이 `http://127.0.0.1:7860/api/v1/run/3023...` 형태라면 `LANGFLOW_BASE_URL`에는 `http://127.0.0.1:7860`만 넣고, 각 `*_FLOW_ID`에는 마지막 UUID만 넣으면 된다.
 full URL을 그대로 쓰고 싶으면 대응되는 `*_API_URL`에 전체 주소를 넣어도 된다.
+Streamlit web app은 repo 루트 또는 현재 실행 폴더의 `.env`를 자동으로 읽는다. 이미 OS 환경변수로 설정된 값은 `.env`가 덮어쓰지 않는다.
 
 ```dotenv
 LANGFLOW_BASE_URL=http://127.0.0.1:7860
@@ -64,7 +65,7 @@ RUN_LANGFLOW_API_VALIDATION=true
 검증 기준은 다음과 같다.
 
 - router flow: web app의 첫 진입점이다.
-- metadata/data/report/diagnosis flow: router가 선택하거나 web app이 후속 호출하는 query subflow다.
+- metadata/data/report/diagnosis flow: router flow 내부의 `06 Selected Flow API Runner`가 선택적으로 호출하는 query subflow다. Desktop/Web 검증용 `LANGFLOW_ROUTER_FLOW_ID`는 `00~06`까지 연결된 router flow를 가리켜야 한다.
 - authoring flow: web metadata 관리 화면에서 신규 metadata를 등록할 때 사용한다.
 - `LANGFLOW_INPUT_TYPE`은 현재 컴포넌트들이 `MessageTextInput` 기반이면 `chat`을 기본으로 둔다. 실제 Langflow API 화면에서 `input_type`을 `text`로 안내하면 `.env`에서 `text`로 바꾸면 된다.
 
