@@ -1,47 +1,42 @@
 # Operations Diagnosis Flow Connection Guide
 
-`operations_diagnosis_flow`는 병목, 이상 징후, 목표 미달, 장비 이슈 같은 운영 진단 요청을 별도 분기로 받기 위한 확장 flow입니다. 현재는 질문과 이전 분석 state에서 신호를 수집하고, 후속 조회/조치 추천을 만드는 구조입니다.
+`operations_diagnosis_flow`는 병목, 이상 징후, 목표 미달, 장비 이슈 같은 운영 진단 요청을 별도 branch로 받기 위한 독립 subflow입니다. 현재 구현은 이전 분석 state에서 신호를 수집하고 rule 기반 진단/추가 조회 필요성을 정리하는 구조입니다.
 
-## Sequence
+## Recommended Wiring
 
 ```text
-Chat Input
--> 00 MongoDB Session State Loader
--> 00 Diagnosis Request Loader
--> 01 Diagnosis Signal Collector
--> 02 Diagnosis Rule Evaluator
--> 03 Diagnosis Response Builder
--> Chat Output
+Chat Input.Chat Message
+  -> 00 MongoDB Session State Loader.Question
+  -> 00 Diagnosis Request Loader.Question
 
-parallel:
-03 Diagnosis Response Builder.API Response -> 01 MongoDB Session State Writer
+00 MongoDB Session State Loader.Loaded State
+  -> 00 Diagnosis Request Loader.Previous State
+
+00 Diagnosis Request Loader.Payload
+  -> 01 Diagnosis Signal Collector.Payload
+
+01 Diagnosis Signal Collector.Payload
+  -> 02 Diagnosis Rule Evaluator.Payload
+
+02 Diagnosis Rule Evaluator.Payload
+  -> 03 Diagnosis Response Builder.Payload
+
+03 Diagnosis Response Builder.Message
+  -> Chat Output
+
+03 Diagnosis Response Builder.API Response
+  -> 01 MongoDB Session State Writer.Response Payload
 ```
 
-## Inputs
+`00 Diagnosis Request Loader`에는 `Question`과 `Previous State`만 남아 있습니다. session id는 Chat/Run Flow message 또는 state 안에서 자동 추론합니다.
 
-| Node | Input | Value |
-| --- | --- | --- |
-| `00 MongoDB Session State Loader` | `Question` | `Chat Input.Chat Message` 또는 Run Flow가 넘긴 text/message |
-| `00 Diagnosis Request Loader` | `Question` | 같은 text/message |
-| `00 Diagnosis Request Loader` | `Previous State` | `00 MongoDB Session State Loader.Loaded State` |
+## Outputs
 
-`Session ID`는 보통 비워둡니다. Chat Input/Run Flow message에 session id가 있으면 loader가 읽고, 없으면 단독 테스트용 fallback만 사용합니다.
-
-기존 `Router Payload` 입력은 backend orchestrator 호환용입니다. Langflow canvas에서 직접 구성할 때는 기본 연결로 쓰지 않아도 됩니다.
-
-## Outputs and Session Writer
-
-| Node output | Use |
+| Output | Use |
 | --- | --- |
-| `03 Diagnosis Response Builder.API Response` | `01 MongoDB Session State Writer.Response Payload` |
-| `03 Diagnosis Response Builder.Message` | Chat Output 표시용 |
+| `03 Diagnosis Response Builder.Message` | Chat Output |
+| `03 Diagnosis Response Builder.API Response` | Session State Writer 또는 API/Data output |
 
 ## Extension Point
 
-`01 Diagnosis Signal Collector` 뒤에 실제 source 조회나 `data_analysis_flow` Run Flow 호출을 붙일 수 있습니다.
-
-예:
-
-- WIP 증가 신호가 있으면 공정별 WIP/생산량 조회를 요청
-- 목표 미달 신호가 있으면 target/production 달성률 분석을 요청
-- 장비 이슈 신호가 있으면 장비 현황 detail과 장비 대수 분석을 분리 호출
+향후 실제 진단 source 조회가 필요하면 `01 Diagnosis Signal Collector` 뒤에 source 조회 branch를 추가하거나, 필요한 경우 `data_analysis_flow`를 별도 Run Flow로 호출하는 구조를 붙이면 됩니다.

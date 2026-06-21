@@ -20,7 +20,6 @@ ENABLED_OPTIONS = ["true", "false"]
 
 def load_session_state_payload(
     question: Any = "",
-    session_id: Any = "",
     state: Any = None,
     mongo_uri: Any = "",
     mongo_database: Any = "",
@@ -29,7 +28,7 @@ def load_session_state_payload(
     preview_row_limit: Any = "5",
 ) -> dict[str, Any]:
     explicit_state = _state_from_value(state)
-    session = _clean(session_id) or _session_id_from_value(question) or _session_id_from_state(explicit_state) or "demo-session"
+    session = _session_id_from_value(question) or _session_id_from_state(explicit_state) or "demo-session"
     preview_limit = _positive_int(preview_row_limit, default=DEFAULT_STATE_PREVIEW_LIMIT, minimum=0)
     load_status: dict[str, Any] = {
         "enabled": _truthy(enabled),
@@ -337,7 +336,6 @@ class MongoDBSessionStateLoader(Component):
 
     inputs = [
         MessageTextInput(name="question", display_name="Question", required=True),
-        MessageTextInput(name="session_id", display_name="Session ID", value="", advanced=True),
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value="", advanced=True),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value=DEFAULT_DATABASE, advanced=True),
         MessageTextInput(name="session_collection_name", display_name="Session State Collection", value=DEFAULT_SESSION_COLLECTION, advanced=True),
@@ -355,7 +353,6 @@ class MongoDBSessionStateLoader(Component):
             return cached
         result = load_session_state_payload(
             getattr(self, "question", ""),
-            getattr(self, "session_id", ""),
             None,
             getattr(self, "mongo_uri", ""),
             getattr(self, "mongo_database", ""),

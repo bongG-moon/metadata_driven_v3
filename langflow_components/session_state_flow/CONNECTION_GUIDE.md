@@ -1,61 +1,74 @@
 # Session State Flow Connection Guide
 
-## Why MongoDB
+session state flow는 대화별 compact state를 MongoDB에서 읽고 다시 저장하기 위한 공통 부품입니다. main router가 아니라 각 subflow 내부에 두는 것을 기본으로 합니다.
 
-후속분석 state는 기본 Langflow Message History보다 MongoDB session state store를 권장합니다.
+## Why It Exists
 
-- `data_analysis_flow`는 source/result rows를 이미 MongoDB result store에 `data_ref`로 저장합니다.
-- session state에는 full rows가 아니라 `data_ref`, `row_count`, `columns`, preview rows, product key summary, `followup_source_results`만 있으면 됩니다.
-- backend orchestrator, web app, Langflow subflow를 분리해도 `session_id` 기준으로 같은 state를 다시 주입할 수 있습니다.
-- Langflow 기본 Memory는 단일 canvas 내부 대화에는 편하지만, 분리된 router/subflow 구조나 API 서버 재시작 이후 복원에는 약합니다.
+Langflow의 기본 message history만으로는 분리된 Run Flow, API 서버 재시작, 큰 결과 row reference를 안정적으로 이어가기 어렵습니다. 그래서 session state collection에는 full rows를 저장하지 않고, 다음 turn에 필요한 요약만 저장합니다.
 
-## Recommended Runtime Wiring
+저장되는 주요 값은 다음과 같습니다.
+
+| State field | Meaning |
+| --- | --- |
+| `chat_history` | 최근 대화 요약 |
+| `context` | 마지막 route/analysis kind 등 작은 context |
+| `current_data` | 결과 columns, preview rows, row_count, data_ref, product key summary |
+| `followup_source_results` | 이전 조회 source별 data_ref와 요약 |
+| `runtime_source_refs` | source alias별 원본 row reference |
+
+full rows는 `data_analysis_flow`의 result store에 `data_ref`로 저장됩니다.
+
+## Minimal Subflow Pattern
 
 ```text
-User/API request
--> 00 MongoDB Session State Loader
--> router_flow
--> backend orchestrator
--> selected flow
-   -> metadata_qa_flow
-   -> data_analysis_flow
-   -> report_generation_flow
-   -> operations_diagnosis_flow
--> 01 MongoDB Session State Writer
--> API/Web response
+Chat Input.Chat Message
+  -> 00 MongoDB Session State Loader.Question
+  -> 00 Request Loader.Question
+
+00 MongoDB Session State Loader.Loaded State
+  -> 00 Request Loader.Previous State
+
+Final API Response
+  -> 01 MongoDB Session State Writer.Response Payload
 ```
 
-## Loader
+main router flow에는 session state loader/writer를 두지 않는 것을 권장합니다. main router는 분기만 하고, 선택된 subflow가 자기 session state를 직접 load/write합니다.
 
-`00 MongoDB Session State Loader`는 `session_id`로 이전 compact state를 읽습니다.
+## Loader Inputs
 
-Inputs:
+| Input | Typical value |
+| --- | --- |
+| `Question` | `Chat Input.Chat Message` 또는 Run Flow가 넘긴 text/message |
+| `Mongo URI` | 비워두면 `MONGODB_URI` 또는 `MONGO_URI` 사용 |
+| `Mongo Database` | 기본 `metadata_driven_agent_v3` |
+| `Session State Collection` | 기본 `agent_v3_session_states` |
+| `Enabled` | 기본 `true` |
+| `Preview Row Limit` | 기본 `5` |
 
-- `question`: 현재 사용자 질문
-- `session_id`: 대화 세션 키. Web/API 실행에서는 backend가 자동 주입합니다. Langflow 단독 테스트에서만 같은 값을 직접 넣습니다.
-- `mongo_uri`: 비워두면 `MONGODB_URI` 또는 `MONGO_URI`를 사용합니다.
-- `mongo_database`: 기본 `metadata_driven_agent_v3`
-- `session_collection_name`: 기본 `agent_v3_session_states`
-- `preview_row_limit`: state 안의 preview rows 최대 개수
+별도 `Session ID` 포트는 제거했습니다. loader는 `Question` message의 `session_id`, `conversation_id`, `chat_id` 또는 state 안의 session id를 자동으로 찾습니다. 없으면 단독 테스트용 `demo-session` fallback을 사용합니다.
 
-Outputs:
+## Loader Outputs
 
-- `payload`: router 또는 request loader에 넘길 수 있는 request payload
-- `loaded_state`: 기존 `00 Router Request Loader.state` 또는 `00 Analysis Request Loader.state`에 연결할 수 있는 compact state
+| Output | Connect to |
+| --- | --- |
+| `Loaded State` | subflow의 `00 Request Loader.Previous State` |
+| `Payload` | 특수 구성에서 request payload로 직접 사용할 때만 사용 |
 
-## Writer
+## Writer Inputs
 
-`01 MongoDB Session State Writer`는 최종 flow 응답의 `state`를 compact해서 저장합니다.
+| Input | Typical value |
+| --- | --- |
+| `Response Payload` | subflow의 final API/Data response |
+| `Mongo URI` | loader와 동일 |
+| `Mongo Database` | loader와 동일 |
+| `Session State Collection` | loader와 동일 |
+| `Enabled` | 기본 `true` |
+| `Preview Row Limit` | 기본 `5` |
+| `History Limit` | 기본 `10` |
 
-Inputs:
+별도 `Session ID` 포트는 제거했습니다. writer는 `Response Payload.request.session_id` 또는 `Response Payload.api_response.request.session_id`를 사용합니다.
 
-- `response_payload`: selected flow의 final/API response payload
-- `session_id`: API response wrapper처럼 request 정보가 없는 payload를 저장할 때 사용
-- `mongo_uri`, `mongo_database`, `session_collection_name`: loader와 동일
-- `preview_row_limit`: state 안에 남길 preview rows 개수
-- `history_limit`: `chat_history` 보존 개수
-
-Stored document:
+## Stored Document Shape
 
 ```json
 {
@@ -83,27 +96,12 @@ Stored document:
 }
 ```
 
-## Important Policy
-
-Full rows are not stored in the session state collection. Full previous rows stay in `MONGODB_RESULT_COLLECTION` through `data_ref`.
-
-For a follow-up like `이때 상세 device별로 알려줄래?`, the session state loader restores the compact state first. Then `data_analysis_flow` decides whether it needs full previous rows:
-
-- product-key follow-up: use `state.current_data.product_key_values`, no full restore
-- previous-result recalculation/detail: `03 Intent Plan Normalizer` sets `previous_result_restore_mode=full`
-- `04 Previous Result Restore Router` conditionally calls `05 MongoDB Data Loader`
-
-## Web/API Environment
-
-The web API client also supports the same MongoDB session state collection.
+## Environment
 
 ```powershell
-$env:WEB_SESSION_STORE="mongodb"
 $env:MONGODB_URI="mongodb://user:password@host:27017"
 $env:MONGODB_DATABASE="metadata_driven_agent_v3"
 $env:MONGODB_SESSION_STATE_COLLECTION="agent_v3_session_states"
 $env:SESSION_STATE_PREVIEW_ROW_LIMIT="5"
 $env:SESSION_STATE_HISTORY_LIMIT="10"
 ```
-
-If `state` is explicitly passed to `LangflowApiClient.run_query`, the web/API client uses that state first. If `state=None`, the client loads state by `session_id` and saves the response state after the call.

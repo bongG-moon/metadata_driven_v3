@@ -118,8 +118,7 @@ def test_session_state_writer_saves_compact_state_and_loader_reads_it(monkeypatc
     assert state["followup_source_results"][0]["data_ref"]["ref_id"] == "source-ref"
 
     loaded = loader.load_session_state_payload(
-        "next",
-        "s1",
+        types.SimpleNamespace(text="next", session_id="s1"),
         mongo_uri="mongodb://fake",
         mongo_database="metadata_driven_agent_v3",
         session_collection_name="agent_v3_session_states",
@@ -143,8 +142,7 @@ def test_session_state_loader_prefers_explicit_state_over_mongodb(monkeypatch: A
     install_fake_pymongo(monkeypatch, collection)
 
     loaded = loader.load_session_state_payload(
-        "next",
-        "s1",
+        types.SimpleNamespace(text="next", session_id="s1"),
         state={"current_data": {"rows": [{"MODE": "NEW"}], "row_count": 1}},
         mongo_uri="mongodb://fake",
     )
@@ -169,13 +167,14 @@ def test_session_state_writer_accepts_api_response_wrapper(monkeypatch: Any) -> 
     collection = FakeCollection()
     install_fake_pymongo(monkeypatch, collection)
     payload = {
+        "request": {"session_id": "wrapped"},
         "api_response": {
             "response_type": "metadata_qa",
             "state": {"context": {"last_route": "metadata_qa"}, "current_data": {}},
         }
     }
 
-    saved = writer.write_session_state_payload(payload, session_id="wrapped", mongo_uri="mongodb://fake")
+    saved = writer.write_session_state_payload(payload, mongo_uri="mongodb://fake")
 
     assert saved["session_state_write"]["saved"] is True
     assert collection.docs["session_state:wrapped"]["state"]["context"]["last_route"] == "metadata_qa"

@@ -1,31 +1,52 @@
 # Langflow Node Connection Guide Index
 
-현재 권장 운영 구조는 `router_flow`가 앞에서 질문 유형을 분류하고, backend orchestrator가 목적별 하위 flow를 호출하는 방식입니다.
+현재 권장 구조는 main router가 질문 유형을 분류하고, `06 Run Flow Text Switch`가 목적별 하위 Run Flow 하나에만 질문 text를 전달한 뒤, `07 Selected Run Flow Message Merger`가 실행된 Run Flow의 message 하나만 Chat Output으로 넘기는 방식입니다.
 
-## Recommended Runtime Flows
+먼저 읽을 문서:
 
-전체 router + Run Flow + session state 저장 연결은 `docs/ROUTED_RUN_FLOW_SESSION_WIRING_GUIDE.md`를 먼저 봅니다.
-
-| Flow | Role | Detailed guide |
-| --- | --- | --- |
-| Router | 질문 유형 분류와 하위 flow 선택 | `langflow_components/router_flow/CONNECTION_GUIDE.md` |
-| Metadata QA | 데이터 카탈로그, query template, 활용 예시, domain 정보 답변 | `langflow_components/metadata_qa_flow/CONNECTION_GUIDE.md` |
-| Data Analysis | 실제 데이터 조회, pandas 분석, result store 저장, 최종 답변 | `langflow_components/data_analysis_flow/CONNECTION_GUIDE.md` |
-| Report Generation | 리포트 생성 요청 확장 flow | `langflow_components/report_generation_flow/CONNECTION_GUIDE.md` |
-| Operations Diagnosis | 운영 이상/병목 진단 요청 확장 flow | `langflow_components/operations_diagnosis_flow/CONNECTION_GUIDE.md` |
-
-## Authoring Flows
-
-| Flow | Detailed guide |
+| Guide | When to read |
 | --- | --- |
-| Domain metadata authoring | `langflow_components/domain_authoring_flow/CONNECTION_GUIDE.md` |
-| Table catalog authoring | `langflow_components/table_catalog_authoring_flow/CONNECTION_GUIDE.md` |
-| Main flow filter authoring | `langflow_components/main_flow_filters_authoring_flow/CONNECTION_GUIDE.md` |
+| `docs/ROUTED_RUN_FLOW_SESSION_WIRING_GUIDE.md` | main router, Run Flow, session state 연결 전체 그림 |
+| `langflow_components/router_flow/CONNECTION_GUIDE.md` | main router canvas를 만들 때 |
+| `langflow_components/data_analysis_flow/CONNECTION_GUIDE.md` | 실제 데이터 조회/분석 flow를 만들 때 |
+| `langflow_components/metadata_qa_flow/CONNECTION_GUIDE.md` | metadata/catalog/help 답변 flow를 만들 때 |
+| `langflow_components/report_generation_flow/CONNECTION_GUIDE.md` | 리포트 생성 branch를 붙일 때 |
+| `langflow_components/operations_diagnosis_flow/CONNECTION_GUIDE.md` | 운영 진단 branch를 붙일 때 |
+| `langflow_components/session_state_flow/CONNECTION_GUIDE.md` | 대화별 state load/write를 연결할 때 |
 
-## Common Rules
+## Common Runtime Rule
 
-- 실제 reasoning과 JSON 생성은 Langflow의 Gemini/LLM 노드가 담당합니다.
-- Custom component는 prompt 생성, LLM 응답 정규화, payload 병합, 검증, 저장, 응답 정리를 담당합니다.
-- Numbered custom component는 standalone이어야 하며 sibling helper module을 import하지 않습니다.
-- 같은 component 안에서 input 이름과 output 이름이 겹치지 않게 합니다.
-- Payload에는 다음 단계에 필요한 compact 정보만 담고, prompt 전문이나 중복 row를 계속 복사하지 않습니다.
+main router flow:
+
+```text
+Chat Input
+-> router_flow 00~07
+-> selected Run Flow
+-> 07 Selected Run Flow Message Merger
+-> Chat Output
+```
+
+subflow:
+
+```text
+Chat Input
+-> 00 MongoDB Session State Loader
+-> 00 Request Loader
+-> subflow logic
+-> Final API Response
+-> 01 MongoDB Session State Writer
+
+Final Message
+-> Chat Output
+```
+
+## Common Component Rules
+
+- 하위 flow의 00 request loader는 `Question`과 `Previous State`만 직접 연결합니다.
+- session id는 별도 포트로 연결하지 않고 Chat/Run Flow message 또는 final API response에서 자동 추론합니다.
+- main router는 subflow payload를 조립하지 않습니다.
+- Run Flow는 text input만 받으므로 `06 Run Flow Text Switch`에서 선택된 branch 하나에만 질문 text를 전달합니다.
+- Chat Output은 입력을 하나만 받으므로 `07 Selected Run Flow Message Merger`에서 선택된 Run Flow message 하나만 전달합니다.
+- 선택되지 않은 Run Flow는 실행되지 않아야 합니다.
+- custom component는 standalone 파일로 동작해야 하며 sibling helper import를 사용하지 않습니다.
+- input 이름과 output 이름이 같은 component 안에서 겹치지 않게 합니다.

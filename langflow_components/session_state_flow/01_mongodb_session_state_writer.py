@@ -21,7 +21,6 @@ ENABLED_OPTIONS = ["true", "false"]
 
 def write_session_state_payload(
     response_payload_value: Any,
-    session_id: Any = "",
     mongo_uri: Any = "",
     mongo_database: Any = "",
     session_collection_name: Any = "",
@@ -32,7 +31,7 @@ def write_session_state_payload(
     payload = _payload(response_payload_value)
     response = _response_view(payload)
     state = _state_from_response(payload, response)
-    session = _clean(session_id) or _session_id_from_payload(payload) or _session_id_from_payload(response) or "demo-session"
+    session = _session_id_from_payload(payload) or _session_id_from_payload(response) or "demo-session"
     preview_limit = _positive_int(preview_row_limit, default=DEFAULT_STATE_PREVIEW_LIMIT, minimum=0)
     max_history = _positive_int(history_limit, default=DEFAULT_HISTORY_LIMIT, minimum=0)
     write_status: dict[str, Any] = {
@@ -315,7 +314,6 @@ class MongoDBSessionStateWriter(Component):
 
     inputs = [
         DataInput(name="response_payload", display_name="Response Payload", required=True),
-        MessageTextInput(name="session_id", display_name="Session ID", value="", advanced=True),
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value="", advanced=True),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value=DEFAULT_DATABASE, advanced=True),
         MessageTextInput(name="session_collection_name", display_name="Session State Collection", value=DEFAULT_SESSION_COLLECTION, advanced=True),
@@ -328,7 +326,6 @@ class MongoDBSessionStateWriter(Component):
     def build_payload(self) -> Data:
         payload = write_session_state_payload(
             getattr(self, "response_payload", None),
-            getattr(self, "session_id", ""),
             getattr(self, "mongo_uri", ""),
             getattr(self, "mongo_database", ""),
             getattr(self, "session_collection_name", ""),

@@ -11,16 +11,43 @@ from lfx.schema.data import Data
 from lfx.schema.message import Message
 
 
+CATALOG_LIST_CUES = [
+    "데이터 목록",
+    "data list",
+    "조회 가능한 data",
+    "조회 가능한 데이터",
+    "사용 가능한 데이터",
+    "등록된 데이터",
+    "데이터 리스트",
+]
+DATASET_QUERY_CUES = ["쿼리", "query", "sql", "조회문"]
+DATASET_EXAMPLE_CUES = ["활용 예시", "예시 질문", "질문 예시", "어떤 질문", "무슨 질문", "뭘 물어", "뭘 볼", "무엇을 볼"]
+DATASET_DETAIL_CUES = ["데이터 정보", "dataset 정보", "상세 정보", "컬럼", "필터", "기준일", "source", "소스"]
+DOMAIN_SEARCH_CUES = ["관련 등록 정보", "등록된 정보", "등록 정보", "도메인", "정의", "조건", "의미"]
+HELP_CUES = ["도움말", "사용법", "뭐 할 수", "무엇을 할 수", "help", "기능"]
+GREETING_WORDS = ["안녕", "안녕하세요", "하이", "hello", "hi"]
+FAMILY_KEYWORDS = {
+    "production": ["생산", "실적", "production"],
+    "wip": ["재공", "wip"],
+    "target": ["목표", "계획", "target"],
+    "lot": ["lot", "롯", "작업대기", "작업중"],
+    "hold": ["hold", "홀드"],
+    "equipment": ["장비", "설비", "equipment", "eqp"],
+    "capacity": ["capacity", "uph", "capa"],
+}
+
+
 def build_metadata_qa_response(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     metadata_route = payload.get("metadata_route") if isinstance(payload.get("metadata_route"), dict) else {}
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    datasets = _datasets(metadata)
+    metadata_route = _metadata_route_or_infer(metadata_route, payload, metadata, datasets)
     route = str(metadata_route.get("route") or "data_analysis")
     if route not in {"metadata_qa", "direct_answer"}:
         return payload
 
     action = str(metadata_route.get("metadata_action") or "")
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    datasets = _datasets(metadata)
     if action == "catalog_list":
         answer_message, data = _catalog_list_response(datasets)
     elif action == "dataset_examples":
@@ -84,6 +111,7 @@ def build_metadata_qa_response(payload_value: Any) -> dict[str, Any]:
     }
 
     next_payload = deepcopy(payload)
+    next_payload["metadata_route"] = metadata_route
     next_payload["direct_response_ready"] = True
     next_payload["metadata_qa"] = metadata_qa
     next_payload["intent_plan"] = intent_plan
@@ -95,6 +123,67 @@ def build_metadata_qa_response(payload_value: Any) -> dict[str, Any]:
     next_payload["errors"] = list(next_payload.get("errors", [])) if isinstance(next_payload.get("errors"), list) else []
     next_payload["state"] = _state_with_chat_history(payload, answer_message, metadata_qa)
     return next_payload
+
+
+def _metadata_route_or_infer(
+    metadata_route: dict[str, Any],
+    payload: dict[str, Any],
+    metadata: dict[str, Any],
+    datasets: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    route = str(metadata_route.get("route") or "").strip()
+    action = str(metadata_route.get("metadata_action") or metadata_route.get("metadata_question_type") or "").strip()
+    if route == "data_analysis":
+        return metadata_route
+    if route in {"metadata_qa", "direct_answer"} and action:
+        return metadata_route
+
+    question = str((payload.get("request") or {}).get("question") or "").strip()
+    inferred_route = route if route in {"metadata_qa", "direct_answer"} else "metadata_qa"
+    inferred_action = action
+    if _is_greeting(question):
+        inferred_route = "direct_answer"
+        inferred_action = "greeting"
+    elif _contains_any(question, HELP_CUES):
+        inferred_route = "direct_answer"
+        inferred_action = "help"
+    elif _contains_any(question, CATALOG_LIST_CUES):
+        inferred_action = "catalog_list"
+    elif _contains_any(question, DATASET_QUERY_CUES):
+        inferred_action = "dataset_query"
+    elif _contains_any(question, DATASET_EXAMPLE_CUES):
+        inferred_action = "dataset_examples"
+    elif _contains_any(question, DATASET_DETAIL_CUES):
+        inferred_action = "dataset_detail"
+    elif _contains_any(question, DOMAIN_SEARCH_CUES):
+        inferred_action = "domain_search"
+    else:
+        inferred_route = "direct_answer"
+        inferred_action = "help"
+
+    dataset_match = _match_dataset_for_question(question, metadata, datasets)
+    target_term = str(metadata_route.get("target_term") or "").strip()
+    if inferred_action == "domain_search" and not target_term:
+        target_term = _target_term_from_domain(question, metadata)
+
+    result = deepcopy(metadata_route)
+    result.update(
+        {
+            "route": inferred_route,
+            "metadata_action": inferred_action,
+            "metadata_question_type": inferred_action if inferred_route == "metadata_qa" else "",
+            "target_dataset": str(metadata_route.get("target_dataset") or dataset_match.get("target_dataset") or ""),
+            "target_family": str(metadata_route.get("target_family") or dataset_match.get("target_family") or ""),
+            "target_term": target_term,
+            "confidence": metadata_route.get("confidence", "medium"),
+            "route_confidence": metadata_route.get("route_confidence", metadata_route.get("confidence", "medium")),
+            "route_source": metadata_route.get("route_source", "metadata_qa_standalone"),
+            "route_llm_used": bool(metadata_route.get("route_llm_used", False)),
+            "reason": metadata_route.get("reason")
+            or "metadata_qa_flow was run directly, so the metadata QA action was inferred from the question and metadata.",
+        }
+    )
+    return result
 
 
 def _catalog_list_response(datasets: dict[str, dict[str, Any]]) -> tuple[str, dict[str, Any]]:
@@ -217,6 +306,89 @@ def _help_response(intro: str) -> tuple[str, dict[str, Any]]:
     rows = [{"CATEGORY": "example", "EXAMPLE_QUESTION": example} for example in examples]
     answer = intro + "\n\n바로 써볼 수 있는 질문 예시는 아래와 같습니다.\n" + "\n".join(f"- {example}" for example in examples)
     return answer, _data(rows)
+
+
+def _match_dataset_for_question(question: str, metadata: dict[str, Any], datasets: dict[str, dict[str, Any]]) -> dict[str, str]:
+    q_lower = question.lower()
+    q_norm = _normalize(question)
+    for key, item in datasets.items():
+        display = str(item.get("display_name") or "")
+        for candidate in (key, display):
+            text = str(candidate or "").strip()
+            if text and (text.lower() in q_lower or _normalize(text) in q_norm):
+                return {"target_dataset": key, "target_family": str(item.get("dataset_family") or "")}
+
+    quantity_match = _match_quantity_term(question, metadata)
+    if quantity_match.get("dataset_key") in datasets:
+        dataset_key = str(quantity_match["dataset_key"])
+        return {"target_dataset": dataset_key, "target_family": str(datasets[dataset_key].get("dataset_family") or quantity_match.get("dataset_family") or "")}
+    if quantity_match.get("dataset_family"):
+        family = str(quantity_match["dataset_family"])
+        return {"target_dataset": _preferred_dataset_for_family(family, datasets), "target_family": family}
+
+    for family, keywords in FAMILY_KEYWORDS.items():
+        if _contains_any(question, keywords):
+            return {"target_dataset": _preferred_dataset_for_family(family, datasets), "target_family": family}
+    return {"target_dataset": "", "target_family": ""}
+
+
+def _match_quantity_term(question: str, metadata: dict[str, Any]) -> dict[str, str]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    quantity_terms = domain.get("quantity_terms") if isinstance(domain.get("quantity_terms"), dict) else {}
+    best_match: dict[str, str] = {}
+    best_score = -1
+    for key, item in quantity_terms.items():
+        if not isinstance(item, dict):
+            continue
+        candidates = [key, item.get("display_name"), item.get("quantity_column"), item.get("output_column")]
+        if isinstance(item.get("aliases"), list):
+            candidates.extend(item["aliases"])
+        matched = [str(candidate) for candidate in candidates if str(candidate or "").strip() and _contains_any(question, [str(candidate)])]
+        if not matched:
+            continue
+        score = max(len(_normalize(value)) for value in matched)
+        if score > best_score:
+            best_score = score
+            best_match = {
+                "dataset_key": str(item.get("dataset_key") or ""),
+                "dataset_family": str(item.get("dataset_family") or ""),
+            }
+    return best_match
+
+
+def _preferred_dataset_for_family(family: str, datasets: dict[str, dict[str, Any]]) -> str:
+    candidates = [(key, item) for key, item in datasets.items() if str(item.get("dataset_family") or "") == family]
+    if not candidates:
+        return ""
+    return sorted(
+        candidates,
+        key=lambda pair: (
+            0 if str(pair[1].get("date_scope") or "").lower() in {"current_day", "today", "daily"} else 1,
+            0 if str(pair[0]).endswith("_today") else 1,
+            pair[0],
+        ),
+    )[0][0]
+
+
+def _target_term_from_domain(question: str, metadata: dict[str, Any]) -> str:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    q_norm = _normalize(question)
+    candidates: list[str] = []
+    for section, values in domain.items():
+        if section == "product_key_columns":
+            continue
+        if not isinstance(values, dict):
+            continue
+        for key, payload in values.items():
+            if not isinstance(payload, dict):
+                payload = {"value": payload}
+            candidates.extend([str(key), str(payload.get("display_name") or "")])
+            if isinstance(payload.get("aliases"), list):
+                candidates.extend(str(alias) for alias in payload["aliases"])
+    candidates = [candidate for candidate in candidates if candidate and _normalize(candidate) in q_norm]
+    if not candidates:
+        return question
+    return sorted(candidates, key=lambda value: len(_normalize(value)), reverse=True)[0]
 
 
 def _find_domain_matches(metadata: dict[str, Any], terms: list[str]) -> list[dict[str, Any]]:
@@ -429,6 +601,16 @@ def _compact_value(value: Any) -> str:
 
 def _normalize(text: Any) -> str:
     return re.sub(r"[\s\-_/.]+", "", str(text or "").lower())
+
+
+def _contains_any(text: str, candidates: list[str]) -> bool:
+    normalized = _normalize(text)
+    return any(candidate and _normalize(candidate) in normalized for candidate in candidates)
+
+
+def _is_greeting(text: str) -> bool:
+    normalized = _normalize(text)
+    return normalized in {_normalize(word) for word in GREETING_WORDS}
 
 
 def _payload(value: Any) -> dict[str, Any]:

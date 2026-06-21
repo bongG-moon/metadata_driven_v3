@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from web_app.langflow_client import build_split_flow_tweaks, normalize_route_response
+from web_app.langflow_client import build_split_flow_node_input_settings, normalize_route_response
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,8 +30,8 @@ def test_split_flow_folders_have_expected_numbered_files() -> None:
             "03_route_classifier_prompt_builder.py",
             "04_route_classifier_normalizer.py",
             "05_orchestrator_response_builder.py",
-            "06_run_flow_handoff_builder.py",
-            "07_selected_run_flow_response_merger.py",
+            "06_run_flow_text_switch.py",
+            "07_selected_run_flow_message_merger.py",
         ],
         "metadata_qa_flow": [
             "00_metadata_qa_request_loader.py",
@@ -108,72 +108,77 @@ def test_router_flow_maps_routes_to_selected_subflows() -> None:
         )
         response = orchestrator.build_orchestrator_response(classified)
         assert response["selected_flow"] == selected_flow
-        assert response["flow_inputs"]["question"] == "make an operations diagnosis"
-        assert response["flow_inputs"]["state"]["current_data"]["row_count"] == 1
+        assert response["request"]["question"] == "make an operations diagnosis"
 
 
-def test_metadata_qa_loader_accepts_router_route_payload() -> None:
-    loader = load_component("langflow_components/metadata_qa_flow/00_metadata_qa_request_loader.py")
-    route_payload = {
-        "selected_flow": "metadata_qa_flow",
-        "flow_inputs": {
-            "session_id": "s1",
-            "metadata_route": {"route": "metadata_qa", "metadata_action": "dataset_query", "target_dataset": "production_today"},
-            "metadata": {"table_catalog": {"datasets": {"production_today": {"display_name": "Production Today"}}}},
-        },
+def test_run_flow_text_switch_outputs_question_for_selected_flow_only() -> None:
+    text_switch = load_component("langflow_components/router_flow/06_run_flow_text_switch.py")
+    route_response = {
+        "selected_flow": "report_generation_flow",
+        "request": {"question": "방금 결과로 리포트 만들어줘", "session_id": "s1"},
     }
 
-    result = loader.build_metadata_qa_request(
-        "show production query",
-        "s1",
-        state={"current_data": {"row_count": 2}},
-        router_payload=route_payload,
+    selected = text_switch.run_flow_text_payload(route_response, "report_generation_flow")
+    skipped = text_switch.run_flow_text_payload(route_response, "data_analysis_flow")
+
+    assert selected == {
+        "selected": True,
+        "selected_flow": "report_generation_flow",
+        "target_flow": "report_generation_flow",
+        "question": "방금 결과로 리포트 만들어줘",
+    }
+    assert skipped["selected"] is False
+    assert skipped["question"] == "방금 결과로 리포트 만들어줘"
+
+
+def test_selected_run_flow_message_merger_returns_only_selected_output() -> None:
+    merger = load_component("langflow_components/router_flow/07_selected_run_flow_message_merger.py")
+    route_response = {"selected_flow": "data_analysis_flow", "route": "data_analysis"}
+
+    result = merger.selected_run_flow_message(
+        route_response,
+        metadata_qa_output="metadata answer",
+        data_analysis_output=SimpleNamespace(text="analysis answer"),
+        report_generation_output="report answer",
+        operations_diagnosis_output="diagnosis answer",
     )
 
-    assert result["metadata_route"]["metadata_action"] == "dataset_query"
-    assert result["metadata_route"]["target_dataset"] == "production_today"
-    assert result["metadata"]["table_catalog"]["datasets"]["production_today"]["display_name"] == "Production Today"
-    assert result["request"]["session_id"] == "s1"
-    assert result["state"]["current_data"]["row_count"] == 2
+    assert result == {
+        "selected_flow": "data_analysis_flow",
+        "message": "analysis answer",
+        "has_selected_output": True,
+    }
 
 
-def test_request_loaders_inherit_session_id_from_state_or_router_payload() -> None:
+def test_selected_run_flow_message_merger_extracts_text_from_nested_payload() -> None:
+    merger = load_component("langflow_components/router_flow/07_selected_run_flow_message_merger.py")
+    route_response = {"selected_flow": "metadata_qa_flow", "route": "metadata_qa"}
+    run_output = {"api_response": {"answer_message": "metadata nested answer"}}
+
+    result = merger.selected_run_flow_message(route_response, metadata_qa_output=run_output)
+
+    assert result["message"] == "metadata nested answer"
+    assert result["has_selected_output"] is True
+
+
+def test_request_loaders_inherit_session_id_from_state() -> None:
     router_loader = load_component("langflow_components/router_flow/00_router_request_loader.py")
     analysis_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/metadata_qa_flow/00_metadata_qa_request_loader.py")
     report_loader = load_component("langflow_components/report_generation_flow/00_report_request_loader.py")
     diagnosis_loader = load_component("langflow_components/operations_diagnosis_flow/00_diagnosis_request_loader.py")
     session_loader = load_component("langflow_components/session_state_flow/00_mongodb_session_state_loader.py")
-    orchestrator = load_component("langflow_components/router_flow/05_orchestrator_response_builder.py")
 
     state = {"session_id": "conversation-123", "current_data": {"row_count": 1}}
 
-    router_payload = router_loader.build_request_payload("질문", "", state)
-    assert router_payload["request"]["session_id"] == "conversation-123"
-
-    route_response = orchestrator.build_orchestrator_response(
-        {
-            "request": {"question": "질문"},
-            "state": state,
-            "metadata_route": {"route": "metadata_qa", "metadata_action": "catalog_list"},
-        }
-    )
-    assert route_response["flow_inputs"]["session_id"] == "conversation-123"
+    router_request = router_loader.build_request_payload("질문", "", state)
+    assert router_request["request"]["session_id"] == "conversation-123"
 
     assert analysis_loader.build_request_payload("질문", "", state)["request"]["session_id"] == "conversation-123"
-    assert (
-        metadata_loader.build_metadata_qa_request("질문", "", router_payload=route_response)["request"]["session_id"]
-        == "conversation-123"
-    )
-    assert report_loader.build_report_request("질문", "", router_payload=route_response)["request"]["session_id"] == "conversation-123"
-    assert (
-        diagnosis_loader.build_diagnosis_request("질문", "", router_payload=route_response)["request"]["session_id"]
-        == "conversation-123"
-    )
-    assert (
-        session_loader.load_session_state_payload("질문", "", state=state, enabled="false")["request"]["session_id"]
-        == "conversation-123"
-    )
+    assert metadata_loader.build_metadata_qa_request("질문", "", state=state)["request"]["session_id"] == "conversation-123"
+    assert report_loader.build_report_request("질문", "", state=state)["request"]["session_id"] == "conversation-123"
+    assert diagnosis_loader.build_diagnosis_request("질문", "", state=state)["request"]["session_id"] == "conversation-123"
+    assert session_loader.load_session_state_payload("질문", state=state, enabled="false")["request"]["session_id"] == "conversation-123"
 
 
 def test_previous_result_restore_router_and_merger_skip_loader_for_summary_mode() -> None:
@@ -246,7 +251,7 @@ def test_previous_result_restore_router_uses_source_refs_without_current_data_re
     assert routed["restore_payload"]["previous_result_restore_mode"] == "full"
 
 
-def test_web_client_normalizes_route_response_and_builds_subflow_tweaks() -> None:
+def test_web_client_normalizes_route_response_and_builds_subflow_node_input_settings() -> None:
     raw = {
         "outputs": [
             {
@@ -266,60 +271,10 @@ def test_web_client_normalizes_route_response_and_builds_subflow_tweaks() -> Non
     }
 
     route_payload = normalize_route_response(raw)
-    tweaks = build_split_flow_tweaks("metadata_qa_flow", route_payload, state={}, session_id="s1")
+    node_input_settings = build_split_flow_node_input_settings("metadata_qa_flow", route_payload, state={}, session_id="s1")
 
     assert route_payload["selected_flow"] == "metadata_qa_flow"
-    assert tweaks["00 Metadata QA Request Loader"]["metadata_route"]["metadata_action"] == "catalog_list"
-    assert tweaks["00 Metadata QA Request Loader"]["state"]["current_data"]["row_count"] == 3
-
-
-def test_run_flow_handoff_builder_creates_single_router_payload_branch() -> None:
-    handoff = load_component("langflow_components/router_flow/06_run_flow_handoff_builder.py")
-    report_loader = load_component("langflow_components/report_generation_flow/00_report_request_loader.py")
-    route_response = {
-        "selected_flow": "report_generation_flow",
-        "flow_inputs": {
-            "question": "방금 결과로 리포트 만들어줘",
-            "session_id": "session-1",
-            "state": {"current_data": {"row_count": 5}},
-        },
-    }
-
-    report_payload = handoff.build_handoff_payload(route_response, "report_generation_flow")
-    data_payload = handoff.build_handoff_payload(route_response, "data_analysis_flow")
-
-    assert report_payload["selected"] is True
-    assert report_payload["question"] == "방금 결과로 리포트 만들어줘"
-    assert report_payload["session_id"] == "session-1"
-    assert report_payload["flow_inputs"]["state"]["current_data"]["row_count"] == 5
-    assert report_loader.build_report_request("", "", router_payload=report_payload)["request"]["question"] == "방금 결과로 리포트 만들어줘"
-    assert data_payload["selected"] is False
-    assert "flow_tweak_data" not in report_payload
-
-
-def test_subflow_request_loaders_accept_single_router_payload() -> None:
-    analysis_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
-    metadata_loader = load_component("langflow_components/metadata_qa_flow/00_metadata_qa_request_loader.py")
-    report_loader = load_component("langflow_components/report_generation_flow/00_report_request_loader.py")
-    diagnosis_loader = load_component("langflow_components/operations_diagnosis_flow/00_diagnosis_request_loader.py")
-    route_response = {
-        "selected_flow": "metadata_qa_flow",
-        "metadata_route": {"route": "metadata_qa", "metadata_action": "catalog_list"},
-        "flow_inputs": {
-            "question": "사용 가능한 데이터셋 알려줘",
-            "session_id": "session-router-only",
-            "state": {"current_data": {"row_count": 2}},
-            "metadata_route": {"route": "metadata_qa", "metadata_action": "catalog_list"},
-        },
-    }
-
-    assert analysis_loader.build_request_payload("", "", router_payload=route_response)["request"]["session_id"] == "session-router-only"
-    assert (
-        metadata_loader.build_metadata_qa_request("", "", router_payload=route_response)["request"]["question"]
-        == "사용 가능한 데이터셋 알려줘"
-    )
-    assert report_loader.build_report_request("", "", router_payload=route_response)["state"]["current_data"]["row_count"] == 2
-    assert diagnosis_loader.build_diagnosis_request("", "", router_payload=route_response)["request"]["session_id"] == "session-router-only"
+    assert node_input_settings["00 Metadata QA Request Loader"]["state"]["current_data"]["row_count"] == 3
 
 
 def test_request_loaders_extract_text_and_session_from_chat_message() -> None:

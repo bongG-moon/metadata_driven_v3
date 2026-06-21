@@ -12,39 +12,18 @@ def build_metadata_qa_request(
     question: str,
     session_id: str = "",
     state: Any = None,
-    metadata_route: Any = None,
-    metadata: Any = None,
-    router_payload: Any = None,
 ) -> dict[str, Any]:
-    router = _route_payload(router_payload)
-    flow_inputs = _dict_value(router.get("flow_inputs"))
-    state_data = _dict_value(state) or _dict_value(flow_inputs.get("state")) or _dict_value(router.get("state"))
-    resolved_session_id = _resolve_session_id(session_id, state_data, router, question)
-    resolved_question = _resolve_question(question, router, flow_inputs)
-    payload = {
+    state_data = _dict_value(state)
+    resolved_session_id = _resolve_session_id(session_id, state_data, question)
+    return {
         "payload_version": "agent-v1",
         "status": "ok",
-        "request": {"session_id": resolved_session_id, "question": resolved_question, "timezone": "Asia/Seoul"},
+        "request": {"session_id": resolved_session_id, "question": _text_value(question).strip(), "timezone": "Asia/Seoul"},
         "state": state_data,
         "info": [],
         "warnings": [],
         "errors": [],
     }
-    route = _dict_value(metadata_route)
-    if not route and isinstance(router.get("metadata_route"), dict):
-        route = deepcopy(router["metadata_route"])
-    if not route and isinstance(router.get("flow_inputs"), dict) and isinstance(router["flow_inputs"].get("metadata_route"), dict):
-        route = deepcopy(router["flow_inputs"]["metadata_route"])
-    if route:
-        payload["metadata_route"] = route
-    metadata_value = _dict_value(metadata)
-    if not metadata_value and isinstance(router.get("flow_inputs"), dict) and isinstance(router["flow_inputs"].get("metadata"), dict):
-        metadata_value = deepcopy(router["flow_inputs"]["metadata"])
-    if metadata_value:
-        payload["metadata"] = metadata_value
-    if router:
-        payload["router_payload"] = router
-    return payload
 
 
 def _dict_value(value: Any) -> dict[str, Any]:
@@ -54,33 +33,12 @@ def _dict_value(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
-def _route_payload(value: Any) -> dict[str, Any]:
-    payload = _dict_value(value)
-    route_response = payload.get("route_response") if isinstance(payload.get("route_response"), dict) else {}
-    if route_response and not isinstance(payload.get("flow_inputs"), dict):
-        return deepcopy(route_response)
-    return payload
-
-
-def _resolve_question(question: Any, router_payload: dict[str, Any], flow_inputs: dict[str, Any]) -> str:
-    explicit = _text_value(question).strip()
-    if explicit:
-        return explicit
-    for source in (flow_inputs, router_payload, _dict_value(router_payload.get("request"))):
-        text = str(source.get("question") or "").strip()
-        if text:
-            return text
-    return ""
-
-
-def _resolve_session_id(session_id: Any, state: dict[str, Any], router_payload: dict[str, Any], question: Any = None) -> str:
+def _resolve_session_id(session_id: Any, state: dict[str, Any], question: Any = None) -> str:
     explicit = str(session_id or "").strip()
     if explicit:
         return explicit
     return (
         _session_id_from_value(question)
-        or _session_id_from_mapping(router_payload.get("flow_inputs") if isinstance(router_payload.get("flow_inputs"), dict) else {})
-        or _session_id_from_mapping(router_payload)
         or _session_id_from_mapping(state)
         or "demo-session"
     )
@@ -137,29 +95,21 @@ def _text_value(value: Any) -> str:
 
 class MetadataQARequestLoader(Component):
     display_name = "00 Metadata QA Request Loader"
-    description = "Builds the metadata-QA payload from router-selected question, state, and metadata_route."
+    description = "Builds the metadata-QA payload from chat input and previous state."
     icon = "SearchCheck"
     inputs = [
         MessageTextInput(name="question", display_name="Question", required=False),
-        MessageTextInput(name="session_id", display_name="Session ID", value="", advanced=True),
         DataInput(name="state", display_name="Previous State", required=False),
-        DataInput(name="metadata_route", display_name="Metadata Route", required=False),
-        DataInput(name="metadata", display_name="Metadata", required=False),
-        DataInput(name="router_payload", display_name="Router Payload", required=False),
     ]
     outputs = [Output(name="payload", display_name="Payload", method="build_payload")]
 
     def build_payload(self) -> Data:
         payload = build_metadata_qa_request(
             getattr(self, "question", ""),
-            getattr(self, "session_id", ""),
-            getattr(self, "state", None),
-            getattr(self, "metadata_route", None),
-            getattr(self, "metadata", None),
-            getattr(self, "router_payload", None),
+            state=getattr(self, "state", None),
         )
         self.status = {
-            "route": (payload.get("metadata_route") or {}).get("route"),
-            "metadata_action": (payload.get("metadata_route") or {}).get("metadata_action"),
+            "session_id": payload.get("request", {}).get("session_id"),
+            "has_previous_state": bool(payload.get("state")),
         }
         return Data(data=payload)

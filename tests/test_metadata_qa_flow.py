@@ -49,6 +49,31 @@ def test_metadata_qa_lists_catalog_without_expanding_examples(monkeypatch: Any) 
     assert api_response["intent"]["analysis_kind"] == "catalog_list"
 
 
+def test_metadata_qa_standalone_infers_catalog_list_without_route_payload(monkeypatch: Any) -> None:
+    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+
+    payload = seed_payload("현재 조회 가능한 DATA LIST를 알려줄래?", monkeypatch)
+    result = response_builder.build_metadata_qa_response(payload)
+
+    assert result["direct_response_ready"] is True
+    assert result["metadata_route"]["route"] == "metadata_qa"
+    assert result["metadata_route"]["route_source"] == "metadata_qa_standalone"
+    assert result["metadata_qa"]["metadata_action"] == "catalog_list"
+    assert "production_today" in {row["DATASET_KEY"] for row in result["data"]["rows"]}
+
+
+def test_metadata_qa_standalone_maps_quantity_query_without_route_payload(monkeypatch: Any) -> None:
+    response_builder = load_component("langflow_components/metadata_qa_flow/02_metadata_qa_response_builder.py")
+
+    payload = seed_payload("생산량 데이터를 조회하는 쿼리를 알려줘", monkeypatch)
+    result = response_builder.build_metadata_qa_response(payload)
+
+    assert result["direct_response_ready"] is True
+    assert result["metadata_qa"]["metadata_action"] == "dataset_query"
+    assert result["metadata_qa"]["target_dataset"] == "production_today"
+    assert "FROM PRODUCTION_TODAY" in result["answer_message"]
+
+
 def test_metadata_qa_shows_examples_for_requested_dataset(monkeypatch: Any) -> None:
     router = load_component("langflow_components/router_flow/02_route_candidate_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")

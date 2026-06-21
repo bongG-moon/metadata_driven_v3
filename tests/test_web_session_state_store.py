@@ -59,7 +59,7 @@ def test_langflow_client_loads_and_saves_mongodb_session_state(monkeypatch: Any)
     calls: list[dict[str, Any]] = []
 
     def fake_call_langflow_api(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        calls.append({"url": args[0], "tweaks": kwargs.get("tweaks")})
+        calls.append({"url": args[0], "node_input_settings": kwargs.get("node_input_settings")})
         if args[0] == "http://fake-router":
             return {"status": "ok", "route": "data_analysis", "selected_flow": "data_analysis_flow", "flow_inputs": {}}
         if len([call for call in calls if call["url"] == "http://fake-data"]) == 1:
@@ -106,11 +106,11 @@ def test_langflow_client_loads_and_saves_mongodb_session_state(monkeypatch: Any)
     stored_state = collection.docs["session_state:session-1"]["state"]
     second = client.run_query("second question", "session-1")
 
-    assert calls[0]["tweaks"] == {"00 Router Request Loader": {"session_id": "session-1"}}
+    assert calls[0]["node_input_settings"] is None
     assert first["session_state_store"]["write"]["saved"] is True
     assert stored_state["current_data"]["rows"] == [{"MODE": "A", "WIP": 1}, {"MODE": "B", "WIP": 2}]
     assert stored_state["current_data"]["data_ref"]["ref_id"] == "result-ref"
-    assert calls[3]["tweaks"]["00 Analysis Request Loader"]["state"]["current_data"]["data_ref"]["ref_id"] == "result-ref"
+    assert calls[3]["node_input_settings"]["00 Analysis Request Loader"]["state"]["current_data"]["data_ref"]["ref_id"] == "result-ref"
     assert second["session_state_store"]["load"]["loaded"] is True
 
 
@@ -125,7 +125,7 @@ def test_langflow_client_prefers_explicit_state_over_session_store(monkeypatch: 
     calls: list[dict[str, Any]] = []
 
     def fake_call_langflow_api(*args: Any, **kwargs: Any) -> dict[str, Any]:
-        calls.append({"url": args[0], "tweaks": kwargs.get("tweaks")})
+        calls.append({"url": args[0], "node_input_settings": kwargs.get("node_input_settings")})
         if args[0] == "http://fake-router":
             return {"status": "ok", "route": "data_analysis", "selected_flow": "data_analysis_flow", "flow_inputs": {}}
         return {"status": "ok", "answer_message": "ok", "state": {"current_data": {"row_count": 0}}}
@@ -141,4 +141,4 @@ def test_langflow_client_prefers_explicit_state_over_session_store(monkeypatch: 
 
     client.run_query("question", "session-1", state={"current_data": {"rows": [{"MODE": "NEW"}], "row_count": 1}})
 
-    assert calls[1]["tweaks"]["00 Analysis Request Loader"]["state"]["current_data"]["rows"] == [{"MODE": "NEW"}]
+    assert calls[1]["node_input_settings"]["00 Analysis Request Loader"]["state"]["current_data"]["rows"] == [{"MODE": "NEW"}]

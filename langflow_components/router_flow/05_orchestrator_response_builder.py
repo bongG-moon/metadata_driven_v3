@@ -26,19 +26,10 @@ def build_orchestrator_response(payload_value: Any) -> dict[str, Any]:
     selected_flow = FLOW_BY_ROUTE.get(route, "data_analysis_flow")
     session_id = _resolve_session_id(request, state)
 
-    flow_inputs = {
-        "question": str(request.get("question") or ""),
-        "session_id": session_id,
-        "state": deepcopy(state),
-        "metadata_route": deepcopy(metadata_route),
-        "router_payload": _compact_router_payload(payload),
-    }
-    if isinstance(payload.get("metadata"), dict):
-        flow_inputs["metadata"] = deepcopy(payload["metadata"])
-
     return {
         "status": "ok",
         "response_type": "route_decision",
+        "request": {"question": str(request.get("question") or ""), "session_id": session_id},
         "route": route,
         "selected_flow": selected_flow,
         "flow_id_env": _flow_id_env(selected_flow),
@@ -49,7 +40,6 @@ def build_orchestrator_response(payload_value: Any) -> dict[str, Any]:
         "target_dataset": metadata_route.get("target_dataset", ""),
         "target_family": metadata_route.get("target_family", ""),
         "reason": metadata_route.get("reason", ""),
-        "flow_inputs": flow_inputs,
         "warnings": list(payload.get("warnings", [])) if isinstance(payload.get("warnings"), list) else [],
         "errors": list(payload.get("errors", [])) if isinstance(payload.get("errors"), list) else [],
     }
@@ -79,18 +69,6 @@ def _session_id_from_mapping(value: dict[str, Any]) -> str:
     return ""
 
 
-def _compact_router_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "payload_version": payload.get("payload_version", "agent-v1"),
-        "request": deepcopy(payload.get("request", {})),
-        "metadata_route": deepcopy(payload.get("metadata_route", {})),
-        "metadata_context": deepcopy(payload.get("metadata_context", {})),
-        "info": list(payload.get("info", [])) if isinstance(payload.get("info"), list) else [],
-        "warnings": list(payload.get("warnings", [])) if isinstance(payload.get("warnings"), list) else [],
-        "errors": list(payload.get("errors", [])) if isinstance(payload.get("errors"), list) else [],
-    }
-
-
 def _flow_id_env(selected_flow: str) -> str:
     return {
         "metadata_qa_flow": "LANGFLOW_METADATA_QA_FLOW_ID",
@@ -109,7 +87,7 @@ def _payload(value: Any) -> dict[str, Any]:
 
 class OrchestratorResponseBuilder(Component):
     display_name = "05 Orchestrator Response Builder"
-    description = "Converts the router decision into a backend-orchestrator flow selection contract."
+    description = "Converts the router decision into the selected subflow name."
     icon = "Workflow"
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="route_response", display_name="Route Response", method="build_route_response")]

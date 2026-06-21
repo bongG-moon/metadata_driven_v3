@@ -8,7 +8,6 @@ from typing import Any
 from lfx.custom.custom_component.component import Component
 from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
-from lfx.schema.message import Message
 
 
 DEFAULT_STATE_PREVIEW_LIMIT = 5
@@ -19,16 +18,11 @@ def build_request_payload(
     session_id: str = "",
     state: dict[str, Any] | None = None,
     request_date: str | None = None,
-    router_payload: Any = None,
 ) -> dict[str, Any]:
-    router = _dict_value(router_payload)
-    flow_inputs = _dict_value(router.get("flow_inputs"))
-    if not flow_inputs and isinstance(router.get("route_response"), dict):
-        flow_inputs = _dict_value(router["route_response"].get("flow_inputs"))
-    resolved_question = _resolve_question(question, router, flow_inputs)
-    state_value = state if isinstance(state, dict) else _dict_value(flow_inputs.get("state")) or _dict_value(router.get("state"))
+    resolved_question = _text_value(question).strip()
+    state_value = state if isinstance(state, dict) else _dict_value(state)
     date_value = str(request_date or "").strip() or _runtime_reference_date()
-    resolved_session_id = _resolve_session_id(session_id, state_value, router, flow_inputs, question)
+    resolved_session_id = _resolve_session_id(session_id, state_value, question)
     return {
         "payload_version": "agent-v1",
         "status": "ok",
@@ -45,21 +39,6 @@ def _dict_value(value: Any) -> dict[str, Any]:
         return deepcopy(value)
     data = getattr(value, "data", None)
     return deepcopy(data) if isinstance(data, dict) else {}
-
-
-def _resolve_question(question: Any, router_payload: dict[str, Any], flow_inputs: dict[str, Any]) -> str:
-    explicit = _text_value(question).strip()
-    if explicit:
-        return explicit
-    for source in (flow_inputs, router_payload, _dict_value(router_payload.get("request"))):
-        text = str(source.get("question") or "").strip()
-        if text:
-            return text
-    route_response = _dict_value(router_payload.get("route_response"))
-    if route_response:
-        route_inputs = _dict_value(route_response.get("flow_inputs"))
-        return _resolve_question("", route_response, route_inputs)
-    return ""
 
 
 def _runtime_reference_date() -> str:
@@ -152,18 +131,13 @@ def _positive_int(value: Any, default: int) -> int:
     return max(0, parsed)
 
 
-def _resolve_session_id(session_id: Any, state: Any = None, router_payload: Any = None, flow_inputs: Any = None, question: Any = None) -> str:
+def _resolve_session_id(session_id: Any, state: Any = None, question: Any = None) -> str:
     explicit = str(session_id or "").strip()
     if explicit:
         return explicit
-    flow_input_data = flow_inputs if isinstance(flow_inputs, dict) else {}
-    router_data = router_payload if isinstance(router_payload, dict) else {}
     state_data = state if isinstance(state, dict) else {}
     return (
         _session_id_from_value(question)
-        or _session_id_from_mapping(flow_input_data)
-        or _session_id_from_mapping(router_data)
-        or _session_id_from_mapping(_dict_value(router_data.get("route_response")))
         or _session_id_from_mapping(state_data)
         or "demo-session"
     )
@@ -222,9 +196,7 @@ class RequestStateLoader(Component):
     description = "Builds the compact request payload from chat input and previous state."
     inputs = [
         MessageTextInput(name="question", display_name="Question", required=False),
-        MessageTextInput(name="session_id", display_name="Session ID", value="", advanced=True),
         DataInput(name="state", display_name="Previous State", required=False),
-        DataInput(name="router_payload", display_name="Router Payload", required=False),
     ]
     outputs = [Output(name="payload", display_name="Payload", method="build_payload")]
 
@@ -232,8 +204,6 @@ class RequestStateLoader(Component):
         state = getattr(self.state, "data", self.state) if getattr(self, "state", None) else None
         payload = build_request_payload(
             getattr(self, "question", ""),
-            getattr(self, "session_id", ""),
-            state,
-            router_payload=getattr(self, "router_payload", None),
+            state=state,
         )
         return Data(data=payload)

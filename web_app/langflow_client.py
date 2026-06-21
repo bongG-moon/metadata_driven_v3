@@ -122,7 +122,7 @@ class LangflowApiClient:
             session_id=session_id,
             input_type=self.settings.input_type,
             output_type=self.settings.output_type,
-            tweaks=build_router_flow_tweaks(state, session_id),
+            node_input_settings=build_router_node_input_settings(state, session_id),
             timeout=self.settings.timeout,
         )
         route_payload = normalize_route_response(raw_route_response)
@@ -137,7 +137,7 @@ class LangflowApiClient:
             session_id=session_id,
             input_type=self.settings.input_type,
             output_type=self.settings.output_type,
-            tweaks=build_split_flow_tweaks(selected_flow, route_payload, state, session_id),
+            node_input_settings=build_split_flow_node_input_settings(selected_flow, route_payload, state, session_id),
             timeout=self.settings.timeout,
         )
         result = normalize_query_response(raw_flow_response)
@@ -181,7 +181,7 @@ class LangflowApiClient:
             session_id=session_id,
             input_type=self.settings.input_type,
             output_type=self.settings.output_type,
-            tweaks=build_authoring_tweaks(kind, duplicate_action),
+            node_input_settings=build_authoring_node_input_settings(kind, duplicate_action),
             timeout=self.settings.timeout,
         )
         result = normalize_authoring_response(raw_response)
@@ -198,7 +198,7 @@ def call_langflow_api(
     session_id: str,
     input_type: str = "chat",
     output_type: str = "chat",
-    tweaks: dict[str, Any] | None = None,
+    node_input_settings: dict[str, Any] | None = None,
     timeout: int = 180,
 ) -> dict[str, Any]:
     if not str(api_url or "").strip():
@@ -211,8 +211,8 @@ def call_langflow_api(
         "input_value": input_value,
         "session_id": session_id,
     }
-    if tweaks:
-        payload["tweaks"] = tweaks
+    if node_input_settings:
+        payload["tweaks"] = node_input_settings
     headers = {"Content-Type": "application/json"}
     if str(api_key or "").strip():
         headers["x-api-key"] = str(api_key).strip()
@@ -236,18 +236,11 @@ def _build_session_state_store(settings: LangflowSettings) -> MongoDBSessionStat
     return MongoDBSessionStateStore(store_settings)
 
 
-def build_router_flow_tweaks(state: dict[str, Any] | None, session_id: str) -> dict[str, Any] | None:
-    if not state:
-        return {"00 Router Request Loader": {"session_id": session_id}}
-    return {
-        "00 Router Request Loader": {
-            "session_id": session_id,
-            "state": state,
-        }
-    }
+def build_router_node_input_settings(state: dict[str, Any] | None, session_id: str) -> dict[str, Any] | None:
+    return None
 
 
-def build_split_flow_tweaks(
+def build_split_flow_node_input_settings(
     selected_flow: str,
     route_payload: dict[str, Any],
     state: dict[str, Any] | None,
@@ -255,27 +248,19 @@ def build_split_flow_tweaks(
 ) -> dict[str, Any] | None:
     flow_inputs = _as_dict(route_payload.get("flow_inputs"))
     route_state = _as_dict(flow_inputs.get("state")) or _as_dict(state)
-    router_payload = dict(route_payload)
-    common = {"session_id": session_id, "state": route_state}
+    common = {"state": route_state} if route_state else {}
     if selected_flow == "metadata_qa_flow":
-        return {
-            "00 Metadata QA Request Loader": {
-                **common,
-                "metadata_route": _as_dict(flow_inputs.get("metadata_route")) or _as_dict(route_payload.get("metadata_route")),
-                "metadata": _as_dict(flow_inputs.get("metadata")),
-                "router_payload": router_payload,
-            }
-        }
+        return {"00 Metadata QA Request Loader": common} if common else None
     if selected_flow == "data_analysis_flow":
-        return {"00 Analysis Request Loader": common}
+        return {"00 Analysis Request Loader": common} if common else None
     if selected_flow == "report_generation_flow":
-        return {"00 Report Request Loader": {**common, "router_payload": router_payload}}
+        return {"00 Report Request Loader": common} if common else None
     if selected_flow == "operations_diagnosis_flow":
-        return {"00 Diagnosis Request Loader": {**common, "router_payload": router_payload}}
+        return {"00 Diagnosis Request Loader": common} if common else None
     return None
 
 
-def build_authoring_tweaks(metadata_type: str, duplicate_action: str) -> dict[str, Any]:
+def build_authoring_node_input_settings(metadata_type: str, duplicate_action: str) -> dict[str, Any]:
     kind = normalize_metadata_type(metadata_type)
     action = normalize_duplicate_action(duplicate_action)
     collection_name = _collection_name(kind)
@@ -288,12 +273,12 @@ def build_authoring_tweaks(metadata_type: str, duplicate_action: str) -> dict[st
             "07 Main Flow Filter Review Writer",
         ],
     }[kind]
-    tweaks: dict[str, Any] = {}
+    settings: dict[str, Any] = {}
     for label in labels:
-        tweaks[label] = {"duplicate_action": action}
+        settings[label] = {"duplicate_action": action}
         if label.startswith("00 ") or label.startswith("07 "):
-            tweaks[label]["collection_name"] = collection_name
-    return tweaks
+            settings[label]["collection_name"] = collection_name
+    return settings
 
 
 def normalize_query_response(api_response: Any) -> dict[str, Any]:
