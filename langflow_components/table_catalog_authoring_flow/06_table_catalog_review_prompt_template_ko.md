@@ -4,6 +4,8 @@ MongoDB 저장 전에 table catalog metadata를 검수하세요.
 default_detail_columns는 선택 사항입니다. columns가 있으면 default_detail_columns가 없다는 이유만으로 저장을 막지 마세요.
 source_type이 goodocs이면 doc_id가 필수입니다. sheet_name, db_key, query_template은 필수가 아니며 sheet_name은 특정 sheet/tab을 알고 있을 때만 선택 사항입니다.
 required_params가 비어 있는데 DATE가 filter_mappings에 있으면 DATE를 누락된 필수 parameter가 아니라 optional filter로 판단하세요.
+filter_mappings의 왼쪽은 표준 filter key이므로 최종 SELECT columns에 직접 존재할 필요가 없습니다.
+payload.columns 또는 standard_column_aliases 안에 오른쪽 물리 mapping column이 하나 이상 있으면 정상으로 판단하세요. DEN, PKG_TYPE1, MCP_NO 같은 표준 key가 DENSITY, PKG1, MCPSALENO 같은 물리 column과 다르다는 이유만으로 저장을 막지 마세요.
 비개발 제조 업무 사용자가 이해할 수 있도록 보강 요청은 한국어로 설명하세요.
 
 검수 input:

@@ -259,6 +259,41 @@ def test_table_catalog_authoring_normalizes_detail_columns_and_filter_mappings()
     assert item_payload["date_format"] == "YYYY-MM-DD"
 
 
+def test_table_catalog_authoring_repairs_filter_mappings_from_standard_aliases() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    payload = {"metadata_type": "table_catalog", "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "production_today",
+                "payload": {
+                    "display_name": "Production Today",
+                    "dataset_family": "production",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT DENSITY, PKG1, PKG2, PRODUCTION FROM T WHERE WORK_DT = {DATE}",
+                    },
+                    "columns": ["DENSITY", "PKG1", "PKG2", "PRODUCTION"],
+                    "filter_mappings": {"DEN": ["DEN"], "PKG_TYPE1": ["PKG_TYPE1"], "PKG_TYPE2": ["PKG_TYPE2"]},
+                    "standard_column_aliases": {"DEN": ["DENSITY"], "PKG_TYPE1": ["PKG1"], "PKG_TYPE2": ["PKG2"]},
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+    item_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert item_payload["filter_mappings"]["DEN"] == ["DENSITY"]
+    assert item_payload["filter_mappings"]["PKG_TYPE1"] == ["PKG1"]
+    assert item_payload["filter_mappings"]["PKG_TYPE2"] == ["PKG2"]
+
+
 def test_table_catalog_authoring_backfills_goodocs_doc_id_without_sheet_or_query() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     raw_text = """목표2 계획 데이터는 target으로 등록해줘.
@@ -550,6 +585,58 @@ def test_table_catalog_writer_allows_false_review_without_actionable_blockers() 
     assert result["review"]["item_reviews"][0]["decision"] == "pass"
     assert result["write_result"]["status"] == "error"
     assert any("mongo_uri" in item for item in result["write_result"]["errors"])
+
+
+def test_table_catalog_writer_ignores_resolved_mapping_mismatch_when_replace_selected() -> None:
+    writer = load_module("langflow_components/table_catalog_authoring_flow/07_table_catalog_review_writer.py")
+    response = load_module("langflow_components/table_catalog_authoring_flow/08_table_catalog_authoring_response_builder.py")
+    payload = {
+        "metadata_type": "table_catalog",
+        "items": [
+            {
+                "dataset_key": "production_today",
+                "payload": {
+                    "display_name": "Production Today",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT DENSITY, PKG1, PKG2, PRODUCTION FROM T WHERE WORK_DT = {DATE}",
+                    },
+                    "columns": ["DENSITY", "PKG1", "PKG2", "PRODUCTION"],
+                    "filter_mappings": {"DEN": ["DENSITY"], "PKG_TYPE1": ["PKG1"], "PKG_TYPE2": ["PKG2"]},
+                    "standard_column_aliases": {"DEN": ["DENSITY"], "PKG_TYPE1": ["PKG1"], "PKG_TYPE2": ["PKG2"]},
+                },
+            }
+        ],
+        "existing_matches": [
+            {
+                "match_type": "same_dataset_key",
+                "reason": "같은 dataset_key의 기존 table catalog 정보가 있습니다.",
+                "existing": {"dataset_key": "production_today"},
+            }
+        ],
+        "duplicate_decision": {"action": "replace", "requires_user_choice": False},
+        "errors": [],
+    }
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {"field": "DEN", "reason": "필터 매핑에 DEN이 지정되었지만 최종 SELECT에 DENSITY 컬럼만 존재합니다."},
+            {"field": "PKG_TYPE1", "reason": "PKG_TYPE1 매핑이 있지만 최종 SELECT에 PKG1 컬럼만 있습니다."},
+            {"field": "PKG_TYPE2", "reason": "PKG_TYPE2 매핑이 있지만 최종 SELECT에 PKG2 컬럼만 있습니다."},
+        ],
+        "item_reviews": [{"dataset_key": "production_today", "decision": "needs_fix", "reason": "mapping mismatch"}],
+    }
+
+    result = writer.review_and_write_table_catalog_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+    api_response = response.build_table_catalog_authoring_response(result)
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+    assert result["write_result"]["status"] == "error"
+    assert "duplicate_action=replace 옵션이 적용되었습니다." in api_response["message"]
+    assert "비슷한 기존 정보" not in api_response["message"]
 
 
 def test_authoring_prompt_templates_include_mapping_and_equipment_contracts() -> None:

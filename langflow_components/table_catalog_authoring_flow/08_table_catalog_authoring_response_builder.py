@@ -54,7 +54,16 @@ def _message(payload: dict[str, Any], review: dict[str, Any], write_result: dict
                 lines.append(f"- {item.get('field')}: {item.get('reason')}")
             else:
                 lines.append(f"- {item}")
-    if payload.get("existing_matches") or payload.get("conflict_warnings"):
+    duplicate_decision = payload.get("duplicate_decision") if isinstance(payload.get("duplicate_decision"), dict) else {}
+    duplicate_action = _clean(duplicate_decision.get("action"))
+    duplicate_requires_choice = bool(duplicate_decision.get("requires_user_choice"))
+    if payload.get("existing_matches") and duplicate_action in {"merge", "replace", "skip", "create_new"} and not duplicate_requires_choice:
+        lines.append("")
+        lines.append("중복 처리 상태:")
+        lines.append(f"- duplicate_action={duplicate_action} 옵션이 적용되었습니다.")
+        for item in payload.get("existing_matches", [])[:5]:
+            lines.append(f"- 대상 기존 dataset_key: {(item.get('existing') or {}).get('dataset_key')}")
+    elif payload.get("existing_matches") or payload.get("conflict_warnings"):
         lines.append("")
         lines.append("비슷한 기존 정보:")
         for item in payload.get("existing_matches", [])[:5]:
@@ -74,6 +83,10 @@ def _payload(value: Any) -> dict[str, Any]:
         return dict(value)
     data = getattr(value, "data", None)
     return dict(data) if isinstance(data, dict) else {}
+
+
+def _clean(value: Any) -> str:
+    return str(value or "").strip()
 
 
 # 컴포넌트 설명: 08 Table Catalog Authoring Response Builder

@@ -75,6 +75,8 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
             continue
         if _is_optional_goodocs_source_request(item, payload):
             continue
+        if _is_resolved_filter_mapping_request(item, payload):
+            continue
         supplement.append(item)
     if _duplicate_choice_required(payload) and action == "ask":
         supplement.append(
@@ -220,6 +222,15 @@ def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else [value]
 
 
+def _as_text_list(value: Any) -> list[str]:
+    result = []
+    for item in _as_list(value):
+        text = _clean(item)
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
 def _action(value: Any) -> str:
     action = _clean(value).lower()
     return action if action in {"ask", "merge", "replace", "skip", "create_new"} else "ask"
@@ -279,6 +290,46 @@ def _is_optional_goodocs_source_request(item: Any, payload: dict[str, Any]) -> b
     if field in optional_fields:
         return True
     return any(token in text for token in optional_fields)
+
+
+def _is_resolved_filter_mapping_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item)
+    if not field:
+        return False
+    for table_item in _as_list(payload.get("items")):
+        if not isinstance(table_item, dict):
+            continue
+        table_payload = table_item.get("payload") if isinstance(table_item.get("payload"), dict) else {}
+        columns = {_clean(column).lower() for column in _as_text_list(table_payload.get("columns"))}
+        if not columns:
+            continue
+        filter_mappings = table_payload.get("filter_mappings") if isinstance(table_payload.get("filter_mappings"), dict) else {}
+        standard_aliases = table_payload.get("standard_column_aliases") if isinstance(table_payload.get("standard_column_aliases"), dict) else {}
+        mapped_columns = [
+            *_mapping_values_for_key(filter_mappings, field),
+            *_mapping_values_for_key(standard_aliases, field),
+        ]
+        if mapped_columns and any(_clean(column).lower() in columns for column in mapped_columns):
+            return True
+    return False
+
+
+def _supplement_field(item: Any) -> str:
+    if isinstance(item, dict):
+        return _clean(item.get("field"))
+    text = _clean(item)
+    if ":" in text:
+        return _clean(text.split(":", 1)[0])
+    return ""
+
+
+def _mapping_values_for_key(mapping: dict[str, Any], target_key: str) -> list[str]:
+    target = _clean(target_key).upper()
+    values: list[str] = []
+    for key, raw_values in mapping.items():
+        if _clean(key).upper() == target:
+            values.extend(_as_text_list(raw_values))
+    return values
 
 
 def _single_goodocs_item_has_doc_id(payload: dict[str, Any]) -> bool:

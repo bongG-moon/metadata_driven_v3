@@ -93,15 +93,16 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
         errors.append(f"{dataset_key} dataset_family가 필요합니다.")
     if not _as_text_list(payload.get("columns")):
         errors.append(f"{dataset_key} columns 목록이 필요합니다.")
-    payload["filter_mappings"] = _normalize_mapping(payload.get("filter_mappings"))
-    payload["required_param_mappings"] = _normalize_mapping(payload.get("required_param_mappings"))
-    payload["standard_column_aliases"] = _normalize_mapping(payload.get("standard_column_aliases"))
     if not isinstance(payload.get("required_params"), list):
         payload["required_params"] = _as_text_list(payload.get("required_params"))
     if payload.get("default_detail_columns") is not None:
         payload["default_detail_columns"] = _as_text_list(payload.get("default_detail_columns"))
     if payload.get("columns") is not None:
         payload["columns"] = _as_text_list(payload.get("columns"))
+    payload["filter_mappings"] = _normalize_mapping(payload.get("filter_mappings"))
+    payload["required_param_mappings"] = _normalize_mapping(payload.get("required_param_mappings"))
+    payload["standard_column_aliases"] = _normalize_mapping(payload.get("standard_column_aliases"))
+    _repair_filter_mappings_from_standard_aliases(payload)
     return {
         "dataset_key": dataset_key,
         "key": dataset_key,
@@ -545,6 +546,32 @@ def _merge_mapping(base: Any, incoming: dict[str, list[str]]) -> dict[str, list[
     return merged
 
 
+def _repair_filter_mappings_from_standard_aliases(payload: dict[str, Any]) -> None:
+    columns = {_clean(column).lower() for column in _as_text_list(payload.get("columns"))}
+    if not columns:
+        return
+    filter_mappings = payload.get("filter_mappings") if isinstance(payload.get("filter_mappings"), dict) else {}
+    standard_aliases = payload.get("standard_column_aliases") if isinstance(payload.get("standard_column_aliases"), dict) else {}
+    for filter_key, mapped_columns in list(filter_mappings.items()):
+        values = _as_text_list(mapped_columns)
+        if any(_clean(column).lower() in columns for column in values):
+            continue
+        alias_values = _mapping_values_for_key(standard_aliases, filter_key)
+        selected_aliases = [column for column in alias_values if _clean(column).lower() in columns]
+        if selected_aliases:
+            filter_mappings[filter_key] = _unique_text(selected_aliases)
+    payload["filter_mappings"] = filter_mappings
+
+
+def _mapping_values_for_key(mapping: dict[str, Any], target_key: str) -> list[str]:
+    target = _clean(target_key).upper()
+    values: list[str] = []
+    for key, raw_values in mapping.items():
+        if _clean(key).upper() == target:
+            values.extend(_as_text_list(raw_values))
+    return _unique_text(values)
+
+
 def _unique_text(values: Any) -> list[str]:
     result: list[str] = []
     for value in values:
@@ -585,9 +612,11 @@ def _as_text_list(value: Any) -> list[str]:
         value = [value]
     result = []
     for item in value:
-        text = _clean(item)
-        if text and text not in result:
-            result.append(text)
+        parts = re.split(r"[\n,;]+", item) if isinstance(item, str) else [item]
+        for part in parts:
+            text = _clean(part)
+            if text and text not in result:
+                result.append(text)
     return result
 
 
