@@ -155,7 +155,7 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     if db_key and not _clean(source_config.get("db_key")):
         source_config["db_key"] = db_key
     query_template = _query_template_from_text(source_text)
-    if query_template and not _clean(source_config.get("query_template")):
+    if query_template:
         source_config["query_template"] = query_template
     doc_id = _goodocs_doc_id_from_text(source_text)
     if doc_id and not _clean(source_config.get("doc_id")):
@@ -235,18 +235,18 @@ def _query_template_from_text(text: str) -> str:
             if not match:
                 continue
             collecting = True
-            first = _clean(match.group(1))
-            if first:
+            first = match.group(1).rstrip()
+            if first.strip():
                 collected.append(first)
             continue
-        stripped = _clean(line)
+        stripped = line.strip()
         if not stripped and collected:
             break
         if re.match(r"\s*(filter_mappings|default_detail_columns|columns|standard_column_aliases)\b", line, flags=re.IGNORECASE):
             break
         if stripped:
-            collected.append(stripped)
-    return " ".join(collected)
+            collected.append(line.rstrip())
+    return "\n".join(collected).strip()
 
 
 def _columns_from_query(query: str) -> list[str]:

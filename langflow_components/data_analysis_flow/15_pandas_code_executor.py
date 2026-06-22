@@ -123,14 +123,15 @@ def _execute_generated_pandas_code(
         }
 
     required_columns_by_alias = _required_columns_by_alias(plan)
-    sources = {
-        alias: _source_dataframe(
+    sources = {}
+    for alias, rows in runtime_sources.items():
+        alias_text = str(alias)
+        frame = _source_dataframe(
             rows if isinstance(rows, list) else [],
-            required_columns_by_alias.get(str(alias), []),
+            required_columns_by_alias.get(alias_text, []),
             str(plan.get("analysis_kind") or ""),
         )
-        for alias, rows in runtime_sources.items()
-    }
+        sources[alias_text] = _standardize_source_frame_for_alias(frame, alias_text, plan)
     local_vars: dict[str, Any] = {"pd": pd, "sources": sources, "plan": deepcopy(plan), "state": deepcopy(state)}
     safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
     try:
@@ -274,6 +275,7 @@ def _fallback_result_df(plan: dict[str, Any], runtime_sources: dict[str, Any]) -
         if not isinstance(rows, list):
             return None
         frame = _source_dataframe(rows, [], str(plan.get("analysis_kind") or ""))
+        frame = _standardize_source_frame_for_alias(frame, alias, plan)
         frame = _apply_source_filters_for_alias(frame, alias, plan)
         if frame.empty:
             return pd.DataFrame()
@@ -296,6 +298,7 @@ def _fallback_result_df(plan: dict[str, Any], runtime_sources: dict[str, Any]) -
     if not isinstance(rows, list):
         return None
     frame = _source_dataframe(rows, [], str(plan.get("analysis_kind") or ""))
+    frame = _standardize_source_frame_for_alias(frame, alias, plan)
     frame = _apply_source_filters_for_alias(frame, alias, plan)
     lot_count = frame["LOT_ID"].nunique() if "LOT_ID" in frame.columns else 0
     wf_qty = frame["WF_QTY"].sum() if "WF_QTY" in frame.columns else 0
@@ -473,6 +476,7 @@ def _frame_for_step_source(step: dict[str, Any], runtime_sources: dict[str, Any]
     if alias and alias in runtime_sources:
         rows = runtime_sources.get(alias)
         frame = _source_dataframe(rows if isinstance(rows, list) else [], [], str(plan.get("analysis_kind") or ""))
+        frame = _standardize_source_frame_for_alias(frame, alias, plan)
         return _apply_source_filters_for_alias(frame, alias, plan)
     return None
 
@@ -777,6 +781,8 @@ def _fallback_rank_wip_then_join_production(plan: dict[str, Any], runtime_source
 
     wip_df = _source_dataframe(wip_rows, [], str(plan.get("analysis_kind") or ""))
     production_df = _source_dataframe(production_rows, [], str(plan.get("analysis_kind") or ""))
+    wip_df = _standardize_source_frame_for_alias(wip_df, wip_alias, plan)
+    production_df = _standardize_source_frame_for_alias(production_df, production_alias, plan)
     wip_df = _apply_source_filters_for_alias(wip_df, wip_alias, plan)
     production_df = _apply_source_filters_for_alias(production_df, production_alias, plan)
     if wip_df.empty or "WIP" not in wip_df.columns:
@@ -913,6 +919,8 @@ def _fallback_top_wip_process_hold_lot_in_tat(plan: dict[str, Any], runtime_sour
 
     wip_df = _source_dataframe(wip_rows, [], str(plan.get("analysis_kind") or ""))
     lot_df = _source_dataframe(lot_rows, [], str(plan.get("analysis_kind") or ""))
+    wip_df = _standardize_source_frame_for_alias(wip_df, wip_alias, plan)
+    lot_df = _standardize_source_frame_for_alias(lot_df, lot_alias, plan)
     wip_df = _apply_source_filters_for_alias(wip_df, wip_alias, plan)
     lot_df = _apply_source_filters_for_alias(lot_df, lot_alias, plan)
     if wip_df.empty or "WIP" not in wip_df.columns:
@@ -1003,6 +1011,8 @@ def _fallback_top_wip_product_oldest_lot(plan: dict[str, Any], runtime_sources: 
         return pd.DataFrame()
     wip_df = _source_dataframe(wip_rows, [], str(plan.get("analysis_kind") or ""))
     lot_df = _source_dataframe(lot_rows, [], str(plan.get("analysis_kind") or ""))
+    wip_df = _standardize_source_frame_for_alias(wip_df, wip_alias, plan)
+    lot_df = _standardize_source_frame_for_alias(lot_df, lot_alias, plan)
     wip_df = _apply_source_filters_for_alias(wip_df, wip_alias, plan)
     lot_df = _apply_source_filters_for_alias(lot_df, lot_alias, plan)
     if wip_df.empty or lot_df.empty or "WIP" not in wip_df.columns or "IN_TAT" not in lot_df.columns or "LOT_ID" not in lot_df.columns:
@@ -1233,6 +1243,79 @@ def _required_columns_by_alias(plan: dict[str, Any]) -> dict[str, list[str]]:
         if alias:
             result[alias] = _unique_columns([str(column) for column in columns if str(column or "").strip()])
     return result
+
+
+def _standardize_source_frame_for_alias(frame: pd.DataFrame, alias: str, plan: dict[str, Any]) -> pd.DataFrame:
+    aliases = _standard_aliases_for_source(alias, plan)
+    if not aliases:
+        return frame
+    result = frame.copy()
+    for standard, candidates in aliases.items():
+        if standard in result.columns:
+            continue
+        for candidate in candidates:
+            if candidate in result.columns:
+                result[standard] = result[candidate]
+                break
+    return result
+
+
+def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, list[str]]:
+    job = _job_for_source_alias(alias, plan)
+    aliases: dict[str, list[str]] = {}
+    standard_candidates = _standard_columns_from_plan(plan)
+    for standard in standard_candidates:
+        equivalents = [name for name in _equivalent_column_names(standard) if name != standard]
+        if equivalents:
+            aliases[standard] = equivalents
+    if isinstance(job, dict):
+        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+            mapping = job.get(field) if isinstance(job.get(field), dict) else {}
+            for standard, candidates in mapping.items():
+                standard_text = str(standard or "").strip()
+                if not standard_text:
+                    continue
+                if not isinstance(candidates, list):
+                    candidates = [candidates]
+                aliases.setdefault(standard_text, [])
+                aliases[standard_text].extend(str(item) for item in candidates if str(item or "").strip())
+    return {key: _unique_columns([item for item in values if item != key]) for key, values in aliases.items()}
+
+
+def _job_for_source_alias(alias: str, plan: dict[str, Any]) -> dict[str, Any]:
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        job_alias = str(job.get("source_alias") or job.get("dataset_key") or "")
+        if job_alias == alias:
+            return job
+    return {}
+
+
+def _standard_columns_from_plan(plan: dict[str, Any]) -> list[str]:
+    columns: list[str] = []
+    for key in ("product_grain", "analysis_output_columns"):
+        value = plan.get(key)
+        if isinstance(value, list):
+            columns.extend(str(item) for item in value if str(item or "").strip())
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        for key in ("group_by", "join_keys", "output_columns"):
+            value = step.get(key)
+            if isinstance(value, list):
+                columns.extend(str(item) for item in value if str(item or "").strip())
+        for key in ("metric", "target_column", "count_column"):
+            value = str(step.get(key) or "").strip()
+            if value:
+                columns.append(value)
+    for key in ("metric", "target_column", "production_column"):
+        value = str(plan.get(key) or "").strip()
+        if value:
+            columns.append(value)
+    return _unique_columns(columns)
 
 
 def _add_missing_required_columns(frame: pd.DataFrame, required_columns: list[str], analysis_kind: str) -> pd.DataFrame:

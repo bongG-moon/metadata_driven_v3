@@ -4,6 +4,8 @@ Use only information present in the refined text. Put missing essentials in miss
 Use the original user text as the authority for literal SQL, query_template blocks, SELECT columns, filter_mappings, dataset_key, db_key, and source_type.
 The refined text may be summarized; do not drop structured details that are present in the original user text.
 Do not invent query_template, API URL, document ID, sheet name, DB key, or physical columns.
+Treat query_template SQL as opaque executable text. Copy it from the original input without adding/removing commas, underscores, spaces inside identifiers, aliases, table names, column names, placeholders, or comments.
+Never "correct" table or column spelling. For example, do not change DATA_EXTINF_MAS to DATA_EXT_INF_MAS, and do not change PKG_TYPE1, PKG_TYPE2 into PKG_TYPE1,, PKG_TYPE2.
 For SQL query_template values, preserve the full SQL exactly enough to execute, including WITH clauses, CTEs, inline views, nested subqueries, comments, placeholders, and line breaks. Never replace SQL with "...", "omitted", "truncated", or prose.
 For payload.columns derived from SQL, use the final/top-level SELECT list that defines the dataset output. Do not use CTE-internal SELECT columns, scalar subquery internals, WHERE-only columns, JOIN-only columns, GROUP BY-only columns, or ORDER BY-only columns.
 If the final SELECT uses "*" or alias.* from an inline view/subquery, derive columns from that immediate subquery output when it is explicit. If it cannot be expanded safely, do not invent columns.

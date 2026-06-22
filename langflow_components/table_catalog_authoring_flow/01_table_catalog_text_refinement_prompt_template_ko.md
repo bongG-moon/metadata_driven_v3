@@ -3,6 +3,8 @@
 dataset key, source system, SQL, API URL, document ID, sheet name, 물리 column name을 지어내지 마세요.
 refined_text에는 dataset_key, source_type, db_key, query_template block, SELECT column, filter_mappings, required params, date_format, quantity column 같은 구조화 정보를 보존하세요.
 사용자가 SQL이나 mapping을 붙여 넣었다면 요약하면서 없애지 말고 원문 그대로 또는 거의 그대로 복사하세요.
+query_template SQL은 실행용 원문이므로 불투명한 텍스트처럼 다루세요. comma, underscore, 식별자 내부 공백, alias, table name, column name, placeholder, comment를 추가/삭제/수정하지 마세요.
+table/column spelling을 임의로 교정하지 마세요. 예를 들어 DATA_EXTINF_MAS를 DATA_EXT_INF_MAS로 바꾸거나 PKG_TYPE1, PKG_TYPE2를 PKG_TYPE1,, PKG_TYPE2처럼 바꾸면 안 됩니다.
 SQL에 WITH 절, CTE, inline view, nested subquery가 있으면 전체 SQL block과 줄바꿈을 보존하세요. 어떤 부분도 "...", "생략", 요약 표현으로 바꾸지 마세요.
 SQL에서 columns를 적을 때는 dataset output을 만드는 최종/top-level SELECT 목록을 기준으로 하세요. CTE 내부 SELECT나 scalar subquery 내부 SELECT는 제외하세요. 단, 최종 SELECT가 inline view에서 "*"만 선택하는 구조라면 해당 inline view의 출력 column을 사용하세요.
 SQL expression은 AS 뒤의 출력 alias를 column name으로 보존하세요. alias가 없으면 table alias를 제거한 실제 물리 column name을 사용하세요. WHERE, JOIN, GROUP BY, ORDER BY에만 등장하는 column은 columns에 추가하지 마세요.

@@ -7,6 +7,12 @@ For descriptor-style input, convert it to executable form: {{"column": "TSV_DIE_
 For exact process or status values, use filters such as {{"filters": {{"OPER_NAME": ["INPUT"]}}}} instead of a sentence.
 Use condition_by_dataset or condition_by_family when the same business term must use different physical filters by dataset.
 For metric_terms, include required_quantity_terms and output_column when the text explains the needed measures or result name.
+For metric_terms, infer reusable dataset intent from common business words when the source is clear:
+production table, production result table, 생산량 조회 테이블, 생산 실적, 생산량 조회 means dataset_family='production' and required_quantity_terms=['production'].
+If a metric only depends on one dataset family, dataset_key is optional; prefer dataset_family or required_dataset_families so current/history datasets can still be selected by date scope.
+When the text names source columns such as PRODUCTION or NETDIE_300_CNT, preserve them in source_columns even if the worker did not write source_columns explicitly.
+When the text says to create/show a derived column such as FAIL_UNIT_QTY, store it in output_columns or output_column. Do not ask for a data type unless the same output name is ambiguous.
+For conditional division metrics, preserve zero/null denominator handling, fail/output columns, and whether the calculation is row-level before aggregation or aggregate-first.
 Use analysis_recipes when the text explains what kind of analysis plan should be built for a question pattern.
 For analysis_recipes, keep group/grain as a policy such as question_or_product_grain instead of hardcoding one group-by column unless the text explicitly fixes it.
 For multi-step analysis_recipes, preserve step_plan_template, required_columns_by_family, blocked_filter_fields, override_analysis_kinds, and replace/override flags when the text gives those details.

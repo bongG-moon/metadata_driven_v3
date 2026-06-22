@@ -3,6 +3,8 @@ Return one strict JSON object only. Do not wrap it in markdown.
 Do not invent dataset keys, source systems, SQL, API URLs, document IDs, sheet names, or physical column names.
 Preserve literal structured information in refined_text: dataset_key, source_type, db_key, query_template blocks, SELECT columns, filter_mappings, required params, date_format, and quantity columns.
 If the user pasted SQL or mappings, copy them verbatim or near-verbatim instead of summarizing them away.
+Treat query_template SQL as opaque executable text. Do not add/remove commas, underscores, spaces inside identifiers, aliases, table names, column names, placeholders, or comments.
+Never "correct" table or column spelling. For example, do not change DATA_EXTINF_MAS to DATA_EXT_INF_MAS, and do not change PKG_TYPE1, PKG_TYPE2 into PKG_TYPE1,, PKG_TYPE2.
 If the SQL contains WITH clauses, CTEs, inline views, or nested subqueries, preserve the entire SQL block with line breaks. Do not replace any part with "...", "omitted", or a summary.
 When listing columns from SQL, use the final/top-level SELECT list that defines the dataset output. Ignore SELECT lists inside CTEs or scalar subqueries unless the final SELECT is only "*" from an inline view; in that case use the immediate subquery output columns.
 For SQL expressions, preserve the output alias after AS as the column name. If there is no alias, use the physical column name without table alias. Do not add columns that appear only in WHERE, JOIN, GROUP BY, or ORDER BY.

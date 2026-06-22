@@ -7,6 +7,12 @@ descriptor 형태 입력은 실행 가능한 구조로 변환하세요. 예: {{"
 공정값이나 상태값처럼 정확히 일치해야 하는 값은 문장 대신 {{"filters": {{"OPER_NAME": ["INPUT"]}}}} 같은 구조로 저장하세요.
 같은 업무 용어가 dataset별 또는 dataset_family별로 다른 물리 필터를 사용해야 하면 condition_by_dataset 또는 condition_by_family를 사용하세요.
 metric_terms에는 텍스트가 필요한 수량이나 결과명을 설명하는 경우 required_quantity_terms와 output_column을 포함하세요.
+metric_terms에서는 source가 명확하면 작업자가 내부 필드를 모두 쓰지 않아도 재사용 가능한 dataset 의도를 추론하세요.
+production table, production result table, 생산량 조회 테이블, 생산 실적, 생산량 조회는 dataset_family='production' 및 required_quantity_terms=['production']로 해석하세요.
+하나의 dataset family만 쓰는 metric은 dataset_key가 선택 사항입니다. 현재/이력 dataset은 날짜 범위에 따라 고를 수 있도록 dataset_family 또는 required_dataset_families를 우선 사용하세요.
+PRODUCTION, NETDIE_300_CNT처럼 사용자가 source column을 직접 말하면 source_columns에 보존하세요.
+FAIL_UNIT_QTY처럼 새로 만들어 옆에 보여주라는 파생 column은 output_columns 또는 output_column에 저장하세요. output 이름이 모호하지 않으면 data type을 추가로 요구하지 마세요.
+조건부 나눗셈 metric은 분모 0/null 처리, 실패 수량 column, 출력 column, 행별 계산 후 집계인지 먼저 집계 후 계산인지 보존하세요.
 질문 패턴에 따라 어떤 분석 계획을 만들어야 하는지 설명되어 있으면 analysis_recipes를 사용하세요.
 analysis_recipes에서는 텍스트가 특정 group-by column을 명시하지 않는 한 group/grain을 고정하지 말고 question_or_product_grain 같은 policy로 유지하세요.
 multi-step analysis_recipes에서는 텍스트가 해당 세부 정보를 제공하면 step_plan_template, required_columns_by_family, blocked_filter_fields, override_analysis_kinds, replace/override flag를 보존하세요.

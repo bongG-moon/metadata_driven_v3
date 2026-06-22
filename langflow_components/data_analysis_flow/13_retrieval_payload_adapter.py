@@ -32,11 +32,17 @@ def adapt_retrieval_payload(main_payload_value: Any, retrieval_payload_value: An
     compact_results: list[dict[str, Any]] = []
     errors: list[str] = []
     metadata = main_payload.get("metadata") if isinstance(main_payload.get("metadata"), dict) else {}
+    jobs_by_dataset = _jobs_by_dataset(main_payload)
     for result in source_results:
         source_alias = str(result.get("source_alias") or result.get("dataset_key") or "")
         dataset_key = str(result.get("dataset_key") or "")
         source_type = str(result.get("source_type") or "dummy")
-        rows = _standardize_rows_for_dataset(dataset_key, _rows_from_result(result), metadata)
+        rows = _standardize_rows_for_dataset(
+            dataset_key,
+            _rows_from_result(result),
+            metadata,
+            jobs_by_dataset.get(dataset_key),
+        )
         runtime_sources[source_alias] = rows
         compact = deepcopy(result)
         compact.pop("data", None)
@@ -44,9 +50,9 @@ def adapt_retrieval_payload(main_payload_value: Any, retrieval_payload_value: An
         compact.setdefault("source_alias", source_alias)
         compact.setdefault("dataset_key", dataset_key)
         compact.setdefault("source_type", source_type)
-        compact.setdefault("row_count", len(rows))
-        compact.setdefault("columns", list(rows[0].keys()) if rows else [])
-        compact.setdefault("preview_rows", deepcopy(rows[:5]))
+        compact["row_count"] = len(rows)
+        compact["columns"] = _columns_from_rows(rows)
+        compact["preview_rows"] = deepcopy(rows[:5])
         compact.setdefault("data_ref", f"source://{source_type}/{dataset_key}/{source_alias}")
         compact_results.append(compact)
         if result.get("success") is False:
@@ -161,13 +167,31 @@ def _rows_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, dict)]
 
 
-def _standardize_rows_for_dataset(dataset_key: str, rows: list[dict[str, Any]], metadata: dict[str, Any]) -> list[dict[str, Any]]:
+def _jobs_by_dataset(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    result: dict[str, dict[str, Any]] = {}
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        dataset_key = str(job.get("dataset_key") or "").strip()
+        if dataset_key and dataset_key not in result:
+            result[dataset_key] = job
+    return result
+
+
+def _standardize_rows_for_dataset(
+    dataset_key: str,
+    rows: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    job: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if not rows:
         return rows
     catalog = (((metadata.get("table_catalog") or {}).get("datasets") or {}).get(dataset_key) or {}) if isinstance(metadata, dict) else {}
     if not isinstance(catalog, dict):
         catalog = {}
-    aliases = _standard_aliases(catalog)
+    aliases = _standard_aliases(catalog, job if isinstance(job, dict) else {})
     if not aliases:
         return rows
     standardized = []
@@ -184,7 +208,7 @@ def _standardize_rows_for_dataset(dataset_key: str, rows: list[dict[str, Any]], 
     return standardized
 
 
-def _standard_aliases(catalog: dict[str, Any]) -> dict[str, list[str]]:
+def _standard_aliases(catalog: dict[str, Any], job: dict[str, Any] | None = None) -> dict[str, list[str]]:
     aliases: dict[str, list[str]] = {
         "INPUT_PLAN": ["INPUT계획"],
         "OUT_PLAN": ["OUT계획", "TARGET"],
@@ -197,18 +221,14 @@ def _standard_aliases(catalog: dict[str, Any]) -> dict[str, list[str]]:
         "LEAD": ["LEAD_CNT"],
         "EQP_MODEL": ["EQP_MODEL_CD"],
     }
-    filter_mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
-    for standard, candidates in filter_mappings.items():
-        if not isinstance(candidates, list):
-            candidates = [candidates]
-        aliases.setdefault(str(standard), [])
-        aliases[str(standard)].extend(str(item) for item in candidates if str(item or "").strip())
-    configured = catalog.get("standard_column_aliases") if isinstance(catalog.get("standard_column_aliases"), dict) else {}
-    for standard, candidates in configured.items():
-        if not isinstance(candidates, list):
-            candidates = [candidates]
-        aliases.setdefault(str(standard), [])
-        aliases[str(standard)].extend(str(item) for item in candidates if str(item or "").strip())
+    for source in (catalog, job or {}):
+        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+            mapping = source.get(field) if isinstance(source.get(field), dict) else {}
+            for standard, candidates in mapping.items():
+                if not isinstance(candidates, list):
+                    candidates = [candidates]
+                aliases.setdefault(str(standard), [])
+                aliases[str(standard)].extend(str(item) for item in candidates if str(item or "").strip())
     return {key: _unique([item for item in values if item != key]) for key, values in aliases.items()}
 
 

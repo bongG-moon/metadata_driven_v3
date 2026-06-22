@@ -74,6 +74,23 @@ CONDITION_FILTER_KEYS = {
     "not_eq",
     "between",
 }
+FORMULA_FUNCTION_WORDS = {
+    "SUM",
+    "MAX",
+    "MIN",
+    "MEAN",
+    "AVG",
+    "COUNT",
+    "NUNIQUE",
+    "IF",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "NULL",
+    "NONE",
+    "TRUE",
+    "FALSE",
+}
 
 
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
@@ -141,6 +158,7 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
             _normalize_analysis_recipe_payload(payload)
         if section == "metric_terms":
             _normalize_metric_role_filters(payload)
+            _normalize_metric_payload(payload)
     if not payload:
         errors.append(f"items[{index}] payload가 비어 있습니다.")
     item = {
@@ -250,6 +268,110 @@ def _normalize_metric_role_filters(payload: dict[str, Any]) -> None:
             if not isinstance(role, dict):
                 continue
             _normalize_condition_fields(role)
+
+
+def _normalize_metric_payload(payload: dict[str, Any]) -> None:
+    metric_text = _metric_text(payload)
+    source_columns = _as_text_list(payload.get("source_columns"))
+    output_columns = _as_text_list(payload.get("output_columns"))
+    output_column = _clean(payload.get("output_column"))
+    if output_column:
+        output_columns = _unique_text([*output_columns, output_column])
+
+    inferred_outputs = _output_columns_from_metric_text(metric_text)
+    if inferred_outputs:
+        output_columns = _unique_text([*output_columns, *inferred_outputs])
+        if not output_column and len(inferred_outputs) == 1:
+            payload["output_column"] = inferred_outputs[0]
+    if output_columns:
+        payload["output_columns"] = output_columns
+
+    inferred_sources = [
+        column
+        for column in _identifier_columns_from_metric_text(metric_text)
+        if column not in set(output_columns)
+    ]
+    if inferred_sources:
+        payload["source_columns"] = _unique_text([*source_columns, *inferred_sources])
+
+    source_columns_set = set(_as_text_list(payload.get("source_columns")))
+    lowered_metric_text = metric_text.lower()
+    production_cues = {"PRODUCTION", "NETDIE_300_CNT"}.intersection(source_columns_set) or any(
+        cue in lowered_metric_text
+        for cue in ("production", "생산량", "생산 실적", "생산실적", "생산량 조회", "생산량조회")
+    )
+    if production_cues:
+        if not _clean(payload.get("dataset_family")):
+            payload["dataset_family"] = "production"
+        _merge_text_list_field(payload, "required_dataset_families", ["production"])
+        _merge_text_list_field(payload, "required_quantity_terms", ["production"])
+
+    if "NETDIE_300_CNT" in source_columns_set and "PRODUCTION" in source_columns_set:
+        payload.setdefault("calculation_rule", "row_level_then_aggregate")
+        payload.setdefault("zero_division_rule", "when NETDIE_300_CNT <= 0 or null, do not divide and put PRODUCTION into FAIL_UNIT_QTY")
+        if "WAFER_OUT_QTY" in output_columns or "FAIL_UNIT_QTY" in output_columns:
+            payload.setdefault(
+                "pandas_code_instructions",
+                [
+                    "For each row, calculate WAFER_OUT_QTY = PRODUCTION / NETDIE_300_CNT only when NETDIE_300_CNT > 0.",
+                    "When NETDIE_300_CNT is 0 or null, set WAFER_OUT_QTY to 0 or null according to answer needs and put PRODUCTION into FAIL_UNIT_QTY.",
+                    "Aggregate WAFER_OUT_QTY and FAIL_UNIT_QTY by the question grain.",
+                ],
+            )
+
+
+def _metric_text(payload: dict[str, Any]) -> str:
+    parts: list[str] = []
+    for key in (
+        "display_name",
+        "description",
+        "formula",
+        "calculation_rule",
+        "zero_division_rule",
+        "pandas_code_instructions",
+    ):
+        value = payload.get(key)
+        if isinstance(value, list):
+            parts.extend(_clean(item) for item in value)
+        else:
+            parts.append(_clean(value))
+    parts.extend(_as_text_list(payload.get("aliases")))
+    parts.extend(_as_text_list(payload.get("source_columns")))
+    parts.extend(_as_text_list(payload.get("output_columns")))
+    if payload.get("output_column"):
+        parts.append(_clean(payload.get("output_column")))
+    return "\n".join(part for part in parts if part)
+
+
+def _output_columns_from_metric_text(text: str) -> list[str]:
+    outputs: list[str] = []
+    for match in re.finditer(r"\b([A-Z][A-Z0-9_]{2,})\s*=", text):
+        outputs.append(match.group(1))
+    for match in re.finditer(r"\b([A-Z][A-Z0-9_]{2,})\b[^\n.。]*(?:output|출력|결과|보여)", text, flags=re.IGNORECASE):
+        outputs.append(match.group(1))
+    for match in re.finditer(r"(?:output_columns?|출력\s*컬럼|결과\s*컬럼)[^\n:：=]*[:：=]?\s*([A-Z0-9_,\s]+)", text, flags=re.IGNORECASE):
+        outputs.extend(_as_text_list(match.group(1)))
+    return _unique_text(outputs)
+
+
+def _identifier_columns_from_metric_text(text: str) -> list[str]:
+    bracketed = re.findall(r"\[([A-Za-z][A-Za-z0-9_]*)\]", text)
+    identifiers = re.findall(r"\b([A-Z][A-Z0-9_]{2,})\b", text)
+    candidates = [*bracketed, *identifiers]
+    result = []
+    for column in candidates:
+        column_text = _clean(column).upper()
+        if not column_text or column_text in FORMULA_FUNCTION_WORDS:
+            continue
+        if column_text.endswith("_QTY") and column_text not in {"PRODUCTION", "FAIL_UNIT_QTY"}:
+            # Output quantity names are handled separately unless they are explicitly used as source terms.
+            continue
+        result.append(column_text)
+    return _unique_text(result)
+
+
+def _merge_text_list_field(payload: dict[str, Any], key: str, values: list[str]) -> None:
+    payload[key] = _unique_text([*_as_text_list(payload.get(key)), *values])
 
 
 def _normalize_condition_object(value: Any) -> dict[str, Any]:
@@ -471,6 +593,15 @@ def _as_text_list(value: Any) -> list[str]:
             text = _clean(part)
             if text and text not in result:
                 result.append(text)
+    return result
+
+
+def _unique_text(values: Any) -> list[str]:
+    result: list[str] = []
+    for value in _as_list(values):
+        text = _clean(value)
+        if text and text not in result:
+            result.append(text)
     return result
 
 

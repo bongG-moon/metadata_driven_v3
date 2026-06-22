@@ -849,6 +849,71 @@ def test_retrieval_adapter_adds_standard_columns_from_physical_catalog_aliases(m
     assert row["MCP_NO"] == "EMPTY"
 
 
+def test_intent_normalizer_keeps_cross_source_join_keys_as_standard_columns() -> None:
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    mapped_catalog = {
+        "dataset_family": "production",
+        "source_type": "oracle",
+        "source_config": {"source_type": "oracle", "db_key": "PNT_RPT", "query_template": "SELECT * FROM T WHERE WORK_DT = {DATE}"},
+        "required_params": ["DATE"],
+        "columns": ["TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCPSALENO", "PRODUCTION"],
+        "filter_mappings": {
+            "DATE": ["WORK_DT"],
+            "TECH": ["TECH"],
+            "DEN": ["DENSITY"],
+            "MODE": ["MODE"],
+            "PKG_TYPE1": ["PKG1"],
+            "PKG_TYPE2": ["PKG2"],
+            "LEAD": ["LEAD"],
+            "MCP_NO": ["MCPSALENO"],
+        },
+        "standard_column_aliases": {
+            "DEN": ["DENSITY"],
+            "PKG_TYPE1": ["PKG1"],
+            "PKG_TYPE2": ["PKG2"],
+            "MCP_NO": ["MCPSALENO"],
+        },
+        "primary_quantity_column": "PRODUCTION",
+    }
+    payload = {
+        "request": {"question": "join production and wip by product", "request_date": "20260612"},
+        "state": {},
+        "metadata": {
+            "domain_items": {"product_key_columns": product_keys},
+            "table_catalog": {
+                "datasets": {
+                    "production": mapped_catalog,
+                    "wip": {**mapped_catalog, "dataset_family": "wip", "primary_quantity_column": "WIP"},
+                }
+            },
+        },
+    }
+    intent_llm_json = {
+        "intent_type": "multi_source_analysis",
+        "analysis_kind": "aggregate_join",
+        "datasets": ["production", "wip"],
+        "product_grain": product_keys,
+        "retrieval_jobs": [
+            {"dataset_key": "production", "source_alias": "production_data", "params": {}, "filters": []},
+            {"dataset_key": "wip", "source_alias": "wip_data", "params": {}, "filters": []},
+        ],
+        "step_plan": [
+            {
+                "step_id": "join_result",
+                "operation": "left_join",
+                "source_alias": "production_data",
+                "join_keys": product_keys,
+            }
+        ],
+    }
+
+    normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+
+    assert normalized["intent_plan"]["step_plan"][0]["join_keys"] == product_keys
+    assert normalized["retrieval_jobs"][0]["filter_mappings"]["DEN"] == ["DENSITY"]
+
+
 def test_intent_normalizer_marks_full_previous_result_restore_for_previous_result_row_analysis(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
@@ -1258,6 +1323,85 @@ def test_pandas_executor_normalizes_llm_result_column_names() -> None:
     assert result["analysis"]["rows"][0]["PRODUCTION"] == 7
 
 
+def test_pandas_executor_joins_physical_source_columns_with_standard_aliases() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "aggregate_join",
+            "product_grain": product_keys,
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production",
+                    "source_alias": "production_data",
+                    "filter_mappings": {
+                        "DEN": ["DENSITY"],
+                        "PKG_TYPE1": ["PKG1"],
+                        "PKG_TYPE2": ["PKG2"],
+                        "MCP_NO": ["MCPSALENO"],
+                    },
+                    "standard_column_aliases": {
+                        "DEN": ["DENSITY"],
+                        "PKG_TYPE1": ["PKG1"],
+                        "PKG_TYPE2": ["PKG2"],
+                        "MCP_NO": ["MCPSALENO"],
+                    },
+                },
+                {"dataset_key": "wip", "source_alias": "wip_data"},
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "production_data": [
+                {
+                    "TECH": "TSV",
+                    "DENSITY": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG1": "HBM",
+                    "PKG2": "HBM",
+                    "LEAD": "LF",
+                    "MCPSALENO": "H-HBM16E",
+                    "PRODUCTION": 100,
+                }
+            ],
+            "wip_data": [
+                {
+                    "TECH": "TSV",
+                    "DEN": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG_TYPE1": "HBM",
+                    "PKG_TYPE2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "WIP": 40,
+                }
+            ],
+        },
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "product_keys = plan['product_grain']",
+                "prod = sources['production_data'].groupby(product_keys, as_index=False)['PRODUCTION'].sum()",
+                "wip = sources['wip_data'].groupby(product_keys, as_index=False)['WIP'].sum()",
+                "result_df = prod.merge(wip, on=product_keys, how='inner')",
+            ]
+        ),
+        "output_columns": [*product_keys, "PRODUCTION", "WIP"],
+        "reasoning_steps": ["Join sources by standard product keys."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["DEN"] == "2048G"
+    assert result["analysis"]["rows"][0]["PKG_TYPE1"] == "HBM"
+    assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
+    assert result["analysis"]["rows"][0]["PRODUCTION"] == 100
+    assert result["analysis"]["rows"][0]["WIP"] == 40
+
+
 def test_pandas_prompt_tells_llm_not_to_output_rank_group_source_field() -> None:
     pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
     payload = {
@@ -1323,6 +1467,7 @@ def test_pandas_prompt_tells_llm_not_to_output_rank_group_source_field() -> None
     prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
 
     assert "Do not include raw source/filter condition columns in result_df" in prompt
+    assert "use the standard analysis column names from plan" in prompt
     assert "Maintain a local dict named step_outputs" in prompt
     assert "aggregate the rank metric at the intended grain before sorting" in prompt
     assert "rank separately within each group label" in prompt

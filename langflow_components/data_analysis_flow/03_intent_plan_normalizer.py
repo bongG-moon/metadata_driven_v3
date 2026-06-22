@@ -96,6 +96,10 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             job["date_format"] = deepcopy(dataset_catalog["date_format"])
         if "primary_quantity_column" not in job and dataset_catalog.get("primary_quantity_column"):
             job["primary_quantity_column"] = deepcopy(dataset_catalog["primary_quantity_column"])
+        if "filter_mappings" not in job and isinstance(dataset_catalog.get("filter_mappings"), dict):
+            job["filter_mappings"] = deepcopy(dataset_catalog["filter_mappings"])
+        if "standard_column_aliases" not in job and isinstance(dataset_catalog.get("standard_column_aliases"), dict):
+            job["standard_column_aliases"] = deepcopy(dataset_catalog["standard_column_aliases"])
         normalized_jobs.append(job)
     plan["retrieval_jobs"] = normalized_jobs
     plan["datasets"] = _unique([job["dataset_key"] for job in normalized_jobs] or llm_json.get("datasets", []))
@@ -746,7 +750,7 @@ def _normalize_step_plan_columns(plan: dict[str, Any], jobs: list[dict[str, Any]
         dataset_catalog = alias_to_catalog.get(source_alias, {})
         if not dataset_catalog:
             continue
-        for key in ("group_by_columns", "join_keys"):
+        for key in ("group_by_columns",):
             if isinstance(step.get(key), list):
                 step[key] = _map_logical_columns(step[key], dataset_catalog)
         for key in ("count_column", "metric", "target_column"):

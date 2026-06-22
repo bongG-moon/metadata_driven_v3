@@ -177,6 +177,83 @@ def test_domain_authoring_normalizes_filter_descriptors_to_executable_conditions
     assert item_payload["condition_by_family"] == {"equipment": {"PKG1": ["HBM"]}}
 
 
+def test_domain_authoring_autofills_single_family_metric_from_worker_text() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    payload = {"metadata_type": "domain", "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "section": "metric_terms",
+                "key": "wafer_based_performance",
+                "payload": {
+                    "display_name": "Wafer 기준 실적",
+                    "aliases": ["Wafer기준 실적", "Wafer기반 실적", "Wafer Out 수량"],
+                    "formula": (
+                        "WAFER_OUT_QTY = PRODUCTION / NETDIE_300_CNT when NETDIE_300_CNT > 0; "
+                        "FAIL_UNIT_QTY = PRODUCTION when NETDIE_300_CNT is 0 or null"
+                    ),
+                    "calculation_rule": "행별 계산 후 요청한 group_by 기준으로 합산",
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+    item_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert item_payload["dataset_family"] == "production"
+    assert item_payload["required_dataset_families"] == ["production"]
+    assert item_payload["required_quantity_terms"] == ["production"]
+    assert item_payload["source_columns"] == ["PRODUCTION", "NETDIE_300_CNT"]
+    assert item_payload["output_columns"] == ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+    assert "NETDIE_300_CNT <= 0" in item_payload["zero_division_rule"]
+    assert item_payload["pandas_code_instructions"]
+
+
+def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    payload = {
+        "metadata_type": "domain",
+        "items": [
+            {
+                "section": "metric_terms",
+                "key": "wafer_based_performance",
+                "payload": {
+                    "aliases": ["Wafer기준 실적", "Wafer Out 수량"],
+                    "dataset_family": "production",
+                    "required_dataset_families": ["production"],
+                    "required_quantity_terms": ["production"],
+                    "source_columns": ["PRODUCTION", "NETDIE_300_CNT"],
+                    "output_columns": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+                    "formula": "WAFER_OUT_QTY = PRODUCTION / NETDIE_300_CNT; FAIL_UNIT_QTY = PRODUCTION when denominator is zero",
+                },
+            }
+        ],
+        "duplicate_decision": {"action": "ask", "requires_user_choice": False},
+        "errors": [],
+    }
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {"field": "dataset_key", "reason": "데이터셋 식별자가 없습니다."},
+            {"field": "dataset_family", "reason": "데이터셋 패밀리 정보가 없습니다."},
+            {"field": "output_column_name_FOR_FAIL_UNIT_QTY", "reason": "FAIL_UNIT_QTY 컬럼의 정확한 이름과 데이터 타입이 필요합니다."},
+        ],
+        "item_reviews": [{"section": "metric_terms", "key": "wafer_based_performance", "decision": "needs_fix", "reason": "보강 필요"}],
+    }
+
+    result = writer.review_and_write_domain_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+    assert result["review"]["item_reviews"][0]["decision"] == "pass"
+    assert result["write_result"]["status"] == "error"
+    assert any("mongo_uri" in error for error in result["write_result"]["errors"])
+
+
 def test_table_catalog_authoring_requires_source_config_and_detects_same_dataset_key() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     similarity = load_module("langflow_components/table_catalog_authoring_flow/05_table_catalog_similarity_checker.py")
@@ -446,6 +523,59 @@ filter_mappings는 DATE -> WORK_DT, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_
     assert item_payload["primary_quantity_column"] == "PRODUCTION"
 
 
+def test_table_catalog_authoring_prefers_raw_query_template_over_llm_mutation() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_query = "\n".join(
+        [
+            "SELECT WORK_DT, PKG_TYPE1, PKG_TYPE2, PRODUCTION",
+            "FROM DATA_EXTINF_MAS",
+            "WHERE WORK_DT = {DATE}",
+        ]
+    )
+    raw_text = f"""dataset_key=production_today
+source_type=oracle
+db_key=PNT_RPT
+dataset_family=production
+
+query_template:
+{raw_query}
+
+filter_mappings: DATE -> WORK_DT, PKG_TYPE1 -> PKG_TYPE1, PKG_TYPE2 -> PKG_TYPE2"""
+    payload = {"metadata_type": "table_catalog", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "production_today",
+                "payload": {
+                    "display_name": "Production Today",
+                    "dataset_family": "production",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT WORK_DT, PKG_TYPE1,, PKG_TYPE2, PRODUCTION FROM DATA_EXT_INF_MAS WHERE WORK_DT = {DATE}",
+                    },
+                    "columns": ["WORK_DT", "PKG_TYPE1", "PKG_TYPE2", "PRODUCTION"],
+                    "filter_mappings": {"DATE": ["WORK_DT"], "PKG_TYPE1": ["PKG_TYPE1"], "PKG_TYPE2": ["PKG_TYPE2"]},
+                    "required_params": ["DATE"],
+                    "required_param_mappings": {"DATE": ["WORK_DT"]},
+                    "primary_quantity_column": "PRODUCTION",
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    stored_query = normalized["items"][0]["payload"]["source_config"]["query_template"]
+    assert stored_query == raw_query
+    assert "DATA_EXT_INF_MAS" not in stored_query
+    assert "PKG_TYPE1,," not in stored_query
+
+
 def test_table_catalog_authoring_extracts_columns_from_top_level_sql_select() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     query = """
@@ -652,6 +782,7 @@ def test_authoring_prompt_templates_include_mapping_and_equipment_contracts() ->
     ).read_text(encoding="utf-8")
 
     assert "table_catalog.filter_mappings maps those standard keys to this dataset's physical columns" in table_prompt
+    assert "Never \"correct\" table or column spelling" in table_prompt
     assert "Authoring context" in table_prompt
     assert "standard_column_aliases" in table_prompt
     assert "dataset-specific mappings such as PKG_TYPE1->PKG1 or MCP_NO->MCPSALENO belong in table_catalog.filter_mappings" in filter_prompt

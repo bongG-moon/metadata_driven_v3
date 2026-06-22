@@ -72,6 +72,8 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
         if not duplicate_waiting_for_user and _is_duplicate_action_request(item):
             duplicate_supplement_count += 1
             continue
+        if _is_resolved_metric_supplement_request(item, payload):
+            continue
         supplement.append(item)
     if duplicate_waiting_for_user:
         supplement.append(
@@ -85,12 +87,14 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
         supplement.append({"field": "items", "reason": "저장할 domain item이 없습니다.", "example_user_input": "추가할 용어와 의미를 설명해 주세요."})
     errors = list(payload.get("errors", []))
     only_duplicate_blockers = duplicate_action_chosen and duplicate_supplement_count > 0 and not supplement
-    ready = (bool(parsed.get("ready_to_save", False)) or only_duplicate_blockers) and not supplement and not errors
+    blockers_clear = not supplement and not errors
+    review_ready = bool(parsed.get("ready_to_save", False))
+    ready = blockers_clear and (review_ready or only_duplicate_blockers or not _duplicate_choice_required(payload))
     return {
         "ready_to_save": ready,
         "summary": _clean(parsed.get("summary") or "검증 결과를 정리했습니다."),
         "supplement_requests": supplement,
-        "item_reviews": _as_list(parsed.get("item_reviews")),
+        "item_reviews": _normalize_item_reviews(_as_list(parsed.get("item_reviews")), ready),
         "normalizer_errors": errors,
     }
 
@@ -244,6 +248,76 @@ def _is_duplicate_action_request(item: Any) -> bool:
         text = _clean(item)
     lowered = text.lower()
     return "duplicate_action" in lowered or "merge" in lowered and "replace" in lowered and "skip" in lowered
+
+
+def _is_resolved_metric_supplement_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item)
+    if not field:
+        return False
+    field_lower = field.lower()
+    if field_lower not in {"dataset_key", "dataset_family"} and "output_column" not in field_lower:
+        return False
+    for domain_item in _as_list(payload.get("items")):
+        if not isinstance(domain_item, dict) or _clean(domain_item.get("section")) != "metric_terms":
+            continue
+        metric_payload = domain_item.get("payload") if isinstance(domain_item.get("payload"), dict) else {}
+        if field_lower == "dataset_key" and _metric_has_dataset_scope(metric_payload):
+            return True
+        if field_lower == "dataset_family" and _metric_has_dataset_family(metric_payload):
+            return True
+        if "output_column" in field_lower and _metric_has_output_column(metric_payload, field):
+            return True
+    return False
+
+
+def _metric_has_dataset_scope(payload: dict[str, Any]) -> bool:
+    return bool(
+        _clean(payload.get("dataset_key"))
+        or _clean(payload.get("dataset_family"))
+        or _as_text_list(payload.get("required_dataset_families"))
+        or _as_text_list(payload.get("required_quantity_terms"))
+    )
+
+
+def _metric_has_dataset_family(payload: dict[str, Any]) -> bool:
+    return bool(_clean(payload.get("dataset_family")) or _as_text_list(payload.get("required_dataset_families")))
+
+
+def _metric_has_output_column(payload: dict[str, Any], field: str) -> bool:
+    outputs = set(_as_text_list(payload.get("output_columns")))
+    if _clean(payload.get("output_column")):
+        outputs.add(_clean(payload.get("output_column")))
+    if not outputs:
+        return False
+    field_upper = field.upper()
+    if any(output.upper() in field_upper for output in outputs):
+        return True
+    return len(outputs) == 1 and field.lower() in {"output_column", "output_column_name"}
+
+
+def _supplement_field(item: Any) -> str:
+    if isinstance(item, dict):
+        return _clean(item.get("field"))
+    text = _clean(item)
+    if ":" in text:
+        return _clean(text.split(":", 1)[0])
+    return ""
+
+
+def _normalize_item_reviews(item_reviews: list[Any], ready_to_save: bool) -> list[Any]:
+    if not ready_to_save:
+        return item_reviews
+    normalized = []
+    for item in item_reviews:
+        if not isinstance(item, dict):
+            normalized.append(item)
+            continue
+        next_item = dict(item)
+        next_item["decision"] = "pass"
+        if _clean(item.get("decision")) != "pass":
+            next_item["reason"] = "저장 차단 요인이 없어 저장 가능한 상태로 처리했습니다."
+        normalized.append(next_item)
+    return normalized
 
 
 def _resolved_duplicate_decision(payload: dict[str, Any], action: str) -> dict[str, Any]:
