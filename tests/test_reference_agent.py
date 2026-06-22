@@ -27,6 +27,27 @@ def test_multi_step_rank_wip_with_production_keeps_da_wb_groups():
     assert len([row for row in payload["data"]["rows"] if row["RANK_GROUP"] == "WB"]) == 3
 
 
+def test_process_product_production_and_wip_join_for_da():
+    payload = run_agent("오늘 da에서 재공과 생산량을 제품별로 알려줘", root=str(ROOT))
+
+    assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
+    assert {"production_today", "wip_today"}.issubset(set(payload["applied_scope"]["datasets"]))
+    assert {"TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "PRODUCTION", "WIP"}.issubset(
+        set(payload["data"]["columns"])
+    )
+    assert payload["data"]["row_count"] > 1
+    assert "RANK" not in payload["data"]["columns"]
+
+
+def test_process_product_production_and_wip_join_for_wb():
+    payload = run_agent("오늘 wb에서 재공과 생산량을 제품별로 알려줘", root=str(ROOT))
+
+    assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
+    assert {"production_today", "wip_today"}.issubset(set(payload["applied_scope"]["datasets"]))
+    assert {"PRODUCTION", "WIP"}.issubset(set(payload["data"]["columns"]))
+    assert payload["data"]["row_count"] > 1
+
+
 def test_hold_history_uses_hold_history_dataset_and_detail_rows():
     payload = run_agent("T1234567GEN1 LOT의 HOLD이력 알려줘", root=str(ROOT))
 

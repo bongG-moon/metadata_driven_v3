@@ -40,17 +40,29 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
         }
 
     context = repair.get("context") if isinstance(repair.get("context"), dict) else _pandas_repair_context(payload)
+    context = deepcopy(context)
+    context.setdefault("column_contract_summary", _column_contract_summary(payload))
     prompt = "\n".join(
         [
             "You repair failed pandas code for a Langflow manufacturing data agent.",
             "Return one strict JSON object only. Do not wrap it in markdown.",
             "Generate corrected Python pandas code that uses only the provided variables: pd, sources, plan, state.",
             "sources is a dict mapping source_alias to pandas DataFrame.",
+            "Use only source aliases that are actual keys in sources/source summaries, normally retrieval_jobs[*].source_alias. Do not invent generic aliases.",
             "plan and state are Python dicts. Use plan['key'], plan.get('key'), state.get('key'); never use plan.key or state.key.",
             "The code must assign the final pandas DataFrame to result_df.",
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, subprocess, numpy, np, or np.where.",
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
             "Fix the failed code using the same intent plan and available source DataFrames. Keep result columns aligned to the requested output contract.",
+            "Do not use .to_frame() in repaired code. For one total row with multiple metrics, build result_df with pd.DataFrame([{...}]).",
+            "Do not use DataFrame.agg(named_metric=(column, func)).to_frame().T; DataFrame.agg can already return a DataFrame and then to_frame will fail.",
+            "When combining scalar totals from multiple sources with no group_by, create one DataFrame row directly instead of merging DataFrames with no common key.",
+            "Column contract rules:",
+            "- Before repaired code runs, each source DataFrame is converted to a standardized pandas analysis view.",
+            "- If a physical source column is listed under retrieval_jobs[*].filter_mappings, required_param_mappings, or standard_column_aliases, use the standard mapping key in pandas code, not the physical source column name.",
+            "- Do not assume both a mapped physical column and its standard column remain in sources after standardization.",
+            "- Physical source column names are allowed only when they have no standard mapping and the source summary shows that column is available.",
+            "- Use column_contract_summary below to decide which columns are standardized and which physical-only columns are still allowed.",
             "",
             "Failed execution context:",
             json.dumps(context, ensure_ascii=False, indent=2),
@@ -77,7 +89,7 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
 
 
 def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
-    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    analysis = _analysis_from_payload(payload)
     request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     runtime_sources = payload.get("runtime_sources") if isinstance(payload.get("runtime_sources"), dict) else {}
@@ -85,6 +97,7 @@ def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
         "request": deepcopy(request),
         "intent_plan": deepcopy(payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}),
         "payload_summary": _payload_summary(payload),
+        "column_contract_summary": _column_contract_summary(payload),
         "runtime_source_summary": _runtime_source_summary(runtime_sources),
         "state_summary": _state_summary(state),
         "failed_pandas_code_json": deepcopy(
@@ -98,6 +111,26 @@ def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _analysis_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    if analysis:
+        return analysis
+    analysis_keys = {
+        "status",
+        "analysis_kind",
+        "analysis_code",
+        "columns",
+        "rows",
+        "row_count",
+        "errors",
+        "pandas_code_json",
+        "llm_text_preview",
+    }
+    if any(key in payload for key in analysis_keys):
+        return payload
+    return {}
+
+
 def _payload_summary(payload: dict[str, Any]) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     for key in ("status", "warnings", "errors", "info", "direct_response_ready"):
@@ -108,6 +141,73 @@ def _payload_summary(payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, list):
             summary[key] = [_compact_dict(item, 12) for item in value[:20] if isinstance(item, dict)]
     return summary
+
+
+def _column_contract_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    source_columns_by_alias = _source_columns_by_alias(payload)
+    result: dict[str, Any] = {}
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        alias = str(job.get("source_alias") or job.get("dataset_key") or "").strip()
+        if not alias:
+            continue
+        mapped_columns: dict[str, list[str]] = {}
+        mapped_physical_columns: set[str] = set()
+        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+            mapping = job.get(field) if isinstance(job.get(field), dict) else {}
+            for standard, candidates in mapping.items():
+                standard_text = str(standard or "").strip()
+                if not standard_text:
+                    continue
+                if not isinstance(candidates, list):
+                    candidates = [candidates]
+                physical_candidates = [
+                    str(candidate)
+                    for candidate in candidates
+                    if str(candidate or "").strip() and str(candidate) != standard_text
+                ]
+                if not physical_candidates:
+                    continue
+                mapped_columns.setdefault(standard_text, [])
+                mapped_columns[standard_text].extend(physical_candidates)
+                mapped_physical_columns.update(physical_candidates)
+        mapped_columns = {
+            standard: _unique_columns(candidates)
+            for standard, candidates in mapped_columns.items()
+            if candidates
+        }
+        source_columns = source_columns_by_alias.get(alias, [])
+        physical_only_columns = [
+            column
+            for column in source_columns
+            if column not in mapped_physical_columns and column not in mapped_columns
+        ]
+        result[alias] = {
+            "use_standard_names_for_mapped_columns": mapped_columns,
+            "physical_only_columns_allowed_by_name": physical_only_columns,
+        }
+    return result
+
+
+def _source_columns_by_alias(payload: dict[str, Any]) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    source_results = payload.get("source_results") if isinstance(payload.get("source_results"), list) else []
+    for source in source_results:
+        if not isinstance(source, dict):
+            continue
+        alias = str(source.get("source_alias") or source.get("dataset_key") or "").strip()
+        if not alias:
+            continue
+        columns = source.get("columns") if isinstance(source.get("columns"), list) else []
+        if not columns:
+            rows = source.get("rows") if isinstance(source.get("rows"), list) else []
+            first_row = rows[0] if rows and isinstance(rows[0], dict) else {}
+            columns = list(first_row.keys())
+        result[alias] = _unique_columns([str(column) for column in columns if str(column or "").strip()])
+    return result
 
 
 def _runtime_source_summary(runtime_sources: dict[str, Any]) -> dict[str, Any]:
@@ -163,6 +263,14 @@ def _as_text_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item or "").strip()]
+
+
+def _unique_columns(columns: list[str]) -> list[str]:
+    result: list[str] = []
+    for column in columns:
+        if column not in result:
+            result.append(column)
+    return result
 
 
 def _payload(value: Any) -> dict[str, Any]:

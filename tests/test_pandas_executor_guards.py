@@ -26,6 +26,19 @@ def test_pandas_executor_drops_redundant_source_alias_columns_before_llm_code_ru
             "production_column": "PRODUCTION",
             "target_column": "OUT_PLAN",
             "threshold": 1.0,
+            "retrieval_jobs": [
+                {"dataset_key": "production_today", "source_alias": "production_data"},
+                {
+                    "dataset_key": "target",
+                    "source_alias": "target_data",
+                    "standard_column_aliases": {
+                        "MODE": ["Mode"],
+                        "PKG_TYPE1": ["PKG1"],
+                        "PKG_TYPE2": ["PKG2"],
+                        "MCP_NO": ["MCP NO"],
+                    },
+                },
+            ],
         },
         "state": {},
         "runtime_sources": {
@@ -66,7 +79,6 @@ def test_pandas_executor_drops_redundant_source_alias_columns_before_llm_code_ru
                 "production_df = sources['production_data'].copy()",
                 "production_agg = production_df.groupby(product_grain, as_index=False)['PRODUCTION'].sum()",
                 "target_df = sources['target_data'].copy()",
-                "target_df = target_df.rename(columns={'Mode': 'MODE', 'PKG1': 'PKG_TYPE1', 'PKG2': 'PKG_TYPE2', 'MCP NO': 'MCP_NO'})",
                 "target_agg = target_df.groupby(product_grain, as_index=False)['OUT_PLAN'].sum()",
                 "target_agg = target_agg.rename(columns={'OUT_PLAN': 'TARGET_QTY'})",
                 "result_df = production_agg.merge(target_agg, on=product_grain, how='outer')",
@@ -192,7 +204,7 @@ def test_pandas_executor_errors_when_required_source_columns_are_missing() -> No
 
     assert result["analysis"]["status"] == "error"
     assert result["analysis"]["errors"] == [
-        "Runtime source 'lot_data' is missing required columns: HOLD_TM, REASON_CD"
+        "Runtime source 'lot_data' is missing required columns: HOLD_TM, REASON_CD, TECH_NM"
     ]
     assert result["analysis"]["executed"] is False
 
@@ -207,6 +219,7 @@ def test_pandas_executor_copies_required_columns_from_real_aliases_only() -> Non
                     "dataset_key": "lot_status",
                     "source_alias": "lot_data",
                     "required_columns": ["LOT_ID", "TECH_NM"],
+                    "standard_column_aliases": {"TECH_NM": ["TECH"]},
                 }
             ],
         },
@@ -421,6 +434,97 @@ def test_pandas_executor_falls_back_from_generic_aggregate_step_primitive() -> N
         {"MODE": "B", "DEVICE": "D2", "PRODUCTION": 7, "WIP": 4},
     ]
     assert "executor_fallback" in result["analysis"]["analysis_code"]
+
+
+def test_pandas_executor_collapses_over_detailed_metric_aggregate_result() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "generic_aggregate_recipe",
+            "result_scope_columns": [{"column": "OPER_GROUP", "value": "WB", "source_field": "OPER_NAME"}],
+            "analysis_output_columns": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+            "step_plan": [
+                {
+                    "step_id": "aggregate_metric_outputs",
+                    "operation": "aggregate_sum_by_group",
+                    "source_alias": "production_today",
+                    "group_by": [],
+                    "metrics": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+                    "aggregation": "sum",
+                    "output_columns": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+                }
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "production_today": [
+                {"OPER_NAME": "W/B1", "PRODUCTION": 100, "NETDIE_300_CNT": 10},
+                {"OPER_NAME": "W/B2", "PRODUCTION": 50, "NETDIE_300_CNT": 0},
+            ]
+        },
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "result_df = pd.DataFrame([",
+                "    {'WAFER_OUT_QTY': 10.0, 'FAIL_UNIT_QTY': 0.0},",
+                "    {'WAFER_OUT_QTY': 0.0, 'FAIL_UNIT_QTY': 50.0},",
+                "    {'WAFER_OUT_QTY': 2.5, 'FAIL_UNIT_QTY': 3.0},",
+                "])",
+            ]
+        ),
+        "output_columns": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+        "reasoning_steps": ["The generated code calculated row-level wafer quantities but forgot to aggregate."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["columns"] == ["OPER_GROUP", "WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+    assert result["analysis"]["rows"] == [{"OPER_GROUP": "WB", "WAFER_OUT_QTY": 12.5, "FAIL_UNIT_QTY": 53.0}]
+
+
+def test_pandas_executor_collapses_duplicate_group_metric_rows() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "generic_aggregate_recipe",
+            "analysis_output_columns": ["OPER_NUM", "WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+            "step_plan": [
+                {
+                    "step_id": "aggregate_metric_outputs",
+                    "operation": "aggregate_sum_by_group",
+                    "source_alias": "production_today",
+                    "group_by": ["OPER_NUM"],
+                    "metrics": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+                    "aggregation": "sum",
+                    "output_columns": ["OPER_NUM", "WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+                }
+            ],
+        },
+        "state": {},
+        "runtime_sources": {},
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "result_df = pd.DataFrame([",
+                "    {'OPER_NUM': 'WB01', 'WAFER_OUT_QTY': 1.0, 'FAIL_UNIT_QTY': 2.0},",
+                "    {'OPER_NUM': 'WB01', 'WAFER_OUT_QTY': 3.0, 'FAIL_UNIT_QTY': 4.0},",
+                "    {'OPER_NUM': 'WB02', 'WAFER_OUT_QTY': 5.0, 'FAIL_UNIT_QTY': 6.0},",
+                "])",
+            ]
+        ),
+        "output_columns": ["OPER_NUM", "WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+        "reasoning_steps": [],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["rows"] == [
+        {"OPER_NUM": "WB01", "WAFER_OUT_QTY": 4.0, "FAIL_UNIT_QTY": 6.0},
+        {"OPER_NUM": "WB02", "WAFER_OUT_QTY": 5.0, "FAIL_UNIT_QTY": 6.0},
+    ]
 
 
 def test_pandas_prompt_tells_llm_to_apply_retrieval_filters_in_pandas() -> None:

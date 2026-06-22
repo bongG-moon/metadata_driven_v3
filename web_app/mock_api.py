@@ -702,7 +702,7 @@ def _authoring_message(
     matches: list[dict[str, Any]],
     warnings: list[dict[str, Any]],
 ) -> str:
-    label = {"domain": "Domain", "table_catalog": "Table catalog", "main_flow_filter": "Main flow filter"}[metadata_type]
+    label = {"domain": "Domain", "table_catalog": "Data Catalog", "main_flow_filter": "Main Flow Filter"}[metadata_type]
     if write_result.get("status") == "ok":
         return f"{label} metadata {write_result.get('saved_count', 0)}건을 mock 저장했습니다."
     if missing:

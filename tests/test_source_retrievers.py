@@ -187,6 +187,15 @@ def test_langflow_dummy_retriever_is_rich_enough_for_analysis_validation():
     assert {"MODE", "DEN", "TECH", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "PRODUCTION"}.issubset(
         results["production_today"]["columns"]
     )
+    production_rows = results["production_today"]["data"]
+    wip_rows = results["wip_today"]["data"]
+    assert {row["SHIFT"] for row in production_rows} == {"1", "2", "3"}
+    assert {row["SHIFT"] for row in wip_rows} == {"1", "2", "3"}
+    da_processes = {"D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"}
+    assert sum(
+        row["PRODUCTION"] for row in production_rows if row["OPER_NAME"] in da_processes and row["SHIFT"] == "1"
+    ) > 0
+    assert sum(row["WIP"] for row in wip_rows if row["OPER_NAME"] in da_processes and row["SHIFT"] == "1") > 0
     assert {"Mode", "PKG1", "PKG2", "MCP NO", "INPUT_PLAN", "OUT_PLAN"}.issubset(results["target"]["columns"])
     assert results["production_today"]["source_execution"]["params_applied_in_retriever"] is True
 
@@ -661,39 +670,50 @@ def _source_plan(job: dict) -> dict:
 
 
 def _authoring_example_dataset_specs() -> dict[str, dict]:
-    product_filters = {
-        "DATE": ["WORK_DT"],
-        "MODE": ["MODE"],
-        "DEN": ["DEN"],
-        "TECH": ["TECH"],
-        "PKG_TYPE1": ["PKG_TYPE1"],
-        "PKG_TYPE2": ["PKG_TYPE2"],
-        "LEAD": ["LEAD"],
-        "MCP_NO": ["MCP_NO"],
-        "TSV_DIE_TYP": ["TSV_DIE_TYP"],
-        "DEVICE_DESC": ["DEVICE_DESC"],
-        "OPER_NUM": ["OPER_NUM"],
-        "OPER_NAME": ["OPER_NAME"],
-    }
-    product_columns = [
-        "WORK_DT",
-        "FACTORY",
-        "FAMILY",
-        "MODE",
-        "DEN",
-        "TECH",
-        "ORG",
-        "PKG_TYPE1",
-        "PKG_TYPE2",
-        "LEAD",
-        "MCP_NO",
-        "TSV_DIE_TYP",
-        "DEVICE",
-        "DEVICE_DESC",
-        "OPER_NUM",
-        "OPER_NAME",
-        "OPER_SEQ",
-    ]
+    def product_filters(den_col: str, pkg1_col: str, pkg2_col: str) -> dict[str, list[str]]:
+        return {
+            "DATE": ["WORK_DATE"],
+            "MODE": ["MODE"],
+            "DEN": [den_col],
+            "TECH": ["TECH"],
+            "PKG_TYPE1": [pkg1_col],
+            "PKG_TYPE2": [pkg2_col],
+            "LEAD": ["LEAD"],
+            "MCP_NO": ["MCP_NO"],
+            "TSV_DIE_TYP": ["TSV_DIE_TYP"],
+            "DEVICE": ["DEVICE"],
+            "DEVICE_DESC": ["DEVICE_DESC"],
+            "OPER_NUM": ["OPER"],
+            "OPER_SEQ": ["OPER_SEQ"],
+            "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
+            "NETDIE_300_CNT": ["NETDIE_300_CNT"],
+            "OPER_NAME": ["OPER_NAME"],
+        }
+
+    def product_columns(den_col: str, pkg1_col: str, pkg2_col: str) -> list[str]:
+        return [
+            "WORK_DATE",
+            "SHIFT",
+            "FACTORY",
+            "FAB",
+            "FAMILY",
+            "MODE",
+            den_col,
+            "TECH",
+            "ORG",
+            pkg1_col,
+            pkg2_col,
+            "LEAD",
+            "MCP_NO",
+            "TSV_DIE_TYP",
+            "DEVICE",
+            "DEVICE_DESC",
+            "DIE_ATTACH_QTY",
+            "NETDIE_300_CNT",
+            "OPER",
+            "OPER_NAME",
+            "OPER_SEQ",
+        ]
     lot_columns = [
         "ERM_ID",
         "OPER_ID",
@@ -749,26 +769,26 @@ def _authoring_example_dataset_specs() -> dict[str, dict]:
         "production_today": {
             "display_name": "Production Today",
             "required_params": ["DATE"],
-            "columns": product_columns + ["PRODUCTION"],
-            "filter_columns": product_filters,
+            "columns": product_columns("DEN", "PKG_TYP1", "PKG_TYP2") + ["PRODUCTION"],
+            "filter_columns": product_filters("DEN", "PKG_TYP1", "PKG_TYP2"),
         },
         "production": {
             "display_name": "Production History",
             "required_params": ["DATE"],
-            "columns": product_columns + ["PRODUCTION"],
-            "filter_columns": product_filters,
+            "columns": product_columns("DENSITY", "PKG1", "PKG2") + ["PRODUCTION"],
+            "filter_columns": product_filters("DENSITY", "PKG1", "PKG2"),
         },
         "wip_today": {
             "display_name": "WIP Today",
             "required_params": ["DATE"],
-            "columns": product_columns + ["WIP"],
-            "filter_columns": product_filters,
+            "columns": product_columns("DENSITY", "PKG1", "PKG2") + ["WIP"],
+            "filter_columns": product_filters("DENSITY", "PKG1", "PKG2"),
         },
         "wip": {
             "display_name": "WIP History",
             "required_params": ["DATE"],
-            "columns": product_columns + ["WIP"],
-            "filter_columns": product_filters,
+            "columns": product_columns("DENSITY", "PKG_TYP1", "PKG_TYP2") + ["WIP"],
+            "filter_columns": product_filters("DENSITY", "PKG_TYP1", "PKG_TYP2"),
         },
         "target": {
             "display_name": "Target2 Goodocs Plan",

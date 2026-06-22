@@ -81,7 +81,7 @@ def _production_rows(work_date: str) -> list[dict[str, Any]]:
     rows = []
     for process_index, process in enumerate(PROCESS_ROWS, start=1):
         for product_index, product in enumerate(PRODUCT_ROWS, start=1):
-            row = {"WORK_DT": work_date, **process, **product}
+            row = _base_process_product_row(work_date, process, product, process_index, product_index)
             row["PRODUCTION"] = _production_qty(process["FAMILY"], product, process_index, product_index)
             rows.append(row)
     return rows
@@ -91,10 +91,38 @@ def _wip_rows(work_date: str) -> list[dict[str, Any]]:
     rows = []
     for process_index, process in enumerate(PROCESS_ROWS, start=1):
         for product_index, product in enumerate(PRODUCT_ROWS, start=1):
-            row = {"WORK_DT": work_date, **process, **product}
+            row = _base_process_product_row(work_date, process, product, process_index, product_index)
             row["WIP"] = _wip_qty(process["FAMILY"], product, process_index, product_index)
             rows.append(row)
     return rows
+
+
+def _base_process_product_row(
+    work_date: str,
+    process: dict[str, Any],
+    product: dict[str, Any],
+    process_index: int,
+    product_index: int,
+) -> dict[str, Any]:
+    base = _product_base(product)
+    return {
+        "WORK_DT": work_date,
+        "WORK_DATE": work_date,
+        "SHIFT": str(((process_index + product_index - 2) % 3) + 1),
+        "FACTORY": "PKG",
+        "FAB": "PKG",
+        "ORG": "ASSY",
+        **process,
+        **product,
+        "DENSITY": product.get("DEN"),
+        "PKG1": product.get("PKG_TYPE1"),
+        "PKG2": product.get("PKG_TYPE2"),
+        "OPER": process.get("OPER_NUM"),
+        "OPER_SEQ": base % 100 + 1,
+        "DIE_ATTACH_QTY": 1,
+        "NETDIE_300_CNT": max(base // 10, 1),
+        **_physical_product_aliases(product),
+    }
 
 
 def _target_rows(date_text: str) -> list[dict[str, Any]]:
@@ -234,8 +262,10 @@ def _capacity_rows(work_date: str) -> list[dict[str, Any]]:
 def _physical_product_aliases(product: dict[str, Any]) -> dict[str, Any]:
     return {
         "Mode": product.get("MODE"),
+        "DENSITY": product.get("DEN"),
         "PKG1": product.get("PKG_TYPE1"),
         "PKG2": product.get("PKG_TYPE2"),
+        "PKG_TYP1": product.get("PKG_TYPE1"),
         "MCP NO": product.get("MCP_NO"),
         "MCPSALENO": product.get("MCP_NO"),
         "PROD_TYP": product.get("MODE"),

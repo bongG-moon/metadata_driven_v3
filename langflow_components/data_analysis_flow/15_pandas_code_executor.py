@@ -151,6 +151,7 @@ def _execute_generated_pandas_code(
         elif _should_replace_filter_mismatched_generated_result(result_df, fallback_df, plan):
             result_df = _normalize_result_columns(fallback_df, plan)
             code = code + "\n# executor_fallback: generated code did not match pandas-applied source filters"
+        result_df = _normalize_result_columns(_collapse_over_detailed_aggregate_result(result_df, plan), plan)
     except Exception as exc:
         fallback_df = _fallback_result_df(plan, runtime_sources)
         if fallback_df is None:
@@ -399,6 +400,77 @@ def _fallback_step_aggregate(
     return _select_step_columns(result, _step_output_columns(step))
 
 
+def _collapse_over_detailed_aggregate_result(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.DataFrame:
+    step = _final_aggregate_step(plan)
+    if not step or frame.empty:
+        return frame
+    group_by = _available_columns(frame, step.get("group_by"))
+    metrics = _aggregate_output_metrics_for_frame(frame, step, plan, group_by)
+    if not metrics:
+        return frame
+    if group_by:
+        if not frame.duplicated(subset=group_by, keep=False).any():
+            return frame
+        work = frame.copy()
+        for metric in metrics:
+            work[metric] = pd.to_numeric(work[metric], errors="coerce").fillna(0)
+        collapsed = work.groupby(group_by, dropna=False, as_index=False)[metrics].sum()
+    else:
+        if len(frame) <= 1:
+            return frame
+        collapsed = pd.DataFrame(
+            [
+                {
+                    metric: pd.to_numeric(frame[metric], errors="coerce").fillna(0).sum()
+                    for metric in metrics
+                }
+            ]
+        )
+    output_columns = _step_output_columns(step) or _preferred_columns(plan) or list(collapsed.columns)
+    return _select_step_columns(collapsed, [column for column in output_columns if column in collapsed.columns])
+
+
+def _final_aggregate_step(plan: dict[str, Any]) -> dict[str, Any]:
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    for step in reversed(steps):
+        if not isinstance(step, dict):
+            continue
+        if str(step.get("operation") or "").strip() in AGGREGATE_STEP_OPERATIONS:
+            return step
+    return {}
+
+
+def _aggregate_output_metrics_for_frame(
+    frame: pd.DataFrame,
+    step: dict[str, Any],
+    plan: dict[str, Any],
+    group_by: list[str],
+) -> list[str]:
+    candidates: list[str] = []
+    if isinstance(step.get("metrics"), list):
+        candidates.extend(str(item) for item in step["metrics"] if str(item or "").strip())
+    for key in ("metric", "value_column", "measure_column", "quantity_column"):
+        value = str(step.get(key) or "").strip()
+        if value:
+            candidates.append(value)
+    for column in _step_output_columns(step):
+        if column not in group_by:
+            candidates.append(column)
+    if isinstance(plan.get("analysis_output_columns"), list):
+        candidates.extend(str(item) for item in plan["analysis_output_columns"] if str(item or "").strip() and str(item) not in group_by)
+    scope_columns = set(_result_scope_column_names(plan))
+    return _unique_columns(
+        [
+            column
+            for column in candidates
+            if column in frame.columns
+            and column not in group_by
+            and column not in scope_columns
+            and pd.api.types.is_numeric_dtype(pd.to_numeric(frame[column], errors="coerce"))
+        ]
+    )
+
+
 def _fallback_step_unique_count(
     step: dict[str, Any],
     plan: dict[str, Any],
@@ -516,7 +588,7 @@ def _apply_source_filters_for_alias(frame: pd.DataFrame, alias: str, plan: dict[
         op = str(condition.get("op") or "eq").strip().lower()
         if not field or field == "PRODUCT_GRAIN" or op == "from_state":
             continue
-        column = _filter_column_for_frame(result, field)
+        column = _filter_column_for_frame(result, field, alias, plan)
         if not column:
             continue
         values = condition.get("values")
@@ -570,38 +642,32 @@ def _plan_has_pandas_source_filters(plan: dict[str, Any]) -> bool:
     return False
 
 
-def _filter_column_for_frame(frame: pd.DataFrame, field: str) -> str:
-    for candidate in _filter_field_candidates(field):
+def _filter_column_for_frame(frame: pd.DataFrame, field: str, alias: str, plan: dict[str, Any]) -> str:
+    for candidate in _metadata_column_candidates_for_source(alias, plan, field):
         if candidate in frame.columns:
             return candidate
     return ""
 
 
-def _filter_field_candidates(field: str) -> list[str]:
-    aliases = {
-        "DATE": ["DATE", "WORK_DT", "BASE_DT"],
-        "WORK_DT": ["WORK_DT", "DATE", "BASE_DT"],
-        "LOT_ID": ["LOT_ID"],
-        "OPER_NAME": ["OPER_NAME", "OPER_SHORT_DESC", "OPER_ID", "OPER_DESC"],
-        "OPER_SHORT_DESC": ["OPER_SHORT_DESC", "OPER_NAME", "OPER_ID", "OPER_DESC"],
-        "LOT_STAT_CD": ["LOT_STAT_CD"],
-        "LOT_HOLD_STAT_CD": ["LOT_HOLD_STAT_CD"],
-        "PKG_TYPE1": ["PKG_TYPE1", "PKG1", "PKG_TYP"],
-        "PKG_TYPE2": ["PKG_TYPE2", "PKG2", "PKG_TYP_2", "PKG_TYP2"],
-        "MCP_NO": ["MCP_NO", "MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
-        "TECH": ["TECH", "TECH_NM"],
-        "DEN": ["DEN", "DEN_TYP"],
-        "MODE": ["MODE", "Mode", "PROD_TYP"],
-        "LEAD": ["LEAD", "LEAD_CNT"],
-        "TSV_DIE_TYP": ["TSV_DIE_TYP"],
-        "DEVICE_DESC": ["DEVICE_DESC"],
-        "OPER_NUM": ["OPER_NUM"],
-        "EQP_ID": ["EQP_ID", "EQPID"],
-        "EQPID": ["EQPID", "EQP_ID"],
-        "EQP_MODEL": ["EQP_MODEL", "EQP_MODEL_CD"],
-        "RECIPE_ID": ["RECIPE_ID"],
-    }
-    return aliases.get(field, [field])
+def _metadata_column_candidates_for_source(alias: str, plan: dict[str, Any], column: str) -> list[str]:
+    column_text = str(column or "").strip()
+    if not column_text:
+        return []
+    candidates = [column_text]
+    job = _job_for_source_alias(alias, plan)
+    if isinstance(job, dict):
+        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+            mapping = job.get(field) if isinstance(job.get(field), dict) else {}
+            mapped = mapping.get(column_text)
+            if mapped is not None:
+                if not isinstance(mapped, list):
+                    mapped = [mapped]
+                candidates.extend(str(item) for item in mapped if str(item or "").strip())
+            for standard, mapped_candidates in mapping.items():
+                mapped_list = mapped_candidates if isinstance(mapped_candidates, list) else [mapped_candidates]
+                if column_text in [str(item) for item in mapped_list if str(item or "").strip()]:
+                    candidates.append(str(standard))
+    return _unique_columns(candidates)
 
 
 def _normalize_compare_value(value: Any) -> str:
@@ -1229,8 +1295,7 @@ def _source_dataframe(
     frame = pd.DataFrame(rows)
     if frame.empty:
         frame = pd.DataFrame(columns=[str(column) for column in (required_columns or [])])
-    frame = _drop_redundant_alias_columns(frame)
-    return _add_missing_required_columns(frame, required_columns or [], analysis_kind)
+    return frame
 
 
 def _required_columns_by_alias(plan: dict[str, Any]) -> dict[str, list[str]]:
@@ -1286,16 +1351,12 @@ def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, 
     job = _job_for_source_alias(alias, plan)
     aliases: dict[str, list[str]] = {}
     standard_candidates = _standard_columns_from_plan(plan)
-    for standard in standard_candidates:
-        equivalents = [name for name in _equivalent_column_names(standard) if name != standard]
-        if equivalents:
-            aliases[standard] = equivalents
     if isinstance(job, dict):
         for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
             mapping = job.get(field) if isinstance(job.get(field), dict) else {}
             for standard, candidates in mapping.items():
                 standard_text = str(standard or "").strip()
-                if not standard_text:
+                if not standard_text or standard_text not in standard_candidates:
                     continue
                 if not isinstance(candidates, list):
                     candidates = [candidates]
@@ -1337,23 +1398,22 @@ def _standard_columns_from_plan(plan: dict[str, Any]) -> list[str]:
         value = str(plan.get(key) or "").strip()
         if value:
             columns.append(value)
-    return _unique_columns(columns)
-
-
-def _add_missing_required_columns(frame: pd.DataFrame, required_columns: list[str], analysis_kind: str) -> pd.DataFrame:
-    if not required_columns:
-        return frame
-    result = frame.copy()
-    existing = set(str(column) for column in result.columns)
-    for column in required_columns:
-        text = str(column or "").strip()
-        if not text or text in existing:
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    for job in jobs:
+        if not isinstance(job, dict):
             continue
-        equivalent = _equivalent_existing_column(text, existing)
-        if equivalent:
-            result[text] = result[equivalent]
-            existing.add(text)
-    return result
+        required_columns = job.get("required_columns") if isinstance(job.get("required_columns"), list) else []
+        columns.extend(str(item) for item in required_columns if str(item or "").strip())
+        params = job.get("params") if isinstance(job.get("params"), dict) else {}
+        columns.extend(str(key) for key in params.keys() if str(key or "").strip())
+        filters = job.get("filters") if isinstance(job.get("filters"), list) else []
+        for condition in filters:
+            if not isinstance(condition, dict):
+                continue
+            field = str(condition.get("field") or "").strip()
+            if field and field != "PRODUCT_GRAIN":
+                columns.append(field)
+    return _unique_columns(columns)
 
 
 def _runtime_source_column_errors(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> list[str]:
@@ -1370,88 +1430,11 @@ def _runtime_source_column_errors(plan: dict[str, Any], runtime_sources: dict[st
         missing = [
             column
             for column in required_columns
-            if column not in present_columns and not _equivalent_existing_column(column, present_columns)
+            if not any(candidate in present_columns for candidate in _metadata_column_candidates_for_source(alias, plan, column))
         ]
         if missing:
             errors.append(f"Runtime source '{alias}' is missing required columns: {', '.join(missing)}")
     return errors
-
-
-def _equivalent_existing_column(column: str, existing_columns: set[str]) -> str:
-    for candidate in _equivalent_column_names(column):
-        if candidate != column and candidate in existing_columns:
-            return candidate
-    return ""
-
-
-def _equivalent_column_names(column: str) -> list[str]:
-    alias_columns = {
-        "MODE": ["Mode", "PROD_TYP"],
-        "PKG_TYPE1": ["PKG1", "PKG_TYP"],
-        "PKG_TYPE2": ["PKG2", "PKG_TYP_2", "PKG_TYP2"],
-        "MCP_NO": ["MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
-        "TECH": ["TECH_NM"],
-        "DEN": ["DEN_TYP"],
-        "LEAD": ["LEAD_CNT"],
-        "INPUT_PLAN": ["INPUT계획"],
-        "OUT_PLAN": ["OUT계획", "TARGET"],
-        "EQP_MODEL": ["EQP_MODEL_CD"],
-    }
-    standard = _standard_column_for_alias(column) or column
-    names = [standard, *alias_columns.get(standard, [])]
-    if column not in names:
-        names.insert(0, column)
-    return _unique_columns(names)
-
-
-def _drop_redundant_alias_columns(frame: pd.DataFrame) -> pd.DataFrame:
-    alias_columns = {
-        "MODE": ["Mode", "PROD_TYP"],
-        "PKG_TYPE1": ["PKG1", "PKG_TYP"],
-        "PKG_TYPE2": ["PKG2", "PKG_TYP_2", "PKG_TYP2"],
-        "MCP_NO": ["MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
-        "TECH": ["TECH_NM"],
-        "DEN": ["DEN_TYP"],
-        "LEAD": ["LEAD_CNT"],
-        "INPUT_PLAN": ["INPUT계획"],
-        "OUT_PLAN": ["OUT계획", "TARGET"],
-        "EQP_MODEL": ["EQP_MODEL_CD"],
-    }
-    drop_columns: list[str] = []
-    existing = set(str(column) for column in frame.columns)
-    for standard, aliases in alias_columns.items():
-        if standard not in existing:
-            continue
-        for alias in aliases:
-            if alias in existing:
-                drop_columns.append(alias)
-    if not drop_columns:
-        return frame
-    return frame.drop(columns=drop_columns, errors="ignore")
-
-
-def _standard_column_for_alias(alias: str) -> str:
-    alias_to_standard = {
-        "Mode": "MODE",
-        "PROD_TYP": "MODE",
-        "PKG1": "PKG_TYPE1",
-        "PKG_TYP": "PKG_TYPE1",
-        "PKG2": "PKG_TYPE2",
-        "PKG_TYP_2": "PKG_TYPE2",
-        "PKG_TYP2": "PKG_TYPE2",
-        "MCP NO": "MCP_NO",
-        "MCPSALENO": "MCP_NO",
-        "PROD_GRP_ID": "MCP_NO",
-        "MCP_SALE_CD": "MCP_NO",
-        "TECH_NM": "TECH",
-        "DEN_TYP": "DEN",
-        "LEAD_CNT": "LEAD",
-        "INPUT계획": "INPUT_PLAN",
-        "OUT계획": "OUT_PLAN",
-        "TARGET": "OUT_PLAN",
-        "EQP_MODEL_CD": "EQP_MODEL",
-    }
-    return alias_to_standard.get(alias, "")
 
 
 def _unique_columns(columns: list[str]) -> list[str]:

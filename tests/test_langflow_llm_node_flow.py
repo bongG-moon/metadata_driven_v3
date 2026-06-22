@@ -44,6 +44,9 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     intent_prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
     assert "Langflow Gemini/LLM node" in intent_prompt
     assert "Required JSON schema" in intent_prompt
+    assert "step_plan[].source_alias and step_plan[].source_aliases must exactly match retrieval_jobs[].source_alias" in intent_prompt
+    assert "For total questions over a filtered scope" in intent_prompt
+    assert "may appear in result_scope_columns or final output as labels" in intent_prompt
 
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
@@ -77,6 +80,7 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     pandas_prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
     assert "result_df" in pandas_prompt
     assert "aggregate_wip_total" in pandas_prompt
+    assert "Do not use .to_frame()" in pandas_prompt
 
     pandas_llm_json = {
         "code": "\n".join(
@@ -140,7 +144,7 @@ def test_intent_prompt_exposes_dataset_specific_date_formats(monkeypatch: Any) -
 
     production = summary["datasets"]["production_today"]
     target = summary["datasets"]["target"]
-    assert production["required_param_mappings"] == {"DATE": ["WORK_DT"]}
+    assert production["required_param_mappings"] == {"DATE": ["WORK_DATE"]}
     assert production["date_format"] == "YYYYMMDD"
     assert production["date_param_value_for_current_request"] == "20260612"
     assert target["date_format"] == "YYYY-MM-DD"
@@ -611,6 +615,9 @@ def test_intent_prompt_tells_llm_to_use_group_label_not_raw_rank_field(monkeypat
     assert "Keep product_grain, step_plan[].group_by, step_plan[].join_keys" in prompt
     assert "retrieval_jobs[].required_columns, request the dataset's physical/source columns" in prompt
     assert "standard_column_aliases" in prompt
+    assert "전체 수량/전체 실적/총/합계" in prompt
+    assert "For metric or quantity questions without 별/별로/per/by/rank/detail/raw wording" in prompt
+    assert "For 차수별/공정 차수별 questions, group by OPER_NUM" in prompt
 
 
 def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any) -> None:
@@ -645,9 +652,12 @@ def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any
     assert _filter_values(jobs["wip_today"], "DATE") == ["20260612"]
     assert _filter_values(jobs["target"], "DATE") == ["2026-06-12"]
     assert _filter_values(jobs["production_today"], "OPER_NAME") == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
-    assert {"TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"}.issubset(
+    assert {"TECH", "DEN", "MODE", "PKG_TYP1", "PKG_TYP2", "LEAD", "MCP_NO"}.issubset(
         set(jobs["production_today"]["required_columns"])
     )
+    assert "PKG_TYPE1" not in jobs["production_today"]["required_columns"]
+    assert jobs["production_today"]["filter_mappings"]["PKG_TYPE1"] == ["PKG_TYP1"]
+    assert jobs["production_today"]["standard_column_aliases"]["PKG_TYPE1"] == ["PKG_TYP1"]
     assert {"TECH", "DEN", "Mode", "PKG1", "PKG2", "LEAD", "MCP NO"}.issubset(set(jobs["target"]["required_columns"]))
     assert "PKG_TYPE1" not in jobs["target"]["required_columns"]
     assert "PKG_TYPE2" not in jobs["target"]["required_columns"]
@@ -678,6 +688,97 @@ def test_intent_normalizer_uses_product_terms_for_existing_jobs(monkeypatch: Any
 
     assert _filter_values(job, "MODE") == ["LPDDR5"]
     assert _filter_values(job, "OPER_NAME") == ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
+
+
+def test_intent_normalizer_repairs_product_wip_production_question_to_join(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "오늘 da에서 재공과 생산량을 제품별로 알려줘",
+        "test-session",
+        request_date="20260622",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    wrong_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "rank_top_n",
+        "datasets": ["wip_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wip_today_rank",
+                "required_columns": ["DATE", "OPER_NAME", "WIP"],
+                "filters": [],
+                "params": {},
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "rank_wip_products",
+                "operation": "rank_top_n",
+                "source_alias": "wip_today_rank",
+                "metric": "WIP",
+                "top_n": 3,
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(wrong_llm_json, ensure_ascii=False))
+    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+
+    assert payload["intent_plan"]["intent_type"] == "multi_source_analysis"
+    assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
+    assert payload["intent_plan"]["datasets"] == ["production_today", "wip_today"]
+    assert [step["operation"] for step in payload["intent_plan"]["step_plan"]] == [
+        "aggregate_sum_by_group",
+        "aggregate_sum_by_group",
+        "left_join",
+    ]
+    assert set(jobs) == {"production_today", "wip_today"}
+    assert _filter_values(jobs["production_today"], "OPER_NAME") == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
+    assert {"DEN", "PKG_TYP1", "PKG_TYP2", "PRODUCTION"}.issubset(set(jobs["production_today"]["required_columns"]))
+    assert {"DENSITY", "PKG1", "PKG2", "WIP"}.issubset(set(jobs["wip_today"]["required_columns"]))
+
+
+def test_intent_normalizer_repairs_yesterday_product_wip_production_question_to_history_join(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "어제 da에서 재공과 생산량을 제품별로 알려줘",
+        "test-session",
+        request_date="20260622",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    wrong_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "rank_top_n",
+        "datasets": ["wip_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wip_today_rank",
+                "required_columns": ["DATE", "OPER_NAME", "WIP"],
+                "filters": [],
+                "params": {},
+            }
+        ],
+        "step_plan": [{"step_id": "rank_wip_products", "operation": "rank_top_n", "source_alias": "wip_today_rank"}],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(wrong_llm_json, ensure_ascii=False))
+    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+
+    assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
+    assert payload["intent_plan"]["datasets"] == ["production", "wip"]
+    assert set(jobs) == {"production", "wip"}
+    assert jobs["production"]["params"]["DATE"] == "20260621"
+    assert jobs["wip"]["params"]["DATE"] == "20260621"
+    assert {"DENSITY", "PKG1", "PKG2", "PRODUCTION"}.issubset(set(jobs["production"]["required_columns"]))
+    assert {"DENSITY", "PKG_TYP1", "PKG_TYP2", "WIP"}.issubset(set(jobs["wip"]["required_columns"]))
 
 
 def test_intent_normalizer_replaces_wrong_product_alias_filter_with_metadata_condition(monkeypatch: Any) -> None:
@@ -919,30 +1020,86 @@ def test_intent_normalizer_keeps_cross_source_join_keys_as_standard_columns() ->
     assert normalized["retrieval_jobs"][0]["filter_mappings"]["DEN"] == ["DENSITY"]
 
 
+def test_intent_normalizer_repairs_metric_detail_rows_to_total_aggregate() -> None:
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    payload = _wafer_metric_payload("오늘 WB 공정의 WAFER 기준 실적 수량 알려줘", product_keys)
+    intent_llm_json = _wafer_detail_intent_json()
+
+    normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = normalized["intent_plan"]
+    job = normalized["retrieval_jobs"][0]
+
+    assert plan["analysis_kind"] == "generic_aggregate_recipe"
+    assert plan["product_grain"] == []
+    assert plan["analysis_output_columns"] == ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+    assert plan["step_plan"][0]["operation"] == "aggregate_sum_by_group"
+    assert plan["step_plan"][0]["group_by"] == []
+    assert plan["step_plan"][0]["metrics"] == ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+    assert "PRODUCTION" in job["required_columns"]
+    assert "NETDIE_300_CNT" in job["required_columns"]
+    assert _filter_values(job, "OPER_NAME") == ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
+    assert any("metric detail_rows 계획을 요청 grain 기준 집계" in item for item in normalized["info"])
+
+
+def test_intent_normalizer_uses_requested_grain_for_metric_aggregate() -> None:
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+
+    product_payload = _wafer_metric_payload("오늘 WB 공정 WAFER 기준 실적 수량 제품별로 알려줘", product_keys)
+    product_result = intent_normalizer.normalize_intent_payload(
+        product_payload,
+        json.dumps(_wafer_detail_intent_json(), ensure_ascii=False),
+    )
+    assert product_result["intent_plan"]["step_plan"][0]["group_by"] == product_keys
+    assert product_result["intent_plan"]["analysis_output_columns"] == [*product_keys, "WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+
+    oper_num_payload = _wafer_metric_payload("오늘 WB 공정 WAFER 기준 실적 수량 공정 차수별로 알려줘", product_keys)
+    oper_num_result = intent_normalizer.normalize_intent_payload(
+        oper_num_payload,
+        json.dumps(_wafer_detail_intent_json(), ensure_ascii=False),
+    )
+    assert oper_num_result["intent_plan"]["step_plan"][0]["group_by"] == ["OPER_NUM"]
+    assert "OPER_NUM" in oper_num_result["retrieval_jobs"][0]["required_columns"]
+
+
+def test_intent_normalizer_keeps_explicit_metric_raw_data_request_as_detail_rows() -> None:
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    payload = _wafer_metric_payload("오늘 WB 공정 WAFER 기준 실적 원본 데이터를 보여줘", product_keys)
+
+    normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(_wafer_detail_intent_json(), ensure_ascii=False))
+
+    assert normalized["intent_plan"]["analysis_kind"] == "detail_rows"
+    assert normalized["intent_plan"]["detail_rows_requested"] is True
+
+
 def test_intent_normalizer_maps_standard_required_columns_to_physical_source_columns() -> None:
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
     product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
     mapped_catalog = {
         "dataset_family": "production",
         "source_type": "oracle",
-        "source_config": {"source_type": "oracle", "db_key": "PNT_RPT", "query_template": "SELECT * FROM T WHERE WORK_DT = {DATE}"},
+        "source_config": {"source_type": "oracle", "db_key": "PNT_RPT", "query_template": "SELECT * FROM T WHERE WORK_DATE = {DATE}"},
         "required_params": ["DATE"],
-        "columns": ["WORK_DT", "TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCPSALENO", "PRODUCTION"],
+        "columns": ["WORK_DATE", "TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCP_NO", "OPER", "PRODUCTION"],
         "filter_mappings": {
-            "DATE": ["WORK_DT"],
+            "DATE": ["WORK_DATE"],
             "TECH": ["TECH"],
             "DEN": ["DENSITY"],
             "MODE": ["MODE"],
             "PKG_TYPE1": ["PKG1"],
             "PKG_TYPE2": ["PKG2"],
             "LEAD": ["LEAD"],
-            "MCP_NO": ["MCPSALENO"],
+            "MCP_NO": ["MCP_NO"],
+            "OPER_NUM": ["OPER"],
         },
         "standard_column_aliases": {
+            "DATE": ["WORK_DATE"],
             "DEN": ["DENSITY"],
             "PKG_TYPE1": ["PKG1"],
             "PKG_TYPE2": ["PKG2"],
-            "MCP_NO": ["MCPSALENO"],
+            "OPER_NUM": ["OPER"],
         },
         "primary_quantity_column": "PRODUCTION",
     }
@@ -983,13 +1140,13 @@ def test_intent_normalizer_maps_standard_required_columns_to_physical_source_col
     job = normalized["retrieval_jobs"][0]
 
     assert normalized["intent_plan"]["step_plan"][0]["join_keys"] == product_keys
-    assert {"TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCPSALENO", "PRODUCTION"}.issubset(
+    assert {"TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCP_NO", "PRODUCTION"}.issubset(
         set(job["required_columns"])
     )
     assert "PKG_TYPE1" not in job["required_columns"]
     assert "PKG_TYPE2" not in job["required_columns"]
-    assert "MCP_NO" not in job["required_columns"]
-    assert job["filter_mappings"]["DATE"] == ["WORK_DT"]
+    assert "DEN" not in job["required_columns"]
+    assert job["filter_mappings"]["DATE"] == ["WORK_DATE"]
     assert job["filter_mappings"]["PKG_TYPE1"] == ["PKG1"]
     assert job["standard_column_aliases"]["PKG_TYPE1"] == ["PKG1"]
     assert job["pandas_preprocessing"]["standardize_columns"] is True
@@ -1489,6 +1646,215 @@ def test_pandas_executor_joins_physical_source_columns_with_standard_aliases() -
     assert result["analysis"]["rows"][0]["HAS_PKG_TYPE1"] is True
 
 
+def test_pandas_executor_joins_actual_today_production_wip_physical_columns_by_standard_keys() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    production_mappings = {
+        "DATE": ["WORK_DATE"],
+        "PKG_TYPE1": ["PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYP2"],
+        "OPER_NUM": ["OPER"],
+    }
+    wip_mappings = {
+        "DATE": ["WORK_DATE"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG1"],
+        "PKG_TYPE2": ["PKG2"],
+        "OPER_NUM": ["OPER"],
+    }
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "aggregate_join",
+            "product_grain": product_keys,
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production_today",
+                    "source_alias": "production_data",
+                    "filter_mappings": production_mappings,
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                    "standard_column_aliases": production_mappings,
+                    "filters": [
+                        {"field": "DATE", "op": "eq", "value": "20260621"},
+                        {"field": "OPER_NUM", "op": "eq", "value": "DA10"},
+                    ],
+                },
+                {
+                    "dataset_key": "wip_today",
+                    "source_alias": "wip_data",
+                    "filter_mappings": wip_mappings,
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                    "standard_column_aliases": wip_mappings,
+                    "filters": [
+                        {"field": "DATE", "op": "eq", "value": "20260621"},
+                        {"field": "OPER_NUM", "op": "eq", "value": "DA10"},
+                    ],
+                },
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "production_data": [
+                {
+                    "WORK_DATE": "20260621",
+                    "OPER": "DA10",
+                    "TECH": "TSV",
+                    "DEN": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG_TYP1": "HBM",
+                    "PKG_TYP2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "PRODUCTION": 100,
+                },
+                {
+                    "WORK_DATE": "20260621",
+                    "OPER": "DA20",
+                    "TECH": "TSV",
+                    "DEN": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG_TYP1": "HBM",
+                    "PKG_TYP2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "PRODUCTION": 999,
+                },
+            ],
+            "wip_data": [
+                {
+                    "WORK_DATE": "20260621",
+                    "OPER": "DA10",
+                    "TECH": "TSV",
+                    "DENSITY": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG1": "HBM",
+                    "PKG2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "WIP": 40,
+                }
+            ],
+        },
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "product_keys = plan['product_grain']",
+                "prod_source = sources['production_data']",
+                "prod_source = prod_source[(prod_source['DATE'] == '20260621') & (prod_source['OPER_NUM'] == 'DA10')]",
+                "wip_source = sources['wip_data']",
+                "wip_source = wip_source[(wip_source['DATE'] == '20260621') & (wip_source['OPER_NUM'] == 'DA10')]",
+                "prod = prod_source.groupby(product_keys, as_index=False)['PRODUCTION'].sum()",
+                "wip = wip_source.groupby(product_keys, as_index=False)['WIP'].sum()",
+                "result_df = prod.merge(wip, on=product_keys, how='inner')",
+            ]
+        ),
+        "output_columns": [*product_keys, "PRODUCTION", "WIP"],
+        "reasoning_steps": ["Join actual source columns after standardization."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["DEN"] == "2048G"
+    assert result["analysis"]["rows"][0]["PKG_TYPE1"] == "HBM"
+    assert result["analysis"]["rows"][0]["PRODUCTION"] == 100
+    assert result["analysis"]["rows"][0]["WIP"] == 40
+
+
+def test_pandas_executor_joins_actual_history_production_wip_physical_columns_by_standard_keys() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    production_mappings = {
+        "DATE": ["WORK_DATE"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG1"],
+        "PKG_TYPE2": ["PKG2"],
+        "OPER_NUM": ["OPER"],
+    }
+    wip_mappings = {
+        "DATE": ["WORK_DATE"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYP2"],
+        "OPER_NUM": ["OPER"],
+    }
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "aggregate_join",
+            "product_grain": product_keys,
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production",
+                    "source_alias": "production_data",
+                    "filter_mappings": production_mappings,
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                    "standard_column_aliases": production_mappings,
+                },
+                {
+                    "dataset_key": "wip",
+                    "source_alias": "wip_data",
+                    "filter_mappings": wip_mappings,
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                    "standard_column_aliases": wip_mappings,
+                },
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "production_data": [
+                {
+                    "WORK_DATE": "20260621",
+                    "OPER": "WB10",
+                    "TECH": "TSV",
+                    "DENSITY": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG1": "HBM",
+                    "PKG2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "PRODUCTION": 88,
+                }
+            ],
+            "wip_data": [
+                {
+                    "WORK_DATE": "20260621",
+                    "OPER": "WB10",
+                    "TECH": "TSV",
+                    "DENSITY": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG_TYP1": "HBM",
+                    "PKG_TYP2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "WIP": 33,
+                }
+            ],
+        },
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "product_keys = plan['product_grain']",
+                "prod = sources['production_data'].groupby(product_keys, as_index=False)['PRODUCTION'].sum()",
+                "wip = sources['wip_data'].groupby(product_keys, as_index=False)['WIP'].sum()",
+                "result_df = prod.merge(wip, on=product_keys, how='inner')",
+            ]
+        ),
+        "output_columns": [*product_keys, "PRODUCTION", "WIP"],
+        "reasoning_steps": ["Join history source columns after standardization."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["DEN"] == "2048G"
+    assert result["analysis"]["rows"][0]["PKG_TYPE1"] == "HBM"
+    assert result["analysis"]["rows"][0]["PRODUCTION"] == 88
+    assert result["analysis"]["rows"][0]["WIP"] == 33
+
+
 def test_pandas_prompt_uses_standardized_source_columns_for_pandas_view() -> None:
     pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
     product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
@@ -1618,6 +1984,8 @@ def test_pandas_prompt_tells_llm_not_to_output_rank_group_source_field() -> None
     assert "aggregate the rank metric at the intended grain before sorting" in prompt
     assert "rank separately within each group label" in prompt
     assert "restrict the later source to the ranked entity keys from step_outputs" in prompt
+    assert "compute the derived row-level output columns first" in prompt
+    assert "For aggregate steps with empty group_by, return one total row" in prompt
     assert "Use plan.rank_group_output_column as the final group label column" in prompt
     assert "OPER_GROUP" in prompt
 
@@ -1921,6 +2289,87 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     assert "result_df = pd.DataFrame([])" not in retry_exceeded_prompt["prompt"]
     assert retry_exceeded_passthrough["analysis"]["status"] == "error"
     assert retry_exceeded_passthrough["analysis"]["analysis_code"] == failed["analysis"]["analysis_code"]
+
+
+def test_pandas_repair_prompt_distinguishes_mapped_and_physical_only_columns() -> None:
+    repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
+    repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
+    failed = {
+        "request": {"question": "오늘 A조 DA공정에서 실적 알려줘"},
+        "intent_plan": {
+            "analysis_kind": "aggregate_join",
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production_today",
+                    "source_alias": "production_data",
+                    "filter_mappings": {
+                        "DATE": ["WORK_DATE"],
+                        "PKG_TYPE1": ["PKG_TYP1"],
+                    },
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                }
+            ],
+        },
+        "source_results": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "columns": ["WORK_DATE", "SHIFT", "PKG_TYP1", "PRODUCTION"],
+                "rows": [{"WORK_DATE": "20260622", "SHIFT": "DAY", "PKG_TYP1": "HBM", "PRODUCTION": 10}],
+            }
+        ],
+        "analysis": {
+            "status": "error",
+            "analysis_code": "result_df = sources['production_data'][sources['production_data']['WORK_DATE'] == '20260622']",
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+            "errors": ["Generated pandas code failed: 'WORK_DATE'"],
+            "pandas_code_json": {
+                "code": "result_df = sources['production_data'][sources['production_data']['WORK_DATE'] == '20260622']",
+                "output_columns": [],
+            },
+        },
+    }
+
+    repair_payload = repair_payload_builder.build_pandas_repair_payload(failed)
+    prompt_payload = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
+    prompt = prompt_payload["prompt"]
+
+    assert "column_contract_summary" in prompt
+    assert "use_standard_names_for_mapped_columns" in prompt
+    assert '"DATE": [' in prompt
+    assert '"WORK_DATE"' in prompt
+    assert '"PKG_TYPE1": [' in prompt
+    assert '"PKG_TYP1"' in prompt
+    assert "physical_only_columns_allowed_by_name" in prompt
+    assert '"SHIFT"' in prompt
+    assert '"PRODUCTION"' in prompt
+    assert "Physical source column names are allowed only when they have no standard mapping" in prompt
+
+
+def test_pandas_repair_builder_detects_analysis_only_error_payload() -> None:
+    repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
+    repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
+    analysis_only = {
+        "status": "error",
+        "analysis_code": "result_df = broken_df.to_frame().T",
+        "columns": [],
+        "rows": [],
+        "row_count": 0,
+        "errors": ["Generated pandas code failed: 'DataFrame' object has no attribute 'to_frame'"],
+    }
+
+    repair_payload = repair_payload_builder.build_pandas_repair_payload(analysis_only)
+    prompt_payload = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
+
+    assert repair_payload["pandas_repair"]["required"] is True
+    assert repair_payload["pandas_execution_branch"]["route"] == "repair"
+    assert repair_payload["pandas_repair"]["context"]["executed_code"] == "result_df = broken_df.to_frame().T"
+    assert prompt_payload["repair_required"] is True
+    assert prompt_payload["prompt_type"] == "pandas_code_repair"
+    assert "to_frame" in prompt_payload["prompt"]
+    assert "Do not use .to_frame()" in prompt_payload["prompt"]
 
 
 def test_pandas_executor_passes_successful_payload_through_repair_branch() -> None:
@@ -2373,6 +2822,100 @@ def test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract() -
     assert "Column-name rule" in prompt
     assert "do not ask the user to modify metadata just because the source used the physical names" in prompt
     assert prompt_payload["answer_context"]["column_standardization"][0]["mappings"]["PKG_TYPE1"] == ["PKG1"]
+
+
+def _wafer_metric_payload(question: str, product_keys: list[str]) -> dict[str, Any]:
+    return {
+        "request": {"question": question, "request_date": "20260622"},
+        "state": {},
+        "metadata": {
+            "domain_items": {
+                "product_key_columns": product_keys,
+                "process_groups": {
+                    "WB": {
+                        "display_name": "WB 공정",
+                        "aliases": ["WB", "W/B", "WB공정"],
+                        "processes": ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"],
+                    }
+                },
+                "metric_terms": {
+                    "wafer_based_performance": {
+                        "display_name": "Wafer 기준 실적",
+                        "aliases": ["Wafer기준 실적", "Wafer기반 실적", "Wafer Out 수량", "WAFER 기준 실적"],
+                        "dataset_family": "production",
+                        "required_dataset_families": ["production"],
+                        "required_quantity_terms": ["production"],
+                        "source_columns": ["PRODUCTION", "NETDIE_300_CNT"],
+                        "output_columns": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+                        "formula": "WAFER_OUT_QTY = PRODUCTION / NETDIE_300_CNT; FAIL_UNIT_QTY = PRODUCTION when NETDIE_300_CNT <= 0",
+                        "calculation_rule": "row_level_then_sum_by_requested_grain",
+                        "pandas_code_instructions": (
+                            "Create WAFER_OUT_QTY only where NETDIE_300_CNT > 0. "
+                            "Create FAIL_UNIT_QTY from PRODUCTION where NETDIE_300_CNT is zero/null. "
+                            "Then sum both output columns by the requested group_by or total."
+                        ),
+                    }
+                },
+            },
+            "table_catalog": {
+                "datasets": {
+                    "production_today": {
+                        "dataset_family": "production",
+                        "source_type": "oracle",
+                        "source_config": {"source_type": "oracle", "query_template": "SELECT * FROM PROD WHERE WORK_DT = {DATE}"},
+                        "required_params": ["DATE"],
+                        "date_format": "YYYYMMDD",
+                        "date_scope": "current_day",
+                        "columns": [
+                            "WORK_DT",
+                            "OPER_NAME",
+                            "OPER_NUM",
+                            *product_keys,
+                            "PRODUCTION",
+                            "NETDIE_300_CNT",
+                        ],
+                        "filter_mappings": {
+                            "DATE": ["WORK_DT"],
+                            "OPER_NAME": ["OPER_NAME"],
+                            "OPER_NUM": ["OPER_NUM"],
+                            **{column: [column] for column in product_keys},
+                        },
+                        "primary_quantity_column": "PRODUCTION",
+                    }
+                }
+            },
+            "main_flow_filters": {"DATE": {"field": "DATE"}, "OPER_NAME": {"field": "OPER_NAME"}},
+        },
+    }
+
+
+def _wafer_detail_intent_json() -> dict[str, Any]:
+    return {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "detail_rows",
+        "datasets": ["production_today"],
+        "params_by_dataset": {"production_today": {"DATE": "20260622"}},
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_today",
+                "purpose": "retrieve production rows to calculate wafer based performance",
+                "params": {"DATE": "20260622"},
+                "filters": [],
+                "required_columns": ["PRODUCTION"],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "calc_wafer_out_quantity",
+                "operation": "detail_rows",
+                "source_alias": "production_today",
+                "metric": "WAFER_OUT_QTY",
+                "output_columns": ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"],
+            }
+        ],
+        "reasoning_steps": ["Return the summed wafer-based production quantity (detail rows) as the result."],
+    }
 
 
 def load_seed_metadata_payload(module: Any, payload: dict[str, Any], monkeypatch: Any) -> dict[str, Any]:

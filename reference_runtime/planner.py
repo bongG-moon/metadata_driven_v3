@@ -59,8 +59,8 @@ def build_intent_plan(
     if _is_low_output_question(question):
         return _plan_low_output_vs_target(question, metadata, date_value, product_keys)
 
-    if "LPDDR5" in q_upper and _mentions_process_group(question) and ("생산" in question or "PRODUCTION" in q_upper):
-        return _plan_lpddr5_process_production_wip(question, metadata, date_value, product_keys)
+    if _is_process_production_wip_product_question(question):
+        return _plan_process_production_wip(question, metadata, date_value, product_keys)
 
     if ("목표" in question or "달성" in question) and (_mentions_da(question) or _mentions_wb(question)):
         return _plan_production_wip_target_rate(question, metadata, date_value, product_keys)
@@ -427,7 +427,7 @@ def _plan_hbm_equipment_by_model(question: str, product_keys: list[str]) -> dict
     return plan
 
 
-def _plan_lpddr5_process_production_wip(
+def _plan_process_production_wip(
     question: str,
     metadata: dict[str, Any],
     date_value: str,
@@ -435,11 +435,11 @@ def _plan_lpddr5_process_production_wip(
 ) -> dict[str, Any]:
     process_key = _process_group_key(question) or "WB"
     processes = _process_values(metadata, process_key, question)
-    source_prefix = f"lpddr5_{process_key.lower()}"
-    common_filters = [
-        {"field": "MODE", "op": "eq", "value": "LPDDR5"},
-        {"field": "OPER_NAME", "op": "in", "values": processes},
-    ]
+    is_lpddr5 = "LPDDR5" in question.upper()
+    source_prefix = f"lpddr5_{process_key.lower()}" if is_lpddr5 else f"{process_key.lower()}_product"
+    common_filters = [{"field": "OPER_NAME", "op": "in", "values": processes}]
+    if is_lpddr5:
+        common_filters.insert(0, {"field": "MODE", "op": "eq", "value": "LPDDR5"})
     plan = _base_plan(question, "multi_source_analysis", "aggregate_join")
     plan.update(
         {
@@ -1009,6 +1009,22 @@ def _is_multi_step_wip_production_question(question: str) -> bool:
         and ("재공" in question or "WIP" in q_upper)
         and ("생산" in question or "PRODUCTION" in q_upper)
     )
+
+
+def _is_process_production_wip_product_question(question: str) -> bool:
+    q_upper = question.upper()
+    if not _mentions_process_group(question):
+        return False
+    if not (("재공" in question or "WIP" in q_upper) and ("생산" in question or "실적" in question or "PRODUCTION" in q_upper)):
+        return False
+    if not ("제품" in question or "PRODUCT" in q_upper or "LPDDR5" in q_upper):
+        return False
+    if any(term in question for term in ["목표", "계획", "달성"]):
+        return False
+    rank_terms = ["상위", "하위", "가장", "많은", "적은", "최대", "최소", "랭크", "랭킹"]
+    if any(term in question for term in rank_terms) or "TOP" in q_upper or "RANK" in q_upper:
+        return False
+    return True
 
 
 def _mentions_da(question: str) -> bool:

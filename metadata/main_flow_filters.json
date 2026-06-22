@@ -1,6 +1,6 @@
 {
   "DATE": {
-    "column_candidates": ["WORK_DT", "DATE", "BASE_DT"],
+    "column_candidates": ["WORK_DATE", "WORK_DT", "DATE", "BASE_DT"],
     "description": "기준일"
   },
   "OPER_NAME": {
@@ -12,7 +12,7 @@
     "description": "제품 기술"
   },
   "DEN": {
-    "column_candidates": ["DEN"],
+    "column_candidates": ["DEN", "DENSITY", "DEN_TYP"],
     "description": "제품 용량"
   },
   "MODE": {
@@ -20,11 +20,11 @@
     "description": "제품 모드"
   },
   "PKG_TYPE1": {
-    "column_candidates": ["PKG_TYPE1"],
+    "column_candidates": ["PKG_TYPE1", "PKG1", "PKG_TYP1", "PKG_TYP"],
     "description": "패키지 타입1"
   },
   "PKG_TYPE2": {
-    "column_candidates": ["PKG_TYPE2"],
+    "column_candidates": ["PKG_TYPE2", "PKG2", "PKG_TYP2", "PKG_TYP_2"],
     "description": "패키지 타입2"
   },
   "LEAD": {
@@ -39,13 +39,29 @@
     "column_candidates": ["DEVICE_DESC", "DEVICE", "DEVICE_CODE"],
     "description": "사용자가 device를 직접 언급했을 때만 사용하는 device 계열"
   },
+  "DEVICE": {
+    "column_candidates": ["DEVICE", "DEVICE_CODE"],
+    "description": "제품/디바이스 코드"
+  },
   "TSV_DIE_TYP": {
     "column_candidates": ["TSV_DIE_TYP", "TSV_DIE_TYPE"],
     "description": "HBM/3DS/TSV 제품 판별용 컬럼"
   },
   "OPER_NUM": {
-    "column_candidates": ["OPER_NUM", "OPER_NO"],
+    "column_candidates": ["OPER_NUM", "OPER", "OPER_NO"],
     "description": "공정 번호"
+  },
+  "OPER_SEQ": {
+    "column_candidates": ["OPER_SEQ"],
+    "description": "공정 순서"
+  },
+  "DIE_ATTACH_QTY": {
+    "column_candidates": ["DIE_ATTACH_QTY"],
+    "description": "Die attach 수량"
+  },
+  "NETDIE_300_CNT": {
+    "column_candidates": ["NETDIE_300_CNT"],
+    "description": "300mm wafer 기준 net die 수량"
   },
   "LOT_ID": {
     "column_candidates": ["LOT_ID"],

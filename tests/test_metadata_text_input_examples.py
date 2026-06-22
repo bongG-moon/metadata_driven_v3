@@ -151,9 +151,13 @@ FILTER_AUTHORING_HINTS: dict[str, dict[str, Any]] = {
     "PKG_TYPE2": {"aliases": ["패키지 타입2", "PKG_TYPE2"], "semantic_role": "package_attribute"},
     "LEAD": {"aliases": ["Lead", "LEAD"], "semantic_role": "product_attribute"},
     "MCP_NO": {"aliases": ["제품 코드", "MCP 번호", "MCP NO"], "semantic_role": "product_code"},
+    "DEVICE": {"aliases": ["디바이스", "DEVICE", "제품 코드"], "semantic_role": "device"},
     "DEVICE_DESC": {"aliases": ["device", "device code", "DEVICE_DESC"], "semantic_role": "device"},
     "TSV_DIE_TYP": {"aliases": ["HBM 판별", "3DS 판별", "TSV 판별"], "semantic_role": "product_condition"},
     "OPER_NUM": {"aliases": ["공정 번호", "OPER_NUM"], "semantic_role": "process_number"},
+    "OPER_SEQ": {"aliases": ["공정 순서", "OPER_SEQ"], "semantic_role": "process_sequence"},
+    "DIE_ATTACH_QTY": {"aliases": ["Die attach 수량", "DIE_ATTACH_QTY"], "semantic_role": "quantity"},
+    "NETDIE_300_CNT": {"aliases": ["Net die 수량", "NETDIE_300_CNT"], "semantic_role": "quantity"},
     "LOT_ID": {"aliases": ["Lot ID", "LOT 번호"], "semantic_role": "lot_id"},
     "LOT_STAT_CD": {"aliases": ["Lot 작업 상태", "LOT 상태"], "semantic_role": "lot_status"},
     "LOT_HOLD_STAT_CD": {"aliases": ["Lot hold 상태", "Hold 상태"], "semantic_role": "hold_status"},
@@ -518,7 +522,7 @@ def test_worker_bulk_filter_text_input_saves_all_current_filters(monkeypatch: An
 
     assert written["raw_text"] == FILTER_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 18
+    assert written["write_result"]["saved_count"] == 22
     docs = store[("metadata_driven_agent_v3", "agent_v3_main_flow_filters")]
     assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL"}
     assert docs["main_flow_filter:DATE"]["payload"]["semantic_role"] == "date"

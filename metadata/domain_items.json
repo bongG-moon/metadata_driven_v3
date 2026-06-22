@@ -271,7 +271,7 @@
         "lot": "lot_status_data"
       },
       "required_columns_by_family": {
-        "wip": ["WORK_DT", "OPER_NAME", "WIP"],
+        "wip": ["DATE", "OPER_NAME", "WIP"],
         "lot": ["OPER_SHORT_DESC", "LOT_ID", "LOT_HOLD_STAT_CD", "IN_TAT"]
       },
       "replace_datasets": true,
@@ -340,7 +340,7 @@
         "lot": "lot_data"
       },
       "required_columns_by_family": {
-        "wip": ["WORK_DT", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_NAME", "WIP"],
+        "wip": ["DATE", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_NAME", "WIP"],
         "lot": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_SHORT_DESC", "LOT_ID", "IN_TAT"]
       },
       "replace_datasets": true,
@@ -404,7 +404,7 @@
         "equipment": "equipment_data"
       },
       "required_columns_by_family": {
-        "production": ["WORK_DT", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_NAME", "PRODUCTION"],
+        "production": ["DATE", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "OPER_NAME", "PRODUCTION"],
         "equipment": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "EQPID"]
       },
       "replace_datasets": true,

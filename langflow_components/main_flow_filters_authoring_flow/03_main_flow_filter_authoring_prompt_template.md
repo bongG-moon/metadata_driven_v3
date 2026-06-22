@@ -6,7 +6,7 @@ Use semantic_role consistently because runtime normalization uses it to distingu
 Include sample_values or value_mappings when business words differ from stored values.
 If the refined text uses older names such as known_values, value_aliases, columns, process_name, or between, convert them to the current schema fields sample_values, value_mappings, column_candidates, process/generic semantic_role, and range.
 filter_key should be a stable standard key that table_catalog.filter_mappings can reference. Do not create dataset-specific physical keys when a standard key already exists.
-Keep this metadata dataset-neutral. main_flow_filters.column_candidates are broad candidate column names only; dataset-specific mappings such as PKG_TYPE1->PKG1 or MCP_NO->MCPSALENO belong in table_catalog.filter_mappings.
+Keep this metadata dataset-neutral. main_flow_filters.column_candidates are broad candidate column names only; dataset-specific mappings such as PKG_TYPE1->PKG1, PKG_TYPE1->PKG_TYP1, or MCP_NO->MCPSALENO belong in table_catalog.filter_mappings.
 Do not include table_catalog filter_mappings, source_type, query_template, document ID, or DB key in main_flow_filter items.
 
 Authoring context:

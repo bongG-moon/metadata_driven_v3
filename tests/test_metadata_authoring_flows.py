@@ -445,19 +445,19 @@ def test_table_catalog_authoring_backfills_structured_fields_from_raw_text() -> 
 화면에 보일 이름은 Production Today이면 돼.
 당일 생산 실적 질문에 사용하는 Oracle 데이터야.
 production_today는 production 계열의 당일용 생산 실적 source야.
-조회할 때 DATE 값은 WORK_DT 컬럼에 넣어서 조회하고, DATE는 조회 필수 기준일이야.
+조회할 때 DATE 값은 WORK_DATE 컬럼에 넣어서 조회하고, DATE는 조회 필수 기준일이야.
 DATE는 YYYYMMDD 형식이야.
 수량은 PRODUCTION 컬럼을 사용하고, 이 값은 생산량이야.
 source는 oracle이고 db_key는 PNT_RPT야.
 
 query_template:
-SELECT WORK_DT, FACTORY, FAMILY, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, TSV_DIE_TYP, DEVICE, DEVICE_DESC, OPER_NUM, OPER_NAME, OPER_SEQ, PRODUCTION
-FROM PRODUCTION_TODAY
+SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.MODE, A.DEN, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, PRODUCTION
+FROM PRODUCTION_TODAY A
 WHERE 1=1
-AND WORK_DT = {DATE}
+AND A.WORK_DATE = {DATE}
 AND PRODUCTION > 0
 
-filter_mappings는 DATE -> WORK_DT, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_TYPE1 -> PKG_TYPE1, PKG_TYPE2 -> PKG_TYPE2, LEAD -> LEAD, MCP_NO -> MCP_NO, TSV_DIE_TYP -> TSV_DIE_TYP, DEVICE_DESC -> DEVICE_DESC, OPER_NUM -> OPER_NUM, OPER_NAME -> OPER_NAME로 연결해줘."""
+filter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, TSV_DIE_TYP -> TSV_DIE_TYP, DEVICE_DESC -> DEVICE_DESC, OPER_NUM -> OPER, OPER_NAME -> OPER_NAME로 연결해줘."""
     payload = {
         "metadata_type": "table_catalog",
         "raw_text": raw_text,
@@ -476,11 +476,11 @@ filter_mappings는 DATE -> WORK_DT, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_
                     "source_type": "oracle",
                     "source_config": {"source_type": "oracle", "db_key": "PNT_RPT"},
                     "required_params": ["DATE"],
-                    "required_param_mappings": {"DATE": ["WORK_DT"]},
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
                     "date_format": "YYYYMMDD",
                     "primary_quantity_column": "PRODUCTION",
-                    "filter_mappings": {"DATE": ["WORK_DT"]},
-                    "columns": ["WORK_DT", "PRODUCTION"],
+                    "filter_mappings": {"DATE": ["WORK_DATE"]},
+                    "columns": ["WORK_DATE", "PRODUCTION"],
                     "standard_column_aliases": {},
                 },
             }
@@ -497,28 +497,34 @@ filter_mappings는 DATE -> WORK_DT, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_
     assert item["dataset_key"] == "production_today"
     assert "FROM PRODUCTION_TODAY" in item_payload["source_config"]["query_template"]
     assert item_payload["columns"] == [
-        "WORK_DT",
+        "WORK_DATE",
+        "SHIFT",
         "FACTORY",
+        "FAB",
         "FAMILY",
         "MODE",
         "DEN",
         "TECH",
         "ORG",
-        "PKG_TYPE1",
-        "PKG_TYPE2",
+        "PKG_TYP1",
+        "PKG_TYP2",
         "LEAD",
         "MCP_NO",
         "TSV_DIE_TYP",
         "DEVICE",
         "DEVICE_DESC",
-        "OPER_NUM",
+        "DIE_ATTACH_QTY",
+        "NETDIE_300_CNT",
+        "OPER",
         "OPER_NAME",
         "OPER_SEQ",
         "PRODUCTION",
     ]
     assert item_payload["filter_mappings"]["OPER_NAME"] == ["OPER_NAME"]
     assert item_payload["filter_mappings"]["MODE"] == ["MODE"]
-    assert item_payload["required_param_mappings"]["DATE"] == ["WORK_DT"]
+    assert item_payload["filter_mappings"]["PKG_TYPE1"] == ["PKG_TYP1"]
+    assert item_payload["filter_mappings"]["OPER_NUM"] == ["OPER"]
+    assert item_payload["required_param_mappings"]["DATE"] == ["WORK_DATE"]
     assert item_payload["date_format"] == "YYYYMMDD"
     assert item_payload["primary_quantity_column"] == "PRODUCTION"
 
@@ -914,7 +920,7 @@ def test_authoring_prompt_templates_include_mapping_and_equipment_contracts() ->
     assert "Never \"correct\" table or column spelling" in table_prompt
     assert "Authoring context" in table_prompt
     assert "standard_column_aliases" in table_prompt
-    assert "dataset-specific mappings such as PKG_TYPE1->PKG1 or MCP_NO->MCPSALENO belong in table_catalog.filter_mappings" in filter_prompt
+    assert "dataset-specific mappings such as PKG_TYPE1->PKG1, PKG_TYPE1->PKG_TYP1, or MCP_NO->MCPSALENO belong in table_catalog.filter_mappings" in filter_prompt
     assert "EQP_COUNT" in domain_prompt
     assert "result_mode='detail_rows'" in domain_prompt
 

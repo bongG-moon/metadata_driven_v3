@@ -8,26 +8,37 @@
       "source_config": {
         "source_type": "oracle",
         "db_key": "PNT_RPT",
-        "query_template": "SELECT WORK_DT, FACTORY, FAMILY, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, TSV_DIE_TYP, DEVICE, DEVICE_DESC, OPER_NUM, OPER_NAME, OPER_SEQ, PRODUCTION FROM PRODUCTION_TODAY WHERE 1=1 AND WORK_DT = {DATE} AND PRODUCTION > 0"
+        "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.MODE, A.DEN, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, PRODUCTION FROM PRODUCTION_TODAY A WHERE 1=1 AND A.WORK_DATE = {DATE} AND PRODUCTION > 0"
       },
       "required_params": ["DATE"],
-      "required_param_mappings": {"DATE": ["WORK_DT"]},
+      "date_format": "YYYYMMDD",
+      "required_param_mappings": {"DATE": ["WORK_DATE"]},
       "primary_quantity_column": "PRODUCTION",
       "filter_mappings": {
-        "DATE": ["WORK_DT"],
+        "DATE": ["WORK_DATE"],
         "OPER_NAME": ["OPER_NAME"],
         "MODE": ["MODE"],
         "TECH": ["TECH"],
         "DEN": ["DEN"],
-        "PKG_TYPE1": ["PKG_TYPE1"],
-        "PKG_TYPE2": ["PKG_TYPE2"],
+        "PKG_TYPE1": ["PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYP2"],
         "LEAD": ["LEAD"],
         "MCP_NO": ["MCP_NO"],
         "TSV_DIE_TYP": ["TSV_DIE_TYP"],
+        "DEVICE": ["DEVICE"],
         "DEVICE_DESC": ["DEVICE_DESC"],
-        "OPER_NUM": ["OPER_NUM"]
+        "OPER_NUM": ["OPER"],
+        "OPER_SEQ": ["OPER_SEQ"],
+        "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
+        "NETDIE_300_CNT": ["NETDIE_300_CNT"]
       },
-      "columns": ["WORK_DT", "FACTORY", "FAMILY", "MODE", "DEN", "TECH", "ORG", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "OPER_NUM", "OPER_NAME", "OPER_SEQ", "PRODUCTION"]
+      "standard_column_aliases": {
+        "DATE": ["WORK_DATE"],
+        "PKG_TYPE1": ["PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYP2"],
+        "OPER_NUM": ["OPER"]
+      },
+      "columns": ["WORK_DATE", "SHIFT", "FACTORY", "FAB", "FAMILY", "MODE", "DEN", "TECH", "ORG", "PKG_TYP1", "PKG_TYP2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "DIE_ATTACH_QTY", "NETDIE_300_CNT", "OPER", "OPER_NAME", "OPER_SEQ", "PRODUCTION"]
     },
     "production": {
       "display_name": "Production History",
@@ -37,26 +48,38 @@
       "source_config": {
         "source_type": "oracle",
         "db_key": "PNT_RPT",
-        "query_template": "SELECT WORK_DT, FACTORY, FAMILY, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, TSV_DIE_TYP, DEVICE, DEVICE_DESC, OPER_NUM, OPER_NAME, OPER_SEQ, PRODUCTION FROM PRODUCTION WHERE 1=1 AND WORK_DT = {DATE} AND PRODUCTION > 0"
+        "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, PRODUCTION FROM PRODUCTION A WHERE 1=1 AND A.WORK_DATE = {DATE} AND PRODUCTION > 0"
       },
       "required_params": ["DATE"],
-      "required_param_mappings": {"DATE": ["WORK_DT"]},
+      "date_format": "YYYYMMDD",
+      "required_param_mappings": {"DATE": ["WORK_DATE"]},
       "primary_quantity_column": "PRODUCTION",
       "filter_mappings": {
-        "DATE": ["WORK_DT"],
+        "DATE": ["WORK_DATE"],
         "OPER_NAME": ["OPER_NAME"],
         "MODE": ["MODE"],
         "TECH": ["TECH"],
-        "DEN": ["DEN"],
-        "PKG_TYPE1": ["PKG_TYPE1"],
-        "PKG_TYPE2": ["PKG_TYPE2"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG1"],
+        "PKG_TYPE2": ["PKG2"],
         "LEAD": ["LEAD"],
         "MCP_NO": ["MCP_NO"],
         "TSV_DIE_TYP": ["TSV_DIE_TYP"],
+        "DEVICE": ["DEVICE"],
         "DEVICE_DESC": ["DEVICE_DESC"],
-        "OPER_NUM": ["OPER_NUM"]
+        "OPER_NUM": ["OPER"],
+        "OPER_SEQ": ["OPER_SEQ"],
+        "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
+        "NETDIE_300_CNT": ["NETDIE_300_CNT"]
       },
-      "columns": ["WORK_DT", "FACTORY", "FAMILY", "MODE", "DEN", "TECH", "ORG", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "OPER_NUM", "OPER_NAME", "OPER_SEQ", "PRODUCTION"]
+      "standard_column_aliases": {
+        "DATE": ["WORK_DATE"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG1"],
+        "PKG_TYPE2": ["PKG2"],
+        "OPER_NUM": ["OPER"]
+      },
+      "columns": ["WORK_DATE", "SHIFT", "FACTORY", "FAB", "FAMILY", "MODE", "DENSITY", "TECH", "ORG", "PKG1", "PKG2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "DIE_ATTACH_QTY", "NETDIE_300_CNT", "OPER", "OPER_NAME", "OPER_SEQ", "PRODUCTION"]
     },
     "wip_today": {
       "display_name": "WIP Today",
@@ -66,26 +89,38 @@
       "source_config": {
         "source_type": "oracle",
         "db_key": "PNT_RPT",
-        "query_template": "SELECT WORK_DT, FACTORY, FAMILY, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, TSV_DIE_TYP, DEVICE, DEVICE_DESC, OPER_NUM, OPER_NAME, OPER_SEQ, WIP FROM WIP_TODAY WHERE 1=1 AND WORK_DT = {DATE} AND WIP > 0"
+        "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP FROM WIP_TODAY A WHERE 1=1 AND A.WORK_DATE = {DATE} GROUP BY A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ"
       },
       "required_params": ["DATE"],
-      "required_param_mappings": {"DATE": ["WORK_DT"]},
+      "date_format": "YYYYMMDD",
+      "required_param_mappings": {"DATE": ["WORK_DATE"]},
       "primary_quantity_column": "WIP",
       "filter_mappings": {
-        "DATE": ["WORK_DT"],
+        "DATE": ["WORK_DATE"],
         "OPER_NAME": ["OPER_NAME"],
         "MODE": ["MODE"],
         "TECH": ["TECH"],
-        "DEN": ["DEN"],
-        "PKG_TYPE1": ["PKG_TYPE1"],
-        "PKG_TYPE2": ["PKG_TYPE2"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG1"],
+        "PKG_TYPE2": ["PKG2"],
         "LEAD": ["LEAD"],
         "MCP_NO": ["MCP_NO"],
         "TSV_DIE_TYP": ["TSV_DIE_TYP"],
+        "DEVICE": ["DEVICE"],
         "DEVICE_DESC": ["DEVICE_DESC"],
-        "OPER_NUM": ["OPER_NUM"]
+        "OPER_NUM": ["OPER"],
+        "OPER_SEQ": ["OPER_SEQ"],
+        "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
+        "NETDIE_300_CNT": ["NETDIE_300_CNT"]
       },
-      "columns": ["WORK_DT", "FACTORY", "FAMILY", "MODE", "DEN", "TECH", "ORG", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "OPER_NUM", "OPER_NAME", "OPER_SEQ", "WIP"]
+      "standard_column_aliases": {
+        "DATE": ["WORK_DATE"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG1"],
+        "PKG_TYPE2": ["PKG2"],
+        "OPER_NUM": ["OPER"]
+      },
+      "columns": ["WORK_DATE", "SHIFT", "FACTORY", "FAB", "FAMILY", "MODE", "DENSITY", "TECH", "ORG", "PKG1", "PKG2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "DIE_ATTACH_QTY", "NETDIE_300_CNT", "OPER", "OPER_NAME", "OPER_SEQ", "WIP"]
     },
     "wip": {
       "display_name": "WIP History",
@@ -95,26 +130,38 @@
       "source_config": {
         "source_type": "oracle",
         "db_key": "PNT_RPT",
-        "query_template": "SELECT WORK_DT, FACTORY, FAMILY, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, TSV_DIE_TYP, DEVICE, DEVICE_DESC, OPER_NUM, OPER_NAME, OPER_SEQ, WIP FROM WIP WHERE 1=1 AND WORK_DT = {DATE} AND WIP > 0"
+        "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP FROM WIP A WHERE 1=1 AND A.WORK_DATE = {DATE} GROUP BY A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ"
       },
       "required_params": ["DATE"],
-      "required_param_mappings": {"DATE": ["WORK_DT"]},
+      "date_format": "YYYYMMDD",
+      "required_param_mappings": {"DATE": ["WORK_DATE"]},
       "primary_quantity_column": "WIP",
       "filter_mappings": {
-        "DATE": ["WORK_DT"],
+        "DATE": ["WORK_DATE"],
         "OPER_NAME": ["OPER_NAME"],
         "MODE": ["MODE"],
         "TECH": ["TECH"],
-        "DEN": ["DEN"],
-        "PKG_TYPE1": ["PKG_TYPE1"],
-        "PKG_TYPE2": ["PKG_TYPE2"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYP2"],
         "LEAD": ["LEAD"],
         "MCP_NO": ["MCP_NO"],
         "TSV_DIE_TYP": ["TSV_DIE_TYP"],
+        "DEVICE": ["DEVICE"],
         "DEVICE_DESC": ["DEVICE_DESC"],
-        "OPER_NUM": ["OPER_NUM"]
+        "OPER_NUM": ["OPER"],
+        "OPER_SEQ": ["OPER_SEQ"],
+        "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
+        "NETDIE_300_CNT": ["NETDIE_300_CNT"]
       },
-      "columns": ["WORK_DT", "FACTORY", "FAMILY", "MODE", "DEN", "TECH", "ORG", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "OPER_NUM", "OPER_NAME", "OPER_SEQ", "WIP"]
+      "standard_column_aliases": {
+        "DATE": ["WORK_DATE"],
+        "DEN": ["DENSITY"],
+        "PKG_TYPE1": ["PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYP2"],
+        "OPER_NUM": ["OPER"]
+      },
+      "columns": ["WORK_DATE", "SHIFT", "FACTORY", "FAB", "FAMILY", "MODE", "DENSITY", "TECH", "ORG", "PKG_TYP1", "PKG_TYP2", "LEAD", "MCP_NO", "TSV_DIE_TYP", "DEVICE", "DEVICE_DESC", "DIE_ATTACH_QTY", "NETDIE_300_CNT", "OPER", "OPER_NAME", "OPER_SEQ", "WIP"]
     },
     "target": {
       "display_name": "Target2 Goodocs Plan",

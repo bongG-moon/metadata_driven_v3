@@ -42,6 +42,7 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Return one strict JSON object only. Do not wrap it in markdown.",
             "Generate Python pandas code that uses only the provided variables: pd, sources, plan, state.",
             "sources is a dict mapping source_alias to pandas DataFrame.",
+            "Use only source aliases that are actual keys in sources/source summaries, normally retrieval_jobs[*].source_alias. Do not invent generic aliases.",
             "plan and state are Python dicts. Use plan['key'], plan.get('key'), state.get('key'); never use plan.key or state.key.",
             "The code must assign the final pandas DataFrame to result_df.",
             "Final result columns must use the standard contract names requested by the normalized plan.",
@@ -54,6 +55,9 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, or subprocess.",
             "Do not use numpy, np, or np.where. Use pandas Series operations such as div, fillna, where, mask, and boolean comparisons.",
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
+            "Do not use .to_frame() in generated code. For one total row with multiple metrics, build result_df with pd.DataFrame([{...}]).",
+            "Do not use DataFrame.agg(named_metric=(column, func)).to_frame().T; DataFrame.agg can already return a DataFrame and then to_frame will fail.",
+            "When combining scalar totals from multiple sources with no group_by, create one DataFrame row directly instead of merging DataFrames with no common key.",
             "If the generated code contains any import statement, the safety check will fail.",
             "",
             "Sequential plan execution rules:",
@@ -70,6 +74,8 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "- For dependent lookup/aggregate steps after a rank step, restrict the later source to the ranked entity keys from step_outputs instead of re-ranking or grouping by filter columns.",
             "- Apply step.rename_columns when present before a later step references those renamed columns.",
             "- If the question or plan asks for multiple metrics, compute all of them and include every plan['analysis_output_columns'] column in result_df when source data exists.",
+            "- If plan.matched_metric_terms or plan.metric_definitions contains formula/pandas_code_instructions, compute the derived row-level output columns first, then aggregate those output columns by step.group_by or total according to the aggregate step.",
+            "- For aggregate steps with empty group_by, return one total row. For aggregate steps with group_by, return one row per requested group. Do not return row-level details for aggregate plans.",
             "- If plan.result_scope_columns exists, add each listed constant scope column to result_df unless result_df already has that column. These columns make aggregate rows self-describing, for example process group or product filter scope.",
             "- Do not include raw source/filter condition columns in result_df when they are only used to build rank_groups or filters. Use plan.rank_group_output_column/RANK_GROUP and result_scope columns as the user-facing group labels instead.",
             "- If generated output is missing required plan columns, the executor may replace it with a deterministic fallback.",
@@ -140,7 +146,11 @@ def _analysis_instruction(plan: dict[str, Any]) -> str:
             f"Return product_grain {product_keys} plus ['EQP_COUNT']; do not use lot_status for this calculation."
         )
     if kind == "aggregate_join":
-        return "Aggregate PRODUCTION and WIP by product_grain from their source aliases, then outer join by product_grain."
+        return (
+            "Aggregate PRODUCTION and WIP from the exact retrieval job source aliases. "
+            "If product_grain/group_by is empty, calculate scalar totals from each source and build one result row directly with pd.DataFrame([{...}]); "
+            "do not merge scalar total DataFrames. If product_grain/group_by exists, aggregate each metric by that grain and outer join by that grain."
+        )
     if kind == "production_wip_target_rate":
         return (
             "Aggregate PRODUCTION, WIP, and OUT_PLAN by product_grain, join them, and calculate ACHIEVEMENT_RATE. "
@@ -297,16 +307,13 @@ def _columns_from_rows(rows: list[dict[str, Any]]) -> list[str]:
 def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, list[str]]:
     job = _job_for_source_alias(alias, plan)
     aliases: dict[str, list[str]] = {}
-    for standard in _standard_columns_from_plan(plan):
-        equivalents = [name for name in _equivalent_column_names(standard) if name != standard]
-        if equivalents:
-            aliases[standard] = equivalents
+    standard_candidates = _standard_columns_from_plan(plan)
     if isinstance(job, dict):
         for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
             mapping = job.get(field) if isinstance(job.get(field), dict) else {}
             for standard, candidates in mapping.items():
                 standard_text = str(standard or "").strip()
-                if not standard_text:
+                if not standard_text or standard_text not in standard_candidates:
                     continue
                 if not isinstance(candidates, list):
                     candidates = [candidates]
@@ -348,49 +355,22 @@ def _standard_columns_from_plan(plan: dict[str, Any]) -> list[str]:
         value = str(plan.get(key) or "").strip()
         if value:
             columns.append(value)
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        required_columns = job.get("required_columns") if isinstance(job.get("required_columns"), list) else []
+        columns.extend(str(item) for item in required_columns if str(item or "").strip())
+        params = job.get("params") if isinstance(job.get("params"), dict) else {}
+        columns.extend(str(key) for key in params.keys() if str(key or "").strip())
+        filters = job.get("filters") if isinstance(job.get("filters"), list) else []
+        for condition in filters:
+            if not isinstance(condition, dict):
+                continue
+            field = str(condition.get("field") or "").strip()
+            if field and field != "PRODUCT_GRAIN":
+                columns.append(field)
     return _unique_columns(columns)
-
-
-def _equivalent_column_names(column: str) -> list[str]:
-    alias_columns = {
-        "MODE": ["Mode", "PROD_TYP"],
-        "PKG_TYPE1": ["PKG1", "PKG_TYP"],
-        "PKG_TYPE2": ["PKG2", "PKG_TYP_2", "PKG_TYP2"],
-        "MCP_NO": ["MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
-        "TECH": ["TECH_NM"],
-        "DEN": ["DENSITY", "DEN_TYP"],
-        "LEAD": ["LEAD_CNT"],
-        "OUT_PLAN": ["TARGET"],
-        "EQP_MODEL": ["EQP_MODEL_CD"],
-    }
-    standard = _standard_column_for_alias(column) or column
-    names = [standard, *alias_columns.get(standard, [])]
-    if column not in names:
-        names.insert(0, column)
-    return _unique_columns(names)
-
-
-def _standard_column_for_alias(alias: str) -> str:
-    alias_to_standard = {
-        "Mode": "MODE",
-        "PROD_TYP": "MODE",
-        "PKG1": "PKG_TYPE1",
-        "PKG_TYP": "PKG_TYPE1",
-        "PKG2": "PKG_TYPE2",
-        "PKG_TYP_2": "PKG_TYPE2",
-        "PKG_TYP2": "PKG_TYPE2",
-        "MCP NO": "MCP_NO",
-        "MCPSALENO": "MCP_NO",
-        "PROD_GRP_ID": "MCP_NO",
-        "MCP_SALE_CD": "MCP_NO",
-        "TECH_NM": "TECH",
-        "DENSITY": "DEN",
-        "DEN_TYP": "DEN",
-        "LEAD_CNT": "LEAD",
-        "TARGET": "OUT_PLAN",
-        "EQP_MODEL_CD": "EQP_MODEL",
-    }
-    return alias_to_standard.get(alias, "")
 
 
 def _is_blank(value: Any) -> bool:

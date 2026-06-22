@@ -19,7 +19,7 @@ metadata에는 두 mapping layer가 있습니다. main_flow_filters는 표준 fi
 dataset별 mapping을 main_flow_filters에 넣지 마세요. 각 dataset의 DATE/OPER_NAME/product/equipment mapping은 table_catalog.filter_mappings에 넣으세요.
 filter_mappings의 왼쪽은 DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, RECIPE_ID 같은 표준 main flow filter key여야 하고, 오른쪽은 이 dataset의 실제 source column 후보여야 합니다.
 source의 물리 column 이름이 표준 분석 column 이름과 다르면 standard_column_aliases를 {{standard_column: [physical columns]}} 형태로 함께 저장하세요.
-예: Goodocs target이 PKG1, MCP NO, OUT계획을 사용하면 PKG_TYPE1->PKG1, OUT_PLAN->OUT계획으로 매핑하세요. Equipment가 PKG1, PKG2, MCPSALENO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCPSALENO로 매핑하세요.
+예: Goodocs target이 PKG1, MCP NO, OUT계획을 사용하면 PKG_TYPE1->PKG1, OUT_PLAN->OUT계획으로 매핑하세요. 생산 source가 PKG_TYP1/PKG_TYP2를 사용하면 PKG_TYPE1->PKG_TYP1, PKG_TYPE2->PKG_TYP2로 매핑하세요. Equipment가 PKG1, PKG2, MCPSALENO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCPSALENO로 매핑하세요.
 
 작성 context:
 {authoring_context}

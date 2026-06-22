@@ -37,7 +37,7 @@ def build_pandas_repair_payload(payload_value: Any, max_attempts: Any = DEFAULT_
 
 
 def _pandas_repair_decision(payload: dict[str, Any], max_attempts: Any = DEFAULT_REPAIR_MAX_ATTEMPTS) -> dict[str, Any]:
-    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    analysis = _analysis_from_payload(payload)
     errors = _as_text_list(analysis.get("errors"))
     attempt = _positive_int(payload.get("pandas_retry_attempt"), default=0, minimum=0) + 1
     max_count = _positive_int(max_attempts, default=DEFAULT_REPAIR_MAX_ATTEMPTS, minimum=0)
@@ -61,7 +61,7 @@ def _pandas_repair_decision(payload: dict[str, Any], max_attempts: Any = DEFAULT
 
 
 def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
-    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    analysis = _analysis_from_payload(payload)
     request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     runtime_sources = payload.get("runtime_sources") if isinstance(payload.get("runtime_sources"), dict) else {}
@@ -80,6 +80,26 @@ def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
         "analysis_row_count": analysis.get("row_count", 0),
         "llm_text_preview": str(analysis.get("llm_text_preview") or "")[:1200],
     }
+
+
+def _analysis_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
+    if analysis:
+        return analysis
+    analysis_keys = {
+        "status",
+        "analysis_kind",
+        "analysis_code",
+        "columns",
+        "rows",
+        "row_count",
+        "errors",
+        "pandas_code_json",
+        "llm_text_preview",
+    }
+    if any(key in payload for key in analysis_keys):
+        return payload
+    return {}
 
 
 def _payload_summary(payload: dict[str, Any]) -> dict[str, Any]:

@@ -164,7 +164,7 @@ def _production_rows(work_date: str) -> list[dict[str, Any]]:
     rows = []
     for process_index, process in enumerate(PROCESS_ROWS, start=1):
         for product_index, product in enumerate(PRODUCT_ROWS, start=1):
-            row = _base_process_product_row(work_date, process, product)
+            row = _base_process_product_row(work_date, process, product, process_index, product_index)
             row["PRODUCTION"] = _production_qty(process["PROCESS_FAMILY"], product, process_index, product_index)
             rows.append(row)
     return rows
@@ -174,24 +174,36 @@ def _wip_rows(work_date: str) -> list[dict[str, Any]]:
     rows = []
     for process_index, process in enumerate(PROCESS_ROWS, start=1):
         for product_index, product in enumerate(PRODUCT_ROWS, start=1):
-            row = _base_process_product_row(work_date, process, product)
+            row = _base_process_product_row(work_date, process, product, process_index, product_index)
             row["WIP"] = _wip_qty(process["PROCESS_FAMILY"], product, process_index, product_index)
             rows.append(row)
     return rows
 
 
-def _base_process_product_row(work_date: str, process: dict[str, Any], product: dict[str, Any]) -> dict[str, Any]:
+def _base_process_product_row(
+    work_date: str,
+    process: dict[str, Any],
+    product: dict[str, Any],
+    process_index: int,
+    product_index: int,
+) -> dict[str, Any]:
     return {
         "WORK_DT": work_date,
+        "WORK_DATE": work_date,
+        "SHIFT": str(((process_index + product_index - 2) % 3) + 1),
         "FACTORY": "PKG",
+        "FAB": "PKG",
         "ORG": "ASSY",
         **_product_keys(product),
         "FAMILY": product.get("FAMILY", ""),
         "DEVICE_DESC": product.get("DEVICE_DESC", ""),
         "OPER_NUM": process.get("OPER_NUM", ""),
+        "OPER": process.get("OPER_NUM", ""),
         "OPER_NAME": process.get("OPER_NAME", ""),
         "OPER_SHORT_DESC": process.get("OPER_SHORT_DESC", ""),
         "OPER_SEQ": process.get("OPER_SEQ", ""),
+        "DIE_ATTACH_QTY": int(product.get("DIE_ATTACH_QTY") or 1),
+        "NETDIE_300_CNT": int(product.get("NETDIE_300_CNT") or max(_product_base(product) // 10, 1)),
         **_physical_product_aliases(product),
     }
 
@@ -439,8 +451,10 @@ def _with_lot_defaults(row: dict[str, Any]) -> dict[str, Any]:
 def _physical_product_aliases(product: dict[str, Any]) -> dict[str, Any]:
     return {
         "Mode": product.get("MODE"),
+        "DENSITY": product.get("DEN"),
         "PKG1": product.get("PKG_TYPE1"),
         "PKG2": product.get("PKG_TYPE2"),
+        "PKG_TYP1": product.get("PKG_TYPE1"),
         "MCP NO": product.get("MCP_NO"),
         "MCPSALENO": product.get("MCP_NO"),
         "PROD_TYP": product.get("MODE"),
@@ -603,21 +617,28 @@ def _row_matches_filter(
 
 def _field_candidates(field: str) -> list[str]:
     aliases = {
-        "DATE": ["DATE", "WORK_DT", "BASE_DT"],
-        "WORK_DT": ["WORK_DT", "DATE", "BASE_DT"],
+        "DATE": ["DATE", "WORK_DATE", "WORK_DT", "BASE_DT"],
+        "WORK_DATE": ["WORK_DATE", "WORK_DT", "DATE", "BASE_DT"],
+        "WORK_DT": ["WORK_DT", "DATE", "WORK_DATE", "BASE_DT"],
         "LOT_ID": ["LOT_ID"],
         "OPER_NAME": ["OPER_NAME", "OPER_SHORT_DESC", "OPER_ID", "OPER_DESC"],
         "OPER_SHORT_DESC": ["OPER_SHORT_DESC", "OPER_NAME", "OPER_ID", "OPER_DESC"],
         "LOT_STAT_CD": ["LOT_STAT_CD"],
         "LOT_HOLD_STAT_CD": ["LOT_HOLD_STAT_CD"],
-        "PKG_TYPE1": ["PKG_TYPE1", "PKG1", "PKG_TYP"],
-        "PKG_TYPE2": ["PKG_TYPE2", "PKG2", "PKG_TYP_2", "PKG_TYP2"],
+        "PKG_TYPE1": ["PKG_TYPE1", "PKG1", "PKG_TYP1", "PKG_TYP"],
+        "PKG_TYPE2": ["PKG_TYPE2", "PKG2", "PKG_TYP2", "PKG_TYP_2"],
         "MCP_NO": ["MCP_NO", "MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
         "TECH": ["TECH", "TECH_NM"],
-        "DEN": ["DEN", "DEN_TYP"],
+        "DEN": ["DEN", "DENSITY", "DEN_TYP"],
         "MODE": ["MODE", "Mode", "PROD_TYP"],
         "LEAD": ["LEAD", "LEAD_CNT"],
         "TSV_DIE_TYP": ["TSV_DIE_TYP"],
+        "DEVICE": ["DEVICE", "DEVICE_CODE"],
+        "DEVICE_DESC": ["DEVICE_DESC"],
+        "OPER_NUM": ["OPER_NUM", "OPER", "OPER_NO"],
+        "OPER_SEQ": ["OPER_SEQ"],
+        "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
+        "NETDIE_300_CNT": ["NETDIE_300_CNT"],
         "EQP_ID": ["EQP_ID", "EQPID"],
         "EQPID": ["EQPID", "EQP_ID"],
         "EQP_MODEL": ["EQP_MODEL", "EQP_MODEL_CD"],

@@ -19,7 +19,7 @@ Metadata has two mapping layers: main_flow_filters define standard filter keys, 
 Do not put dataset-specific mappings inside main_flow_filters. For each dataset, put DATE/OPER_NAME/product/equipment mappings in table_catalog.filter_mappings.
 The left side of filter_mappings must be a standard main flow filter key such as DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, or RECIPE_ID; the right side must be actual source column candidates for this dataset.
 If a source uses physical column names that differ from the standard analysis column names, also capture standard_column_aliases as {{standard_column: [physical columns]}}.
-Examples: Goodocs target may use PKG1, MCP NO, OUT계획, so map PKG_TYPE1->PKG1 and OUT_PLAN->OUT계획. Equipment may use PKG1, PKG2, MCPSALENO, so map PKG_TYPE1->PKG1 and MCP_NO->MCPSALENO.
+Examples: Goodocs target may use PKG1, MCP NO, OUT계획, so map PKG_TYPE1->PKG1 and OUT_PLAN->OUT계획. A production source may use PKG_TYP1/PKG_TYP2, so map PKG_TYPE1->PKG_TYP1 and PKG_TYPE2->PKG_TYP2. Equipment may use PKG1, PKG2, MCPSALENO, so map PKG_TYPE1->PKG1 and MCP_NO->MCPSALENO.
 
 Authoring context:
 {authoring_context}

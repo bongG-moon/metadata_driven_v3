@@ -25,109 +25,120 @@ except ImportError:
 
 
 APP_TITLE = "PTMORE PKG"
-PAGE_QUERY = "Langflow 채팅"
-PAGE_AUTHORING = "메타데이터 등록"
+PAGE_CHAT = "Langflow 채팅"
+PAGE_METADATA = "메타데이터 등록"
 PAGE_LOOKUP = "조회/내보내기"
-PAGE_VALIDATE = "등록 후 검증"
-NAV_PAGES = [PAGE_QUERY, PAGE_AUTHORING, PAGE_LOOKUP]
+NAV_PAGES = [PAGE_CHAT, PAGE_METADATA, PAGE_LOOKUP]
+NAV_PAGE_KEY = "registration_nav_page"
 CHAT_RESET_QUERY_KEY = "chat_reset"
+DEVELOPER_MODE_QUERY_KEY = "developer_mode"
+DEVELOPER_MODE_SESSION_KEY = "langflow_developer_mode"
 QUERY_TRUE_VALUES = {"1", "true", "yes", "y"}
-
-AUTHORING_TYPES = {
-    "domain": "Domain",
-    "table_catalog": "Table catalog",
-    "main_flow_filter": "Main flow filter",
+CHAT_AVATARS = {
+    "user": ":material/person:",
+    "assistant": ":material/smart_toy:",
 }
-AUTHORING_DESCRIPTIONS = {
-    "domain": "업무 용어, 공정 그룹, 제품 조건, metric, join rule을 domain metadata로 변환하고 검토한 뒤 저장합니다.",
-    "table_catalog": "dataset, source, query_template, 컬럼, filter mapping 정보를 table catalog metadata로 등록합니다.",
-    "main_flow_filter": "날짜, 공정, MODE, 제품 속성처럼 여러 dataset에서 공통으로 쓰는 표준 의미 필터를 등록합니다.",
+
+AUTHORING_TYPE_OPTIONS = {
+    "domain": {
+        "label": "Domain",
+        "title": "Domain 지식 등록",
+        "description": "업무 용어, 공정 그룹, 제품 조건, metric, join rule을 Langflow domain authoring flow로 변환/검수/저장합니다.",
+        "settings_attr": "domain_authoring_api_url",
+    },
+    "table_catalog": {
+        "label": "Data Catalog",
+        "title": "Data Catalog 등록",
+        "description": "dataset, source, tool, 컬럼, filter mapping 정보를 Langflow table catalog authoring flow로 등록합니다.",
+        "settings_attr": "table_catalog_authoring_api_url",
+    },
+    "main_flow_filter": {
+        "label": "Main Flow Filter",
+        "title": "Main Flow Filter 등록",
+        "description": "날짜, 공정, MODE, 제품 속성처럼 여러 dataset에서 공통으로 쓰는 표준 의미 필터를 등록합니다.",
+        "settings_attr": "main_flow_filter_authoring_api_url",
+    },
 }
 AUTHORING_EXAMPLE_PATHS = {
     "domain": REPO_ROOT / "langflow_components" / "domain_authoring_flow" / "raw_text_input_example.md",
     "table_catalog": REPO_ROOT / "langflow_components" / "table_catalog_authoring_flow" / "raw_text_input_example.md",
     "main_flow_filter": REPO_ROOT / "langflow_components" / "main_flow_filters_authoring_flow" / "raw_text_input_example.md",
 }
-ACTION_LABELS = {
-    "ask": "먼저 확인",
-    "merge": "기존 내용 보강",
-    "replace": "기존 내용 교체",
-    "skip": "저장하지 않음",
-    "create_new": "새 key로 등록",
-}
-QUERY_EXAMPLES = [
-    "오늘 DA, WB공정에서 각각 재공 상위 3개 제품을 뽑아주고 해당 제품들의 오늘 생산량도 보여줘",
-    "현재 da에서 재공이 가장 많은 제품 알려줘",
-    "이 제품에 할당된 장비 현황 알려줘",
-    "오늘 DA공정에서 재공, 생산량과 목표값 그리고 생산달성율을 보여줘",
-    "현재 조회 가능한 DATA LIST 알려줘",
-    "production_today 조회 쿼리문 알려줘",
-]
 AUTHORING_EXAMPLES = {
     "domain": "W/B공정은 W/B1부터 W/B6까지야. 재공 수량은 WIP 컬럼을 합산해.",
     "table_catalog": "wip_today는 Oracle PNT_RPT에서 SELECT WORK_DT, OPER_NAME, WIP FROM PKG_WIP_TODAY WHERE WORK_DT = {DATE}로 조회해. DATE는 WORK_DT에 매핑해.",
     "main_flow_filter": "날짜 조건은 DATE라는 기준 필터로 사용해줘. 오늘, 금일, 작업일은 WORK_DT 후보 컬럼과 연결해.",
 }
-
-
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     inject_style()
     ensure_state()
-    settings = render_sidebar()
-    if settings["page"] == PAGE_QUERY:
-        render_query_page(settings)
-    elif settings["page"] == PAGE_AUTHORING:
-        render_authoring_page(settings)
-    elif settings["page"] == PAGE_LOOKUP:
-        render_lookup_page(settings)
-    elif settings["page"] == PAGE_VALIDATE:
-        render_validation_page(settings)
+    settings = settings_sidebar()
+    page = settings["page"]
+    if page == PAGE_CHAT:
+        render_langflow_chat(settings)
+    elif page == PAGE_METADATA:
+        render_metadata_registration(settings)
+    else:
+        render_lookup(settings)
 
 
 def ensure_state() -> None:
     if "mock_api" not in st.session_state:
         st.session_state.mock_api = MockApiClient()
-    if "langflow_api" not in st.session_state:
-        st.session_state.langflow_api = LangflowApiClient()
+    api_settings = LangflowSettings.from_env()
+    if "langflow_api" not in st.session_state or getattr(st.session_state.langflow_api, "settings", None) != api_settings:
+        st.session_state.langflow_api = LangflowApiClient(api_settings)
     if "session_id" not in st.session_state:
         st.session_state.session_id = new_session_id()
-    if "session_id_input" not in st.session_state:
-        st.session_state.session_id_input = st.session_state.session_id
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
     if "latest_state" not in st.session_state:
         st.session_state.latest_state = {}
-    if "authoring_results" not in st.session_state:
-        st.session_state.authoring_results = []
+    if DEVELOPER_MODE_SESSION_KEY not in st.session_state:
+        st.session_state[DEVELOPER_MODE_SESSION_KEY] = query_flag_enabled(DEVELOPER_MODE_QUERY_KEY)
 
 
 def new_session_id() -> str:
     return f"web-{uuid.uuid4().hex[:8]}"
 
 
-def reset_conversation(session_id: str | None = None, keep_session: bool = False) -> None:
-    if not keep_session:
-        st.session_state.session_id = str(session_id or new_session_id()).strip() or new_session_id()
-        st.session_state.session_id_input = st.session_state.session_id
+def reset_langflow_chat_state() -> None:
+    st.session_state.session_id = new_session_id()
     st.session_state.chat_messages = []
     st.session_state.latest_state = {}
-    st.session_state.pop("pending_question", None)
 
 
-def authoring_example_text(flow_key: str) -> str:
-    path = AUTHORING_EXAMPLE_PATHS.get(flow_key)
-    if path and path.exists():
-        return path.read_text(encoding="utf-8").strip()
-    return AUTHORING_EXAMPLES.get(flow_key, "")
+def query_flag_enabled(key: str) -> bool:
+    try:
+        raw_value = st.query_params.get(key)
+    except Exception:
+        return False
+    if isinstance(raw_value, list):
+        raw_value = raw_value[0] if raw_value else ""
+    return str(raw_value or "").strip().lower() in QUERY_TRUE_VALUES
 
 
-def authoring_input_payload(raw_text: str, review_notes: str) -> str:
-    raw = str(raw_text or "").strip()
-    notes = str(review_notes or "").strip()
-    if not notes:
-        return raw
-    return f"{raw}\n\n[추가 검수 지시]\n{notes}"
+def sync_query_flag(key: str, enabled: bool) -> None:
+    try:
+        current_enabled = query_flag_enabled(key)
+        if enabled and not current_enabled:
+            st.query_params[key] = "1"
+        elif not enabled and current_enabled:
+            del st.query_params[key]
+    except Exception:
+        pass
+
+
+def consume_chat_reset_query() -> bool:
+    if not query_flag_enabled(CHAT_RESET_QUERY_KEY):
+        return False
+    reset_langflow_chat_state()
+    try:
+        del st.query_params[CHAT_RESET_QUERY_KEY]
+    except Exception:
+        pass
+    return True
 
 
 def config_value(value: Any) -> str:
@@ -168,25 +179,43 @@ def sidebar_config_rows(rows: list[dict[str, Any]]) -> None:
     st.markdown('<div class="config-list">' + "".join(row_html) + "</div>", unsafe_allow_html=True)
 
 
-def query_flag_enabled(key: str) -> bool:
-    try:
-        raw_value = st.query_params.get(key)
-    except Exception:
-        return False
-    if isinstance(raw_value, list):
-        raw_value = raw_value[0] if raw_value else ""
-    return str(raw_value or "").strip().lower() in QUERY_TRUE_VALUES
+def chat_avatar_for(role: Any) -> str:
+    return CHAT_AVATARS["user"] if str(role or "").lower() in {"user", "human"} else CHAT_AVATARS["assistant"]
 
 
-def consume_chat_reset_query() -> bool:
-    if not query_flag_enabled(CHAT_RESET_QUERY_KEY):
-        return False
-    reset_conversation()
+def session_badge_html(session_id: Any) -> str:
+    safe_session_id = html.escape(str(session_id or ""))
+    return (
+        '<div class="session-strip">'
+        '<div class="session-strip-label">Session ID</div>'
+        f'<div class="session-strip-value">{safe_session_id}</div>'
+        "</div>"
+    )
+
+
+def chat_topbar_html(session_id: Any, developer_mode: bool = False) -> str:
+    reset_query = f"{CHAT_RESET_QUERY_KEY}=1"
+    if developer_mode:
+        reset_query = f"{reset_query}&{DEVELOPER_MODE_QUERY_KEY}=1"
+    reset_href = html.escape(f"?{reset_query}", quote=True)
+    return (
+        '<div class="chat-topbar">'
+        '<div class="chat-topbar-title">PTMORE PKG AGENT</div>'
+        f"{session_badge_html(session_id)}"
+        f'<a class="chat-topbar-reset" href="{reset_href}" target="_self">대화 초기화</a>'
+        "</div>"
+    )
+
+
+def chat_topbar_spacer_html() -> str:
+    return '<div class="chat-topbar-spacer"></div>'
+
+
+def int_or_zero(value: Any) -> int:
     try:
-        del st.query_params[CHAT_RESET_QUERY_KEY]
-    except Exception:
-        pass
-    return True
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def latest_chat_applied_scope() -> dict[str, Any]:
@@ -214,12 +243,11 @@ def state_summary_for_sidebar(state: dict[str, Any] | None = None, applied_scope
     if not isinstance(source_aliases, list):
         source_aliases = [source_aliases]
     columns = current_data.get("columns") if isinstance(current_data.get("columns"), list) else []
-    row_count = current_data.get("row_count")
     preview_rows = current_data.get("preview_rows") or current_data.get("rows") or []
     if not isinstance(preview_rows, list):
         preview_rows = []
     product_summary = current_data.get("product_key_summary") if isinstance(current_data.get("product_key_summary"), dict) else {}
-    row_count_value = int_or_zero(row_count) or len(preview_rows)
+    row_count_value = int_or_zero(current_data.get("row_count")) or len(preview_rows)
     return {
         "datasets": [str(item) for item in datasets if str(item or "").strip()],
         "source_aliases": [str(item) for item in source_aliases if str(item or "").strip()],
@@ -271,27 +299,32 @@ def render_sidebar_active_scope(slot: Any | None = None, state: dict[str, Any] |
     target.markdown(active_scope_sidebar_html(state, applied_scope), unsafe_allow_html=True)
 
 
-def render_sidebar() -> dict[str, Any]:
+def settings_sidebar() -> dict[str, Any]:
     api_settings = LangflowSettings.from_env()
     if getattr(st.session_state.langflow_api, "settings", None) != api_settings:
         st.session_state.langflow_api = LangflowApiClient(api_settings)
     configured = api_settings.configured_summary()
-    api_ready = configured["query"]
     st.sidebar.markdown(
         """
         <div class="sidebar-brand">
           <div class="sidebar-brand-row">
-            <div class="sidebar-brand-mark">PKG</div>
+            <div class="sidebar-brand-mark">PT</div>
             <div>
               <div class="sidebar-brand-title">PTMORE PKG</div>
-              <div class="sidebar-brand-subtitle">Langflow metadata agent</div>
+              <div class="sidebar-brand-subtitle">Manufacturing analysis console</div>
             </div>
           </div>
         </div>
+        <div class="sidebar-section-label">Navigation</div>
         """,
         unsafe_allow_html=True,
     )
-    page = st.sidebar.radio("Menu", NAV_PAGES, label_visibility="collapsed", key="nav_page")
+    if st.session_state.get(NAV_PAGE_KEY) not in NAV_PAGES:
+        st.session_state[NAV_PAGE_KEY] = PAGE_CHAT
+    page = st.sidebar.radio("Menu", NAV_PAGES, key=NAV_PAGE_KEY, label_visibility="collapsed")
+    active_scope_slot = st.sidebar.empty()
+    if page == PAGE_CHAT:
+        render_sidebar_active_scope(active_scope_slot)
 
     with st.sidebar.expander("MongoDB 설정", expanded=False):
         st.markdown(
@@ -328,303 +361,239 @@ def render_sidebar() -> dict[str, Any]:
         sidebar_config_rows(
             [
                 {"label": "Domain Flow", "env": "LANGFLOW_DOMAIN_AUTHORING_API_URL / LANGFLOW_DOMAIN_AUTHORING_FLOW_ID", "status": api_settings.domain_authoring_api_url},
-                {"label": "Table Catalog Flow", "env": "LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL / LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID", "status": api_settings.table_catalog_authoring_api_url},
+                {"label": "Data Catalog Flow", "env": "LANGFLOW_TABLE_CATALOG_AUTHORING_API_URL / LANGFLOW_TABLE_CATALOG_AUTHORING_FLOW_ID", "status": api_settings.table_catalog_authoring_api_url},
                 {"label": "Main Filter Flow", "env": "LANGFLOW_MAIN_FILTER_AUTHORING_API_URL / LANGFLOW_MAIN_FILTER_AUTHORING_FLOW_ID", "status": api_settings.main_flow_filter_authoring_api_url},
             ]
         )
 
-    if page == PAGE_QUERY and not api_ready:
-        st.sidebar.warning("Langflow router flow API URL 또는 flow id를 설정하면 채팅 화면을 사용할 수 있습니다.")
-    active_scope_slot = st.sidebar.empty()
-    render_sidebar_active_scope(active_scope_slot)
-    developer_mode = st.sidebar.toggle("개발자 정보 보기", value=False)
-    number_mode = st.sidebar.selectbox("숫자 표시", ["comma", "k"], format_func=lambda item: "1,000" if item == "comma" else "1.0K")
+    developer_mode = st.sidebar.toggle(
+        "개발자 모드",
+        key=DEVELOPER_MODE_SESSION_KEY,
+        help="Raw response, 적용 scope, pandas 전처리/분석 코드를 표시합니다.",
+    )
+    sync_query_flag(DEVELOPER_MODE_QUERY_KEY, developer_mode)
+    number_format_label = st.sidebar.selectbox(
+        "표 수량 표시",
+        ["천단위 구분", "K 단위"],
+        index=0,
+        key="table_number_format_label",
+    )
+    st.sidebar.markdown(
+        """
+        <div class="small-note">
+        채팅과 메타데이터 등록은 Langflow Run API를 통해 실행됩니다.
+        조회/내보내기는 현재 v3 metadata JSON/Mock store 기준으로 표시됩니다.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
     return {
         "page": page,
         "developer_mode": developer_mode,
-        "number_mode": number_mode,
-        "runtime_mode": "Langflow API",
-        "api_ready": api_ready,
+        "number_mode": "k" if number_format_label == "K 단위" else "comma",
+        "api_ready": configured["query"],
         "api_settings": api_settings,
         "active_scope_slot": active_scope_slot,
     }
 
 
-def render_query_page(settings: dict[str, Any]) -> None:
+def render_langflow_chat(settings: dict[str, Any]) -> None:
     if consume_chat_reset_query():
         st.rerun()
-    render_topbar("PTMORE PKG AGENT", st.session_state.session_id, show_reset=True)
+    st.markdown(chat_topbar_html(st.session_state.session_id, bool(settings.get("developer_mode"))), unsafe_allow_html=True)
+    st.markdown(chat_topbar_spacer_html(), unsafe_allow_html=True)
     st.caption("Langflow run API를 호출해 현재 세션 ID로 대화를 이어가고, 표 형태 결과는 화면과 다운로드로 확인합니다.")
-
     if not settings.get("api_ready"):
-        render_inline_status("", "LANGFLOW_ROUTER_API_URL 또는 LANGFLOW_ROUTER_FLOW_ID 환경변수를 설정하면 채팅 화면을 사용할 수 있습니다.", "warning")
+        render_inline_status("", "LANGFLOW_ROUTER_API_URL 또는 LANGFLOW_ROUTER_FLOW_ID 환경변수를 설정하면 채팅 화면을 사용할 수 있습니다.", tone="warning")
         return
 
-    with st.expander("예시 질문", expanded=False):
-        for row_start in range(0, len(QUERY_EXAMPLES), 3):
-            example_cols = st.columns(3)
-            for offset, question in enumerate(QUERY_EXAMPLES[row_start : row_start + 3]):
-                index = row_start + offset
-                with example_cols[offset]:
-                    if st.button(f"예시 {index + 1}", key=f"query_example_{index}", width="stretch"):
-                        st.session_state.pending_question = question
-                    st.caption(question)
-
     for index, message in enumerate(st.session_state.chat_messages):
-        with st.chat_message(message["role"], avatar=":material/person:" if message["role"] == "user" else ":material/smart_toy:"):
-            if message["role"] == "assistant":
-                render_query_result(message["result"], settings, f"history_{index}")
+        role = message.get("role", "assistant")
+        with st.chat_message(role, avatar=chat_avatar_for(role)):
+            if role == "assistant":
+                render_assistant_chat_message(message, index, settings)
             else:
-                st.markdown(safe_markdown_text(message["content"]))
+                st.markdown(safe_markdown_text(message.get("content") or ""))
 
-    pending = st.session_state.pop("pending_question", None)
-    user_message = st.chat_input("제조 데이터 질문을 입력하세요")
-    if pending and not user_message:
-        user_message = pending
+    user_message = st.chat_input("질문을 입력하세요")
     if not user_message:
         return
 
     st.session_state.chat_messages.append({"role": "user", "content": user_message})
-    with st.chat_message("user", avatar=":material/person:"):
+    with st.chat_message("user", avatar=chat_avatar_for("user")):
         st.markdown(safe_markdown_text(user_message))
-    with st.chat_message("assistant", avatar=":material/smart_toy:"):
+    with st.chat_message("assistant", avatar=chat_avatar_for("assistant")):
         with st.spinner("Langflow API 실행 중..."):
-            result = run_query_backend(user_message, settings)
-            st.session_state.latest_state = result.get("state", {})
-            render_sidebar_active_scope(settings.get("active_scope_slot"), st.session_state.latest_state, result.get("applied_scope"))
-        render_query_result(result, settings, "latest")
-    st.session_state.chat_messages.append({"role": "assistant", "content": result.get("answer_message", ""), "result": result})
+            try:
+                result = st.session_state.langflow_api.run_query(
+                    user_message,
+                    session_id=st.session_state.session_id,
+                    state=st.session_state.latest_state or None,
+                )
+                st.session_state.latest_state = result.get("state", {})
+                render_sidebar_active_scope(settings.get("active_scope_slot"), st.session_state.latest_state, result.get("applied_scope"))
+                assistant_message = {"role": "assistant", "content": result.get("answer_message", ""), "result": result}
+            except Exception as exc:
+                assistant_message = {
+                    "role": "assistant",
+                    "content": f"Langflow API 호출 중 오류가 발생했습니다: {exc}",
+                    "result": {"status": "error", "answer_message": f"Langflow API 호출 중 오류가 발생했습니다: {exc}", "errors": [str(exc)]},
+                }
+        render_assistant_chat_message(assistant_message, len(st.session_state.chat_messages), settings)
+    st.session_state.chat_messages.append(assistant_message)
 
 
-def run_query_backend(user_message: str, settings: dict[str, Any]) -> dict[str, Any]:
-    try:
-        return st.session_state.langflow_api.run_query(
-            user_message,
-            session_id=st.session_state.session_id,
-            state=st.session_state.latest_state or None,
-        )
-    except Exception as exc:
-        return {
-            "status": "error",
-            "success": False,
-            "answer_message": f"실행 중 오류가 발생했습니다: {exc}",
-            "data": {"columns": [], "rows": [], "row_count": 0, "data_ref": {}},
-            "applied_scope": {},
-            "intent_plan": {},
-            "analysis": {"status": "error", "errors": [str(exc)]},
-            "state": st.session_state.latest_state or {},
-            "warnings": [],
-            "errors": [str(exc)],
-            "api_mode": "langflow_api",
-        }
-
-
-def render_query_result(result: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
-    st.markdown(safe_markdown_text(result.get("answer_message") or "응답 메시지가 없습니다."))
-    is_metadata_qa = bool(result.get("direct_response_ready") or result.get("response_type") == "metadata_qa" or result.get("metadata_qa"))
-    message_only = bool(result.get("message_only"))
-    if message_only:
+def render_assistant_chat_message(message: dict[str, Any], message_index: int, settings: dict[str, Any]) -> None:
+    result = message.get("result") if isinstance(message.get("result"), dict) else {}
+    st.markdown(safe_markdown_text(result.get("answer_message") or message.get("content") or "응답 메시지가 없습니다."))
+    if result.get("message_only"):
         if settings.get("developer_mode"):
             with st.expander("Raw response", expanded=False):
                 render_compact_json(result, max_height=520)
         return
-    metadata_qa = result.get("metadata_qa") if isinstance(result.get("metadata_qa"), dict) else {}
-    if is_metadata_qa:
-        render_inline_status("Metadata QA", metadata_qa_label(metadata_qa), "success")
+
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
     rows = data.get("rows") if isinstance(data.get("rows"), list) else []
     columns = data.get("columns") if isinstance(data.get("columns"), list) else []
-    row_count = int(data.get("row_count") or len(rows) or 0)
-    metric_cols = st.columns(4)
-    metric_cols[0].metric("Rows", f"{row_count:,}")
-    metric_cols[1].metric("Preview", f"{len(rows):,}")
-    metric_cols[2].metric("Datasets", f"{dataset_count(result):,}")
-    metric_cols[3].metric("Status", str(result.get("status") or "ok"))
+    row_count = int_or_zero(data.get("row_count")) or len(rows)
     if rows:
         frame = pd.DataFrame(rows)
         if columns:
             ordered = [column for column in columns if column in frame.columns]
             frame = frame[ordered + [column for column in frame.columns if column not in ordered]]
+        st.caption(f"결과 {row_count:,}행 · {len(frame.columns):,}열")
         st.dataframe(
             display_table_frame(frame, settings.get("number_mode", "comma")),
             hide_index=True,
             width="stretch",
             height=chat_dataframe_height(row_count),
         )
-    else:
-        render_inline_status("결과", "표시할 row가 없습니다.")
 
-    data_ref = data.get("data_ref") if isinstance(data.get("data_ref"), dict) else {}
-    if data_ref:
-        with st.expander("전체 row data_ref", expanded=False):
-            render_compact_json(data_ref)
-            render_inline_status("전체 row", "Langflow API 모드에서는 backend가 이 data_ref로 MongoDB result store를 조회합니다.")
-            st.download_button(
-                "data_ref JSON 다운로드",
-                data=json_text(data_ref),
-                file_name=f"{data_ref.get('ref_id', 'data_ref')}.json",
-                mime="application/json",
-                key=f"{key_prefix}_download_ref",
-                width="stretch",
-            )
-    render_result_details(result, settings, is_metadata_qa=is_metadata_qa, message_only=message_only)
+    render_chat_metadata(result)
+    if settings.get("developer_mode"):
+        render_chat_developer_details(result, message_index)
 
 
-def render_result_details(result: dict[str, Any], settings: dict[str, Any], *, is_metadata_qa: bool, message_only: bool) -> None:
-    developer_mode = bool(settings.get("developer_mode"))
-    metadata_qa = result.get("metadata_qa") if isinstance(result.get("metadata_qa"), dict) else {}
-    metadata_detail = compact_nonempty(
-        {
-            "metadata_qa": metadata_qa,
-            "metadata_route": result.get("metadata_route") or {},
-            "analysis": compact_nonempty({key: value for key, value in (result.get("analysis") or {}).items() if key != "rows"}),
-        }
-    )
+def render_chat_metadata(result: dict[str, Any]) -> None:
     scope = result.get("applied_scope") if isinstance(result.get("applied_scope"), dict) else {}
     intent = result.get("intent_plan") or result.get("intent") or {}
     analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
-    analysis_body = compact_nonempty({key: value for key, value in analysis.items() if key not in {"rows", "analysis_code", "pandas_code_json"}})
-    code = analysis.get("analysis_code") or (analysis.get("pandas_code_json") or {}).get("code", "")
-
-    tab_specs: list[tuple[str, str]] = []
-    if is_metadata_qa and metadata_detail:
-        tab_specs.append(("Metadata QA", "metadata"))
     if scope:
-        tab_specs.append(("적용 Scope", "scope"))
+        with st.expander("적용 조건 / 도메인 정보", expanded=False):
+            render_compact_json(scope, max_height=360)
     if intent:
-        tab_specs.append(("Intent", "intent"))
-    if code or analysis_body:
-        tab_specs.append(("Pandas", "analysis"))
-    if developer_mode:
-        tab_specs.append(("Raw", "raw"))
-    if not tab_specs:
-        return
-    if message_only and not developer_mode and not any(kind != "raw" for _, kind in tab_specs):
-        return
-
-    tabs = st.tabs([label for label, _ in tab_specs])
-    for tab, (_, kind) in zip(tabs, tab_specs):
-        with tab:
-            if kind == "metadata":
-                render_compact_json(metadata_detail, max_height=360)
-            elif kind == "scope":
-                render_compact_json(scope)
-            elif kind == "intent":
-                render_compact_json(intent)
-            elif kind == "analysis":
-                if code:
-                    st.code(str(code), language="python")
-                if analysis_body:
-                    render_compact_json(analysis_body)
-            else:
-                render_raw_result(result, settings)
+        with st.expander("의도 분석 / 실행 계획", expanded=False):
+            render_compact_json(intent, max_height=420)
+    code = analysis.get("analysis_code") or (analysis.get("pandas_code_json") or {}).get("code") if isinstance(analysis.get("pandas_code_json"), dict) else analysis.get("analysis_code")
+    if code or analysis.get("errors"):
+        with st.expander("Pandas 처리", expanded=False):
+            if code:
+                st.code(str(code), language="python")
+            compact = {key: value for key, value in analysis.items() if key not in {"rows", "analysis_code", "pandas_code_json"}}
+            if compact:
+                render_compact_json(compact, max_height=320)
 
 
-def metadata_qa_label(metadata_qa: dict[str, Any]) -> str:
-    action = str(metadata_qa.get("metadata_action") or "direct_answer")
-    target = metadata_qa.get("target_dataset") or metadata_qa.get("target_family") or metadata_qa.get("target_term")
-    if target:
-        return f"{action} · {target}"
-    return action
+def render_chat_developer_details(result: dict[str, Any], message_index: int) -> None:
+    with st.expander("Raw response", expanded=False):
+        render_compact_json(result.get("raw_response") or result, max_height=560)
+        st.download_button(
+            "Raw JSON 다운로드",
+            data=json_text(result.get("raw_response") or result),
+            file_name=f"langflow_response_{message_index}.json",
+            mime="application/json",
+            key=f"raw_download_{message_index}",
+            width="stretch",
+        )
 
 
-def dataset_count(result: dict[str, Any]) -> int:
-    scope = result.get("applied_scope") if isinstance(result.get("applied_scope"), dict) else {}
-    datasets = scope.get("datasets")
-    if isinstance(datasets, list):
-        return len(datasets)
-    if datasets:
-        return 1
-    dataset_scopes = scope.get("dataset_scopes")
-    return len(dataset_scopes) if isinstance(dataset_scopes, list) else 0
+def authoring_type_from_label(label: str) -> str:
+    for key, meta in AUTHORING_TYPE_OPTIONS.items():
+        if meta["label"] == label:
+            return key
+    return "domain"
 
 
-def compact_nonempty(value: Any) -> Any:
-    if isinstance(value, dict):
-        result = {}
-        for key, item in value.items():
-            compacted = compact_nonempty(item)
-            if compacted not in (None, "", [], {}):
-                result[key] = compacted
-        return result
-    if isinstance(value, list):
-        return [item for item in (compact_nonempty(item) for item in value) if item not in (None, "", [], {})]
-    return value
+def authoring_example_text(flow_type: str) -> str:
+    path = AUTHORING_EXAMPLE_PATHS.get(flow_type)
+    if path and path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return AUTHORING_EXAMPLES.get(flow_type, "")
 
 
-def render_raw_result(result: dict[str, Any], settings: dict[str, Any]) -> None:
-    if settings.get("developer_mode"):
-        render_compact_json(result, max_height=520)
-    else:
-        render_inline_status("개발자 정보", "사이드바에서 개발자 정보 보기를 켜면 Raw payload를 볼 수 있습니다.")
+def example_placeholder(text: str) -> str:
+    return f"예시)\n{str(text or '').strip()}"
 
 
-def render_authoring_page(settings: dict[str, Any]) -> None:
-    render_topbar("메타데이터 등록", st.session_state.session_id)
-    flow_key = st.segmented_control("등록 유형", list(AUTHORING_TYPES), format_func=lambda key: AUTHORING_TYPES[key], default="domain")
-    st.markdown(f"#### {AUTHORING_TYPES[flow_key]} 등록")
-    st.caption(AUTHORING_DESCRIPTIONS.get(flow_key, ""))
+def authoring_input_payload(raw_text: str, review_notes: str) -> str:
+    raw = str(raw_text or "").strip()
+    notes = str(review_notes or "").strip()
+    if not notes:
+        return raw
+    return f"{raw}\n\n[추가 검수 지시]\n{notes}"
+
+
+def render_metadata_registration(settings: dict[str, Any]) -> None:
+    st.title(PAGE_METADATA)
+    st.caption("Langflow authoring flow API를 호출해 원문 입력부터 변환, 검증, MongoDB 저장 결과까지 한 화면에서 확인합니다.")
+    labels = [meta["label"] for meta in AUTHORING_TYPE_OPTIONS.values()]
+    selected_label = st.radio("등록 유형", labels, horizontal=True, label_visibility="collapsed", key="authoring_type_label")
+    flow_type = authoring_type_from_label(selected_label)
+    meta = AUTHORING_TYPE_OPTIONS[flow_type]
+    api_url = str(getattr(settings["api_settings"], meta["settings_attr"]) or "").strip()
+
+    st.subheader(meta["title"])
+    st.caption(meta["description"])
     with st.expander("입력 예시 보기", expanded=False):
-        st.code(authoring_example_text(flow_key), language="text")
-        if st.button("예시 입력하기", key=f"load_authoring_example_{flow_key}"):
-            st.session_state[f"authoring_text_{flow_key}"] = authoring_example_text(flow_key)
-            st.rerun()
-    action = st.selectbox("저장 방식", list(ACTION_LABELS), format_func=lambda key: ACTION_LABELS[key], index=0)
-    st.session_state.setdefault(f"authoring_text_{flow_key}", "")
-    text = st.text_area(
-        "자연어 설명",
-        key=f"authoring_text_{flow_key}",
-        height=300,
-        placeholder=f"예시)\n{authoring_example_text(flow_key)}",
+        st.code(authoring_example_text(flow_type), language="text")
+
+    if not api_url:
+        render_inline_status("", f"{meta['settings_attr']} 환경변수에 Langflow Run API URL을 설정해 주세요.", tone="warning")
+    raw_text = st.text_area(
+        "등록 설명",
+        key=f"authoring_raw_text_{flow_type}",
+        height=360,
+        placeholder=example_placeholder(authoring_example_text(flow_type)),
     )
     review_notes = st.text_area(
         "추가 검수 지시",
-        key=f"authoring_review_notes_{flow_key}",
-        height=88,
-        placeholder="예: 기존 항목과 충돌하면 merge 대신 보완 요청으로 돌려줘.",
+        key=f"authoring_review_notes_{flow_type}",
+        height=96,
+        placeholder="예: 기존 항목과 충돌하면 보완 요청으로 돌려줘.",
     )
-    run_col, clear_col = st.columns([1, 4])
-    run_clicked = run_col.button("Langflow 실행", type="primary", width="stretch")
-    if clear_col.button("결과 지우기", width="stretch"):
-        st.session_state.authoring_results = []
-        st.rerun()
-    if run_clicked:
-        if not str(text or "").strip():
-            render_inline_status("입력", "등록할 자연어 설명을 입력해 주세요.", "warning")
-        else:
-            payload_text = authoring_input_payload(text, review_notes)
-            with st.spinner("Langflow authoring API 실행 중..."):
-                result = run_authoring_backend(flow_key, payload_text, action, settings)
-            result["flow_type"] = result.get("flow_type") or flow_key
-            st.session_state[f"authoring_result_{flow_key}"] = result
-            st.session_state.authoring_results.insert(0, result)
-    if not st.session_state.authoring_results:
-        render_inline_status("대기", "실행하면 정제 텍스트, 생성 item, 검토, 저장 결과가 표시됩니다.")
-        return
-    for index, result in enumerate(st.session_state.authoring_results[:5]):
-        with st.container(border=False):
-            render_authoring_result(result, f"authoring_{index}")
+    execute_clicked = st.button("Langflow Authoring Flow 실행", type="primary", width="stretch", disabled=not api_url)
+    render_inline_status("", "저장 여부와 update mode는 현재 Langflow canvas의 Writer 설정을 따릅니다.")
 
+    if execute_clicked:
+        try:
+            with st.spinner("Langflow authoring flow 실행 중..."):
+                result = st.session_state.langflow_api.run_authoring(
+                    flow_type,
+                    authoring_input_payload(raw_text, review_notes),
+                    "ask",
+                    st.session_state.session_id,
+                )
+                result["flow_type"] = result.get("flow_type") or flow_type
+                st.session_state[f"authoring_result_{flow_type}"] = result
+        except Exception as exc:
+            st.session_state[f"authoring_result_{flow_type}"] = {
+                "status": "error",
+                "ui_status": "error",
+                "message": f"실행 중 오류가 발생했습니다: {exc}",
+                "items": [],
+                "review": {},
+                "write_result": {"status": "error", "errors": [str(exc)]},
+                "trace": {"raw_text": raw_text},
+                "errors": [str(exc)],
+            }
 
-def run_authoring_backend(flow_key: str, text: str, action: str, settings: dict[str, Any]) -> dict[str, Any]:
-    try:
-        return st.session_state.langflow_api.run_authoring(flow_key, text, action, st.session_state.session_id)
-    except Exception as exc:
-        return {
-            "status": "error",
-            "ui_status": "error",
-            "message": f"실행 중 오류가 발생했습니다: {exc}",
-            "metadata_type": flow_key,
-            "items": [],
-            "existing_matches": [],
-            "conflict_warnings": [],
-            "review": {},
-            "write_result": {"status": "error", "errors": [str(exc)]},
-            "trace": {"raw_text": text, "duplicate_decision": {"action": action}},
-            "errors": [str(exc)],
-            "warnings": [],
-            "api_mode": "langflow_api",
-        }
+    st.divider()
+    st.subheader("실행 결과")
+    result = st.session_state.get(f"authoring_result_{flow_type}")
+    if isinstance(result, dict):
+        render_authoring_result(result, flow_type)
+    else:
+        render_inline_status("", "실행하면 사용자 입력 값, 변환 텍스트, 검증 내용, 저장 결과가 단계별로 표시됩니다.")
 
 
 def authoring_status_label(status: Any) -> str:
@@ -651,13 +620,6 @@ def authoring_status_tone(status: Any) -> str:
     if text in {"error", "failed"}:
         return "error"
     return "warning"
-
-
-def int_or_zero(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def authoring_saved(result: dict[str, Any]) -> bool:
@@ -745,13 +707,12 @@ def render_authoring_stage(stage: dict[str, Any], index: int, key_prefix: str) -
     status = str(stage.get("status") or "").strip()
     expanded = status in {"warning", "error"} or stage.get("stage") in {"refinement", "review", "write"}
     with st.expander(f"{index}. {label} · {authoring_status_label(status)}", expanded=expanded):
-        summary = str(stage.get("summary") or "").strip()
-        if summary:
-            st.markdown(safe_markdown_text(summary))
+        if stage.get("summary"):
+            st.markdown(safe_markdown_text(stage.get("summary")))
         if stage.get("raw_text"):
-            st.text_area("사용자 입력 값", value=str(stage.get("raw_text") or ""), height=150, disabled=True, key=f"{key_prefix}_authoring_stage_{index}_raw")
+            st.text_area("사용자 입력 값", value=str(stage.get("raw_text") or ""), height=150, disabled=True, key=f"{key_prefix}_stage_{index}_raw")
         if stage.get("refined_text"):
-            st.text_area("변환 텍스트", value=str(stage.get("refined_text") or ""), height=180, disabled=True, key=f"{key_prefix}_authoring_stage_{index}_refined")
+            st.text_area("변환 텍스트", value=str(stage.get("refined_text") or ""), height=180, disabled=True, key=f"{key_prefix}_stage_{index}_refined")
         for key, title in (
             ("items", "생성 항목"),
             ("supplement_requests", "보완 요청"),
@@ -763,11 +724,12 @@ def render_authoring_stage(stage: dict[str, Any], index: int, key_prefix: str) -
             ("warnings", "경고"),
         ):
             value = stage.get(key)
-            if value:
-                st.markdown(f"#### {title}")
-                if key == "items" and isinstance(value, list):
-                    st.dataframe(authoring_item_summary_frame([item for item in value if isinstance(item, dict)]), hide_index=True, width="stretch")
-                render_compact_json(value, max_height=240)
+            if not value:
+                continue
+            st.markdown(f"#### {title}")
+            if key == "items" and isinstance(value, list):
+                st.dataframe(authoring_item_summary_frame([item for item in value if isinstance(item, dict)]), hide_index=True, width="stretch")
+            render_compact_json(value, max_height=240)
 
 
 def render_authoring_result(result: dict[str, Any], key_prefix: str) -> None:
@@ -781,184 +743,344 @@ def render_authoring_result(result: dict[str, Any], key_prefix: str) -> None:
     summary_cols[1].metric("Ready", "Yes" if authoring_ready_to_save(result) else "No")
     summary_cols[2].metric("Supplement", "Yes" if authoring_needs_supplement(result) else "No")
     summary_cols[3].metric("Saved", "Yes" if authoring_saved(result) else "No")
-    tabs = st.tabs(["처리 과정", "생성 항목", "보완/중복", "저장 결과", "Raw JSON"])
+    tabs = st.tabs(["처리 과정", "생성 항목", "보완 요청", "저장 결과", "Raw JSON"])
     with tabs[0]:
         stages = authoring_trace_stages(result)
         if not stages:
-            render_inline_status("처리 과정", "trace가 응답에 포함되어 있지 않습니다.", "warning")
+            render_inline_status("", "처리 과정 trace가 응답에 포함되어 있지 않습니다.", tone="warning")
         for index, stage in enumerate(stages, start=1):
             render_authoring_stage(stage, index, key_prefix)
     with tabs[1]:
         if items:
             st.dataframe(authoring_item_summary_frame([item for item in items if isinstance(item, dict)]), hide_index=True, width="stretch")
-            render_compact_json(items, max_height=360)
+            render_compact_json(items, max_height=380)
         else:
-            render_inline_status("items", "생성된 item이 없습니다.", "warning")
+            render_inline_status("", "생성된 item이 없습니다.", tone="warning")
     with tabs[2]:
-        render_detail_list("부족한 정보", review.get("supplement_requests") or [])
-        render_detail_list("항목별 검토", review.get("item_reviews") or [])
-        render_detail_list("비슷한 기존 정보", result.get("existing_matches") or [])
-        render_detail_list("경고", result.get("conflict_warnings") or [])
-        if result.get("pending_authoring_id"):
-            st.markdown("#### Pending authoring id")
-            st.code(str(result["pending_authoring_id"]))
+        supplement_requests = review.get("supplement_requests") if isinstance(review.get("supplement_requests"), list) else []
+        if supplement_requests:
+            st.dataframe(pd.DataFrame(supplement_requests), hide_index=True, width="stretch")
+        elif authoring_ready_to_save(result):
+            render_inline_status("", "검증을 통과해 저장 가능한 상태입니다.", tone="success")
+        else:
+            render_inline_status("", "보완 요청이 응답에 포함되어 있지 않습니다.")
+        if review:
+            render_detail_title("검증 원본")
+            render_compact_json(review, max_height=320)
+        if result.get("existing_matches"):
+            render_detail_title("비슷한 기존 정보")
+            render_compact_json(result.get("existing_matches"), max_height=260)
+        if result.get("conflict_warnings"):
+            render_detail_title("경고")
+            render_compact_json(result.get("conflict_warnings"), max_height=260)
     with tabs[3]:
         if write_result:
             render_compact_json(write_result, max_height=360)
         else:
-            render_inline_status("저장 결과", "MongoDB writer 결과가 응답에 포함되어 있지 않습니다.", "warning")
+            render_inline_status("", "MongoDB writer 결과가 응답에 포함되어 있지 않습니다.", tone="warning")
     with tabs[4]:
-        render_compact_json(result.get("api_response") or result, max_height=560)
+        render_compact_json(result.get("api_response") or result.get("raw_response") or result, max_height=520)
         st.download_button(
             "Authoring 결과 JSON 다운로드",
-            data=json_text(result.get("api_response") or result),
-            file_name=f"metadata_authoring_{key_prefix}.json",
+            data=json_text(result.get("api_response") or result.get("raw_response") or result),
+            file_name=f"langflow_authoring_{key_prefix}.json",
             mime="application/json",
             key=f"{key_prefix}_download_authoring_result",
             width="stretch",
         )
 
 
-def render_lookup_page(settings: dict[str, Any]) -> None:
-    render_topbar("조회/내보내기", st.session_state.session_id)
-    flow_key = st.segmented_control("Metadata type", list(AUTHORING_TYPES), format_func=lambda key: AUTHORING_TYPES[key], default="domain", key="lookup_type")
-    keyword = st.text_input("검색어", placeholder="key, alias, source type 검색")
-    rows = st.session_state.mock_api.list_metadata(flow_key)
-    if keyword:
-        needle = keyword.lower()
-        rows = [row for row in rows if needle in json_text(row).lower()]
-    st.caption(f"{len(rows):,}개 metadata item")
-    if rows:
-        frame = pd.DataFrame([lookup_row(row, flow_key) for row in rows])
-        st.dataframe(frame, hide_index=True, width="stretch", height=chat_dataframe_height(len(frame), 520))
-        selected = st.selectbox("상세 보기", [lookup_label(row, flow_key) for row in rows])
-        selected_row = rows[[lookup_label(row, flow_key) for row in rows].index(selected)]
-        render_compact_json(selected_row, max_height=460)
-    else:
-        render_inline_status("검색", "조건에 맞는 metadata가 없습니다.", "warning")
+def value_text(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json_text(value)
+    if value is None:
+        return ""
+    return str(value)
 
 
-def render_validation_page(settings: dict[str, Any]) -> None:
-    render_topbar("등록 후 검증", st.session_state.session_id)
-    questions = st.session_state.mock_api.validation_questions()
-    labels = [f"{item['id']} - {item['question']}" for item in questions]
-    selected = st.selectbox("검증 질문", labels)
-    item = questions[labels.index(selected)]
-    st.text_area("질문", value=item["question"], height=90, key="validation_question")
-    if st.button("Langflow 검증 실행", type="primary"):
-        validation = run_validation_backend(st.session_state.validation_question, item.get("expected_datasets"), settings)
-        st.session_state.validation_result = validation
-    validation = st.session_state.get("validation_result")
-    if not validation:
-        render_inline_status("대기", "검증을 실행하면 기대 dataset과 실제 적용 결과를 비교합니다.")
-        return
-    tone = "success" if validation["passed"] else "error"
-    render_inline_status("검증 결과", "통과" if validation["passed"] else "확인 필요", tone)
-    cols = st.columns(2)
-    cols[0].markdown("#### 기대 dataset")
-    cols[0].write(validation["expected_datasets"])
-    cols[1].markdown("#### 실제 dataset")
-    cols[1].write(validation["actual_datasets"])
-    render_query_result(validation["result"], settings, "validation")
+def key_value_frame(value: dict[str, Any]) -> pd.DataFrame:
+    rows = [{"항목": key, "값": value_text(item)} for key, item in value.items()]
+    return pd.DataFrame(rows, columns=["항목", "값"])
 
 
-def run_validation_backend(question: str, expected_datasets: list[str] | None, settings: dict[str, Any]) -> dict[str, Any]:
-    result = run_query_backend(question, {"runtime_mode": "Langflow API", **settings})
-    actual = set((result.get("applied_scope") or {}).get("datasets") or [])
-    expected = set(expected_datasets or [])
+def domain_frame(items: list[dict[str, Any]]) -> pd.DataFrame:
+    rows = []
+    for item in items:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        rows.append(
+            {
+                "gbn": item.get("gbn") or item.get("section", ""),
+                "key": item.get("key", ""),
+                "status": item.get("status", ""),
+                "display_name": payload.get("display_name") or item.get("display_name", ""),
+                "aliases": ", ".join(str(alias) for alias in (item.get("aliases") or payload.get("aliases") or [])[:5]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def table_frame(items: list[dict[str, Any]]) -> pd.DataFrame:
+    rows = []
+    for item in items:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        rows.append(
+            {
+                "dataset_key": item.get("dataset_key", ""),
+                "status": item.get("status", ""),
+                "display_name": item.get("display_name") or payload.get("display_name", ""),
+                "dataset_family": item.get("dataset_family") or payload.get("dataset_family", ""),
+                "source_type": item.get("source_type") or payload.get("source_type", ""),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def main_filter_frame(items: list[dict[str, Any]]) -> pd.DataFrame:
+    rows = []
+    for item in items:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        rows.append(
+            {
+                "filter_key": item.get("filter_key") or item.get("key", ""),
+                "status": item.get("status", ""),
+                "display_name": item.get("display_name") or payload.get("display_name", ""),
+                "semantic_role": item.get("semantic_role") or payload.get("semantic_role", ""),
+                "column_candidates": ", ".join(str(column) for column in (item.get("column_candidates") or payload.get("column_candidates") or [])[:5]),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def domain_item_label(item: dict[str, Any]) -> str:
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    gbn = item.get("gbn") or item.get("section", "")
+    display_name = str(payload.get("display_name") or item.get("display_name") or "").strip()
+    label = f"{gbn}:{item.get('key', '')}"
+    return f"{label} | {display_name}" if display_name else label
+
+
+def table_item_label(item: dict[str, Any]) -> str:
+    label = str(item.get("dataset_key") or "")
+    display_name = str(item.get("display_name") or "").strip()
+    return f"{label} | {display_name}" if display_name else label
+
+
+def main_filter_item_label(item: dict[str, Any]) -> str:
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    label = str(item.get("filter_key") or item.get("key") or "")
+    role = str(item.get("semantic_role") or payload.get("semantic_role") or payload.get("value_type") or "").strip()
+    return f"{label} | {role}" if role else label
+
+
+def render_domain_item_detail(item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    gbn = item.get("gbn") or item.get("section", "")
+    single_domain_json = domain_export_payload([item])
+    summary = {
+        "gbn": gbn,
+        "key": item.get("key", ""),
+        "status": item.get("status", ""),
+        "display_name": payload.get("display_name") or item.get("display_name", ""),
+        "collection": "metadata/domain_items.json",
+    }
+    tab_summary, tab_payload, tab_langflow, tab_document = st.tabs(["요약", "Payload", "Langflow JSON", "원본 Document"])
+    with tab_summary:
+        st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
+        if item.get("source_text"):
+            st.text_area("Source Text", value=str(item.get("source_text") or ""), height=120, disabled=True, key=f"{key_prefix}_domain_source")
+    with tab_payload:
+        st.dataframe(key_value_frame(payload), width="stretch", hide_index=True)
+    with tab_langflow:
+        render_compact_json(single_domain_json, max_height=360)
+        st.download_button(
+            "선택 항목 Domain JSON 다운로드",
+            data=json_text(single_domain_json),
+            file_name=f"langflow_main_domain_{gbn or 'item'}_{item.get('key', 'item')}.json",
+            mime="application/json",
+            width="stretch",
+            key=f"{key_prefix}_domain_download",
+        )
+    with tab_document:
+        render_compact_json(item, max_height=360)
+
+
+def render_table_item_detail(item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
+    catalog_json = table_catalog_export_payload([item])
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    metadata = {key: value for key, value in {**payload, **{k: v for k, v in item.items() if k != "payload"}}.items() if key not in {"columns", "source_text"}}
+    summary = {
+        "dataset_key": item.get("dataset_key", ""),
+        "status": item.get("status", ""),
+        "display_name": item.get("display_name") or payload.get("display_name", ""),
+        "source_type": item.get("source_type") or payload.get("source_type", ""),
+        "tool_name": payload.get("tool_name", ""),
+        "collection": "metadata/table_catalog.json",
+    }
+    tab_summary, tab_metadata, tab_columns, tab_langflow, tab_document = st.tabs(["요약", "Metadata", "Columns", "Langflow JSON", "원본 Document"])
+    with tab_summary:
+        st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
+        if payload.get("description") or item.get("description"):
+            st.text_area("Description", value=str(payload.get("description") or item.get("description") or ""), height=100, disabled=True, key=f"{key_prefix}_table_description")
+    with tab_metadata:
+        st.dataframe(key_value_frame(metadata), width="stretch", hide_index=True)
+    with tab_columns:
+        columns = payload.get("columns") if isinstance(payload.get("columns"), list) else []
+        st.dataframe(pd.DataFrame(columns), width="stretch", hide_index=True)
+    with tab_langflow:
+        render_compact_json(catalog_json, max_height=360)
+        st.download_button(
+            "선택 항목 Table Catalog JSON 다운로드",
+            data=json_text(catalog_json),
+            file_name=f"langflow_main_table_catalog_{item.get('dataset_key', 'dataset')}.json",
+            mime="application/json",
+            width="stretch",
+            key=f"{key_prefix}_table_download",
+        )
+    with tab_document:
+        render_compact_json(item, max_height=360)
+
+
+def render_main_filter_item_detail(item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    summary = {
+        "filter_key": item.get("filter_key") or item.get("key", ""),
+        "status": item.get("status", ""),
+        "value_type": payload.get("value_type", ""),
+        "semantic_role": item.get("semantic_role") or payload.get("semantic_role", ""),
+        "collection": "metadata/main_flow_filters.json",
+    }
+    tab_summary, tab_payload, tab_document = st.tabs(["요약", "Payload", "원본 Document"])
+    with tab_summary:
+        st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
+    with tab_payload:
+        st.dataframe(key_value_frame(payload), width="stretch", hide_index=True)
+    with tab_document:
+        render_compact_json(item, max_height=360)
+
+
+def filter_metadata_status(rows: list[dict[str, Any]], status: str) -> list[dict[str, Any]]:
+    if status == "all":
+        return rows
+    return [row for row in rows if str(row.get("status") or "active") == status]
+
+
+def domain_export_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    domain: dict[str, Any] = {}
+    for row in rows:
+        section = str(row.get("section") or "").strip()
+        key = str(row.get("key") or "").strip()
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        if not section:
+            continue
+        if isinstance(payload.get("values"), list) and key == section:
+            domain[section] = payload.get("values")
+        else:
+            domain.setdefault(section, {})
+            if isinstance(domain[section], dict) and key:
+                domain[section][key] = payload
+    return {"domain": domain}
+
+
+def table_catalog_export_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return {
-        "passed": expected.issubset(actual) if expected else bool(result.get("answer_message")),
-        "expected_datasets": sorted(expected),
-        "actual_datasets": sorted(actual),
-        "result": result,
+        "datasets": {
+            str(row.get("dataset_key")): row.get("payload")
+            for row in rows
+            if str(row.get("dataset_key") or "").strip() and isinstance(row.get("payload"), dict)
+        }
     }
 
 
-def render_topbar(title: str, session_id: str, show_reset: bool = False) -> None:
-    safe_title = html.escape(title)
-    safe_session = html.escape(str(session_id))
-    reset_html = ""
-    if show_reset:
-        reset_html = f'<a class="chat-topbar-reset" href="?{CHAT_RESET_QUERY_KEY}=1" target="_self">대화 초기화</a>'
-    st.markdown(
-        f"""
-        <div class="chat-topbar">
-          <div class="chat-topbar-title">{safe_title}</div>
-          <div class="session-strip">
-            <div class="session-strip-label">Session ID</div>
-            <div class="session-strip-value">{safe_session}</div>
-          </div>
-          {reset_html}
-        </div>
-        <div class="chat-topbar-spacer"></div>
-        """,
-        unsafe_allow_html=True,
-    )
+def main_filter_export_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "main_flow_filters": {
+            str(row.get("filter_key")): row.get("payload")
+            for row in rows
+            if str(row.get("filter_key") or "").strip() and isinstance(row.get("payload"), dict)
+        }
+    }
+
+
+def render_lookup(settings: dict[str, Any]) -> None:
+    st.title(PAGE_LOOKUP)
+    st.caption("현재 v3 metadata item을 확인하고 Langflow 입력 JSON으로 내보냅니다.")
+    tab_domain, tab_table, tab_filters = st.tabs(["도메인", "테이블 카탈로그", "Main Flow Filters"])
+
+    with tab_domain:
+        filter_status, filter_type = st.columns(2)
+        with filter_status:
+            status = st.selectbox("Domain Status", ["active", "review_required", "deleted", "all"], index=0, key="domain_status")
+        all_domain_items = filter_metadata_status(st.session_state.mock_api.list_metadata("domain"), status)
+        domain_types = sorted({str(item.get("gbn") or item.get("section") or "").strip() for item in all_domain_items if str(item.get("gbn") or item.get("section") or "").strip()})
+        with filter_type:
+            gbn_filter = st.selectbox("Domain Type", ["all", *domain_types], index=0, key="domain_gbn_filter")
+        items = [item for item in all_domain_items if gbn_filter == "all" or str(item.get("gbn") or item.get("section") or "") == gbn_filter]
+        st.dataframe(domain_frame(items), width="stretch", hide_index=True)
+        domain_json = domain_export_payload(items)
+        st.download_button("Domain JSON 다운로드", data=json_text(domain_json), file_name="langflow_main_domain_export.json", mime="application/json", width="stretch")
+        with st.expander("Domain JSON 보기"):
+            render_compact_json(domain_json, max_height=420)
+        if items:
+            st.markdown("#### 선택 항목 상세")
+            labels = [domain_item_label(item) for item in items]
+            selected = st.selectbox("상세 조회할 domain item", labels, key="domain_detail_select")
+            selected_item = items[labels.index(selected)]
+            render_domain_item_detail(selected_item, settings, "lookup")
+
+    with tab_table:
+        filter_status, _filter_spacer = st.columns([1, 1])
+        with filter_status:
+            status = st.selectbox("Table Status", ["active", "review_required", "deleted", "all"], index=0, key="table_status")
+        items = filter_metadata_status(st.session_state.mock_api.list_metadata("table_catalog"), status)
+        st.dataframe(table_frame(items), width="stretch", hide_index=True)
+        catalog_json = table_catalog_export_payload(items)
+        st.download_button("Table Catalog JSON 다운로드", data=json_text(catalog_json), file_name="langflow_main_table_catalog_export.json", mime="application/json", width="stretch")
+        with st.expander("Table Catalog JSON 보기"):
+            render_compact_json(catalog_json, max_height=420)
+        if items:
+            st.markdown("#### 선택 항목 상세")
+            labels = [table_item_label(item) for item in items]
+            selected = st.selectbox("상세 조회할 dataset", labels, key="table_detail_select")
+            selected_item = items[labels.index(selected)]
+            render_table_item_detail(selected_item, settings, "lookup")
+
+    with tab_filters:
+        filter_status, _filter_spacer = st.columns([1, 1])
+        with filter_status:
+            status = st.selectbox("Filter Status", ["active", "review_required", "deleted", "all"], index=0, key="main_filter_status")
+        items = filter_metadata_status(st.session_state.mock_api.list_metadata("main_flow_filter"), status)
+        st.dataframe(main_filter_frame(items), width="stretch", hide_index=True)
+        filters_json = {"main_flow_filters": {"items": items}}
+        st.download_button("Main Flow Filters JSON 다운로드", data=json_text(filters_json), file_name="langflow_main_flow_filters_export.json", mime="application/json", width="stretch")
+        with st.expander("Main Flow Filters JSON 보기"):
+            render_compact_json(filters_json, max_height=420)
+        if items:
+            st.markdown("#### 선택 항목 상세")
+            labels = [main_filter_item_label(item) for item in items]
+            selected = st.selectbox("상세 조회할 filter", labels, key="main_filter_detail_select")
+            selected_item = items[labels.index(selected)]
+            render_main_filter_item_detail(selected_item, settings, "lookup")
+
+
+def render_detail_title(value: str) -> None:
+    st.markdown(f'<div class="detail-section-title">{html.escape(str(value))}</div>', unsafe_allow_html=True)
 
 
 def render_inline_status(label: str, value: Any, tone: str = "info") -> None:
-    safe_label = html.escape(str(label or ""))
-    safe_value = html.escape(str(value or ""))
-    st.markdown(f'<div class="inline-status inline-status-{tone}"><b>{safe_label}</b><span>{safe_value}</span></div>', unsafe_allow_html=True)
+    label_text = html.escape(str(label or "").strip())
+    value_text = html.escape(str(value or "").strip())
+    tone_class = {
+        "warning": " inline-status-warning",
+        "error": " inline-status-error",
+        "success": " inline-status-success",
+    }.get(str(tone or "info").strip().lower(), "")
+    label_html = f"<strong>{label_text}</strong>" if label_text else ""
+    st.markdown(f'<div class="inline-status{tone_class}">{label_html}<span>{value_text}</span></div>', unsafe_allow_html=True)
 
 
 def render_compact_json(value: Any, max_height: int | None = None) -> None:
-    style = f' style="max-height:{int(max_height)}px; overflow:auto;"' if max_height else ""
+    style = f' style="max-height:{max(120, int(max_height))}px; overflow:auto;"' if max_height else ""
     st.html(f'<pre class="compact-json-block"{style}>{compact_json_html(value)}</pre>')
-
-
-def render_detail_list(title: str, values: list[Any]) -> None:
-    st.markdown(f"#### {title}")
-    if not values:
-        render_inline_status(title, "표시할 항목이 없습니다.")
-        return
-    for value in values:
-        render_compact_json(value, max_height=180)
-
-
-def flatten_item(item: dict[str, Any]) -> dict[str, Any]:
-    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
-    return {
-        "section": item.get("section", ""),
-        "key": item.get("key") or item.get("dataset_key") or item.get("filter_key") or "",
-        "status": item.get("status", ""),
-        "display_name": payload.get("display_name", ""),
-        "aliases": ", ".join(str(alias) for alias in payload.get("aliases", [])[:5]) if isinstance(payload.get("aliases"), list) else "",
-    }
-
-
-def lookup_row(row: dict[str, Any], flow_key: str) -> dict[str, Any]:
-    if flow_key == "domain":
-        return {
-            "section": row.get("section"),
-            "key": row.get("key"),
-            "display_name": row.get("display_name"),
-            "aliases": ", ".join(row.get("aliases", [])[:5]),
-            "status": row.get("status"),
-        }
-    if flow_key == "table_catalog":
-        return {
-            "dataset_key": row.get("dataset_key"),
-            "display_name": row.get("display_name"),
-            "dataset_family": row.get("dataset_family"),
-            "source_type": row.get("source_type"),
-            "status": row.get("status"),
-        }
-    return {
-        "filter_key": row.get("filter_key"),
-        "display_name": row.get("display_name"),
-        "semantic_role": row.get("semantic_role"),
-        "column_candidates": ", ".join(row.get("column_candidates", [])[:4]),
-        "status": row.get("status"),
-    }
-
-
-def lookup_label(row: dict[str, Any], flow_key: str) -> str:
-    if flow_key == "domain":
-        return f"{row.get('section')}/{row.get('key')}"
-    if flow_key == "table_catalog":
-        return str(row.get("dataset_key"))
-    return str(row.get("filter_key"))
 
 
 def inject_style() -> None:
@@ -969,20 +1091,11 @@ def inject_style() -> None:
             font-family: Inter, Pretendard, "Segoe UI", "Noto Sans KR", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
             color: #182230;
         }
-        :root {
-            --blue: #2563eb;
-            --blue-dark: #1d4ed8;
-            --ink: #101828;
-            --muted: #667085;
-            --line: #d7dde8;
-            --surface: #ffffff;
-            --soft: #f6f8fb;
-            --green: #0f766e;
-            --amber: #b45309;
-            --red: #b42318;
-        }
+        .stApp { background: #fbfcfe; }
         .block-container { padding-top: 1.05rem; padding-bottom: 3rem; max-width: 1280px; }
-        [data-testid="stAppViewContainer"] { background: #fbfcfe; color: var(--ink); }
+        body:not(:has(.chat-topbar)) .block-container {
+            padding-top: 3.35rem;
+        }
         [data-testid="stHeader"] {
             background: rgba(251, 252, 254, 0.96);
             border-bottom: 1px solid #e4e7ec;
@@ -1002,117 +1115,21 @@ def inject_style() -> None:
             pointer-events: none;
             white-space: nowrap;
         }
-        [data-testid="stSidebar"] { background: #f5f7fb; border-right: 1px solid var(--line); }
-        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { font-size: 0.78rem; }
-        .sidebar-brand { border-bottom: 1px solid var(--line); padding: 0.45rem 0 0.9rem; margin-bottom: 0.75rem; }
-        .sidebar-brand-row { display: flex; align-items: center; gap: 0.7rem; }
-        .sidebar-brand-mark {
-            width: 2.55rem; height: 2.15rem; border-radius: 0.45rem;
-            display: grid; place-items: center; color: #fff; background: var(--blue);
-            font-weight: 800; font-size: 0.82rem;
+        [data-testid="stSidebar"] { background: #f7f8fb; border-right: 1px solid #e4e7ec; }
+        h1, h2, h3 {
+            letter-spacing: 0;
+            color: #111827;
+            font-weight: 720 !important;
         }
-        .sidebar-brand-title { color: var(--ink); font-weight: 800; letter-spacing: 0; font-size: 0.98rem; }
-        .sidebar-brand-subtitle { color: var(--muted); font-size: 0.72rem; margin-top: 0.06rem; }
-        .sidebar-section-label { color: #475467; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; margin: 1rem 0 0.35rem; }
-        div[role="radiogroup"] label { min-height: 2rem; border-radius: 0.45rem; padding: 0.1rem 0.32rem; }
-        div[role="radiogroup"] label:has(input:checked) { background: #eaf1ff; color: var(--blue-dark); }
-        .config-list { display: grid; gap: 0.42rem; }
-        .config-row {
-            display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.6rem; align-items: center;
-            border: 1px solid var(--line); background: var(--surface); border-radius: 0.45rem; padding: 0.55rem 0.62rem;
+        h1 {
+            font-size: 1.46rem !important;
+            line-height: 1.36 !important;
+            margin-bottom: 0.12rem !important;
+            padding-top: 0.04rem !important;
+            overflow: visible !important;
         }
-        .config-label { color: #344054; font-size: 0.72rem; font-weight: 750; }
-        .config-env { color: var(--muted); font-size: 0.64rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .config-badge { display: inline-flex; align-items: center; justify-content: center; min-height: 1.35rem; padding: 0 0.48rem; border-radius: 0.35rem; font-size: 0.66rem; font-weight: 750; }
-        .config-badge.ok { background: #dff7ef; color: #047857; }
-        .config-badge.warn { background: #fff7ed; color: #b45309; }
-        .config-value { color: #475467; font-size: 0.68rem; }
-        .session-store-list { margin-top: 0.42rem; }
-        .active-scope-panel {
-            border: 1px solid #bfd7ff; background: #eef5ff; border-radius: 0.45rem;
-            padding: 0.62rem; margin: 0.7rem 0 0.95rem;
-        }
-        .active-scope-panel.empty { border-color: var(--line); background: var(--surface); }
-        .active-scope-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.48rem; }
-        .active-scope-kicker { color: var(--muted); font-size: 0.58rem; font-weight: 800; text-transform: uppercase; }
-        .active-scope-title { color: var(--ink); font-size: 0.78rem; font-weight: 850; line-height: 1.2; }
-        .active-scope-state {
-            display: inline-flex; align-items: center; justify-content: center; min-height: 1.25rem;
-            padding: 0 0.42rem; border-radius: 0.34rem; background: #dbeafe; color: #1d4ed8;
-            font-size: 0.62rem; font-weight: 800;
-        }
-        .active-scope-panel.empty .active-scope-state { background: #f2f4f7; color: var(--muted); }
-        .active-scope-datasets { color: #1e3a8a; font-size: 0.72rem; font-weight: 800; margin-bottom: 0.42rem; }
-        .active-scope-empty-text, .active-scope-footer { color: var(--muted); font-size: 0.68rem; line-height: 1.45; }
-        .active-scope-chip-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.34rem; margin-bottom: 0.42rem; }
-        .active-scope-chip { border: 1px solid #d7e7ff; background: #ffffff; border-radius: 0.38rem; padding: 0.42rem; min-width: 0; }
-        .active-scope-chip-label { color: var(--muted); font-size: 0.58rem; font-weight: 800; text-transform: uppercase; }
-        .active-scope-chip-value { color: var(--ink); font-size: 0.72rem; font-weight: 850; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .chat-topbar {
-            position: sticky; top: 0; z-index: 20; min-height: 2.7rem;
-            display: flex; align-items: center; justify-content: space-between; gap: 1rem;
-            background: rgba(251,252,254,0.96); backdrop-filter: blur(10px);
-            border-bottom: 1px solid var(--line); margin: -0.2rem 0 0.8rem; padding: 0.35rem 0;
-        }
-        .chat-topbar-title { color: var(--ink); font-size: 1rem; font-weight: 850; letter-spacing: 0; }
-        .chat-topbar-reset {
-            display: inline-flex; align-items: center; justify-content: center;
-            min-height: 2rem; padding: 0 0.72rem; border: 1px solid var(--line);
-            border-radius: 0.45rem; color: #344054 !important; background: var(--surface);
-            font-size: 0.74rem; font-weight: 750; text-decoration: none !important;
-            white-space: nowrap;
-        }
-        .chat-topbar-reset:hover { border-color: #bfdbfe; color: var(--blue-dark) !important; background: #eff6ff; }
-        .chat-topbar-spacer { height: 0.1rem; }
-        .session-strip {
-            display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0.45rem;
-            min-height: 2rem; border: 1px solid var(--line); background: var(--surface); border-radius: 0.45rem; padding: 0 0.58rem;
-        }
-        .session-strip-label { color: var(--muted); font-size: 0.62rem; font-weight: 800; text-transform: uppercase; }
-        .session-strip-value { color: #344054; font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .inline-status {
-            display: flex; align-items: center; gap: 0.48rem; border: 1px solid var(--line);
-            border-radius: 0.45rem; padding: 0.52rem 0.62rem; margin: 0.35rem 0; background: var(--surface);
-            font-size: 0.84rem; line-height: 1.45;
-        }
-        .inline-status b { font-size: 0.72rem; text-transform: uppercase; color: var(--muted); min-width: fit-content; }
-        .inline-status-success { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
-        .inline-status-warning { border-color: #fde68a; background: #fffbeb; color: var(--amber); }
-        .inline-status-error { border-color: #fecaca; background: #fff1f2; color: var(--red); }
-        div[data-testid="stButton"] button, button[data-testid="stBaseButton-secondary"], button[data-testid="stBaseButton-primary"] {
-            min-height: 2.05rem !important; border-radius: 0.45rem !important; font-size: 0.76rem !important; font-weight: 750 !important;
-        }
-        button[data-testid="stBaseButton-primary"] { background: var(--blue) !important; border-color: var(--blue) !important; color: #fff !important; }
-        button[data-testid="stBaseButton-primary"]:hover { background: var(--blue-dark) !important; border-color: var(--blue-dark) !important; }
-        div[data-testid="stTabs"] button[role="tab"] { font-size: 0.78rem; min-height: 2.1rem; }
-        [data-testid="stChatInput"] textarea { min-height: 2.55rem !important; font-size: 0.86rem !important; }
-        [data-testid*="ChatMessageAvatar"] { width: 1.95rem !important; height: 1.95rem !important; }
-        div[data-testid="stCode"] code, div[data-testid="stCodeBlock"] code {
-            font-size: 0.72rem !important; line-height: 1.38 !important;
-        }
-        .compact-json-block {
-            background: #111827; color: #e5e7eb; border-radius: 0.45rem; padding: 0.72rem 0.82rem;
-            font-size: 0.68rem !important; line-height: 1.42; white-space: pre-wrap; border: 1px solid #1f2937;
-        }
-        .compact-json-null { color: #9ca3af; }
-        .compact-json-boolean { color: #5eead4; }
-        div[data-testid="stDataFrame"] { border: 1px solid var(--line); border-radius: 0.45rem; overflow: hidden; }
-        h4 { font-size: 0.98rem !important; }
-        @media (max-width: 780px) {
-            .chat-topbar { align-items: flex-start; flex-direction: column; }
-            .session-strip { width: 100%; }
-        }
-
-        /* registration_web parity overrides */
-        .stApp { background: #fbfcfe; }
-        [data-testid="stSidebar"] {
-            background: #f7f8fb !important;
-            border-right: 1px solid #e4e7ec !important;
-            box-shadow: none !important;
-        }
-        [data-testid="stSidebar"] > div {
-            box-shadow: none !important;
-        }
+        h2 { font-size: 1.16rem !important; line-height: 1.28 !important; }
+        h3 { font-size: 1.02rem !important; line-height: 1.34 !important; }
         [data-testid="stMain"] [data-testid="stCaptionContainer"] {
             color: #667085;
             font-size: 0.84rem;
@@ -1127,10 +1144,377 @@ def inject_style() -> None:
             line-height: 1.54;
             margin-bottom: 0.24rem;
         }
-        .small-note {
-            color: #667085;
+        [data-testid="stMarkdownContainer"] ul,
+        [data-testid="stMarkdownContainer"] ol {
+            margin-top: 0.18rem !important;
+            margin-bottom: 0.58rem !important;
+            padding-left: 1.05rem !important;
+        }
+        [data-testid="stMarkdownContainer"] li p {
+            margin: 0 !important;
+        }
+        .small-note { color: #667085; font-size: 0.84rem; line-height: 1.5; }
+        .detail-text {
+            color: #475467;
+            font-size: 0.88rem;
+            line-height: 1.54;
+            margin: 0.08rem 0 0.58rem;
+        }
+        div[data-testid="stTextArea"] textarea {
+            color: #182230 !important;
+            font-size: 0.88rem !important;
+            line-height: 1.5 !important;
+            border-radius: 8px !important;
+        }
+        div[data-testid="stTextArea"] textarea::placeholder { color: #98a2b3 !important; opacity: 1 !important; }
+        div[data-testid="stTextInput"] input { font-size: 0.9rem !important; border-radius: 8px !important; }
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+        div[data-testid="stTextInput"] input,
+        div[data-testid="stTextArea"] textarea {
+            border-color: #d0d5dd !important;
+            box-shadow: none !important;
+        }
+        [data-testid="stMain"] div[data-testid="stRadio"] div[role="radiogroup"] {
+            display: flex !important;
+            align-items: center !important;
+            gap: 0.78rem !important;
+            flex-wrap: wrap !important;
+            margin: 0.16rem 0 1.28rem !important;
+        }
+        [data-testid="stMain"] div[data-testid="stRadio"] label,
+        [data-testid="stMain"] div[data-testid="stRadio"] label p,
+        [data-testid="stMain"] div[data-testid="stRadio"] label span {
+            color: #344054 !important;
+            font-size: 0.88rem !important;
+            font-weight: 650 !important;
+            line-height: 1.2 !important;
+            margin: 0 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stRadio"] label {
+            display: inline-flex !important;
+            align-items: center !important;
+            width: auto !important;
+            min-height: 1.52rem !important;
+            gap: 0.38rem !important;
+            padding: 0 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stRadio"] label > div:first-child {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            margin: 0 !important;
+            transform: scale(0.92);
+            transform-origin: center;
+        }
+        [data-testid="stMain"] div[data-testid="stRadio"] label div[data-testid="stMarkdownContainer"] {
+            display: inline-flex !important;
+            align-items: center !important;
+            margin: 0 !important;
+        }
+        [data-testid="stBottom"] {
+            min-height: 3.75rem !important;
+        }
+        [data-testid="stBottomBlockContainer"] {
+            padding-top: 0.4rem !important;
+            padding-bottom: 0.42rem !important;
+        }
+        [data-testid="stChatInput"] {
+            min-height: 2.55rem !important;
+        }
+        [data-testid="stChatInput"] > div,
+        [data-testid="stChatInput"] > div > div:first-child,
+        [data-testid="stChatInput"] > div > div:first-child > div {
+            min-height: 2.55rem !important;
+        }
+        [data-testid="stChatInput"] textarea,
+        [data-testid="stChatInputTextArea"] {
+            height: 2.55rem !important;
+            min-height: 2.55rem !important;
+            padding-top: 0.62rem !important;
+            padding-bottom: 0.45rem !important;
+            font-size: 0.86rem !important;
+            line-height: 1.2 !important;
+        }
+        [data-testid="stChatInputTextArea"]::placeholder {
+            color: #8b95a5 !important;
+            opacity: 1 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stChatMessage"] {
+            gap: 0.62rem !important;
+            padding: 0.48rem 0 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stChatMessage"] [data-testid*="ChatMessageAvatar"] {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            width: 1.95rem !important;
+            height: 1.95rem !important;
+            min-width: 1.95rem !important;
+            min-height: 1.95rem !important;
+            margin-top: 0.12rem !important;
+            border-radius: 9px !important;
+            border: 1px solid #d8dee8 !important;
+            background: #ffffff !important;
+            color: #475467 !important;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06) !important;
+        }
+        [data-testid="stMain"] div[data-testid="stChatMessage"] [data-testid*="ChatMessageAvatar"] svg,
+        [data-testid="stMain"] div[data-testid="stChatMessage"] [data-testid*="ChatMessageAvatar"] span {
+            width: 1.05rem !important;
+            height: 1.05rem !important;
+            font-size: 1.05rem !important;
+            line-height: 1 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stChatMessage"] [data-testid="stChatMessageAvatarUser"] {
+            border-color: #f1c6c6 !important;
+            background: #fff8f8 !important;
+            color: #b42318 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stChatMessage"] [data-testid="stChatMessageAvatarAssistant"] {
+            border-color: #efd7a6 !important;
+            background: #fffaf0 !important;
+            color: #a16207 !important;
+        }
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
+            font-size: 0.76rem !important;
+        }
+        pre,
+        pre code,
+        div[data-testid="stCode"] code,
+        div[data-testid="stCodeBlock"] code {
+            font-size: 0.72rem !important;
+            line-height: 1.38 !important;
+        }
+        div[data-testid="stCode"] pre,
+        div[data-testid="stCodeBlock"] pre {
+            padding: 0.65rem 0.75rem !important;
+            border-radius: 8px !important;
+        }
+        [data-testid="stMain"] h4,
+        [data-testid="stMain"] div[data-testid="stHeading"] h4,
+        [data-testid="stMain"] div[data-testid="stMarkdownContainer"] h4 {
+            color: #344054 !important;
+            font-size: 0.88rem !important;
+            font-weight: 720 !important;
+            line-height: 1.24 !important;
+            margin: 0.72rem 0 0.42rem !important;
+            padding: 0 !important;
+        }
+        .detail-section-title {
+            color: #344054;
+            font-size: 0.88rem;
+            font-weight: 720;
+            line-height: 1.24;
+            margin: 0.72rem 0 0.34rem;
+        }
+        .inline-status {
+            display: flex;
+            align-items: center;
+            gap: 0.22rem;
+            min-height: 2.15rem;
+            margin: 0.18rem 0 0.86rem;
+            padding: 0.48rem 0.72rem;
+            border-radius: 8px;
+            background: #e8efff;
+            color: #344054;
             font-size: 0.84rem;
-            line-height: 1.5;
+            line-height: 1.2;
+            box-sizing: border-box;
+        }
+        .inline-status * {
+            line-height: 1.2 !important;
+        }
+        .inline-status strong {
+            color: #263244;
+            font-weight: 720;
+        }
+        .inline-status-warning {
+            background: #fffbea;
+            color: #344054;
+        }
+        .inline-status-error {
+            background: #fff1f3;
+            color: #912018;
+        }
+        .inline-status-success {
+            background: #ecfdf3;
+            color: #027a48;
+        }
+        .compact-json-block {
+            margin: 0.2rem 0 0.72rem;
+            padding: 0.5rem 0.62rem;
+            border: 1px solid #eef2f7 !important;
+            border-radius: 8px !important;
+            background: #ffffff !important;
+            overflow: auto;
+            box-shadow: none !important;
+        }
+        .compact-json-block,
+        .compact-json-block * {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
+            font-size: 0.62rem !important;
+            line-height: 1.32 !important;
+            color: #344054 !important;
+            white-space: pre !important;
+        }
+        .compact-json-key { color: #344054 !important; font-weight: 680; }
+        .compact-json-string { color: #b45309 !important; }
+        .compact-json-number { color: #2563eb !important; }
+        .compact-json-boolean { color: #0f766e !important; }
+        .compact-json-null { color: #7c3aed !important; }
+        .compact-json-punctuation { color: #667085 !important; }
+        [data-testid="stMain"] div[data-testid="stJson"],
+        [data-testid="stMain"] .stJson,
+        [data-testid="stMain"] .react-json-view {
+            padding: 0.46rem 0.56rem !important;
+            border: 1px solid #eef2f7 !important;
+            border-radius: 8px !important;
+            background: #ffffff !important;
+        }
+        [data-testid="stMain"] div[data-testid="stJson"],
+        [data-testid="stMain"] div[data-testid="stJson"] *,
+        [data-testid="stMain"] .stJson,
+        [data-testid="stMain"] .stJson *,
+        [data-testid="stMain"] .react-json-view,
+        [data-testid="stMain"] .react-json-view * {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
+            font-size: 0.62rem !important;
+            line-height: 1.3 !important;
+        }
+        [data-testid="stMain"] details div[data-testid="stCode"] code,
+        [data-testid="stMain"] details div[data-testid="stCodeBlock"] code,
+        [data-testid="stMain"] details pre,
+        [data-testid="stMain"] details pre code {
+            font-size: 0.62rem !important;
+            line-height: 1.32 !important;
+        }
+        [data-testid="stMain"] details div[data-testid="stCode"] pre,
+        [data-testid="stMain"] details div[data-testid="stCodeBlock"] pre {
+            padding: 0.54rem 0.62rem !important;
+        }
+        div[data-testid="stDataFrame"] {
+            border: 1px solid #d8dee8;
+            border-radius: 10px;
+            overflow: visible;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 8px 24px rgba(16, 24, 40, 0.04);
+        }
+        div[data-testid="stDataFrame"] > div {
+            border-radius: 10px;
+        }
+        div[data-testid="stDataFrame"] button {
+            border-radius: 8px !important;
+        }
+        [data-testid="stMain"] div[data-testid="stButton"] button,
+        [data-testid="stMain"] div[data-testid="stDownloadButton"] button {
+            min-height: 2.25rem !important;
+            border-radius: 7px !important;
+            font-size: 0.84rem !important;
+            font-weight: 650 !important;
+            line-height: 1.1 !important;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04) !important;
+        }
+        [data-testid="stMain"] div[data-testid="stButton"] button p,
+        [data-testid="stMain"] div[data-testid="stDownloadButton"] button p {
+            font-size: inherit !important;
+            font-weight: inherit !important;
+            line-height: 1.1 !important;
+            margin: 0 !important;
+        }
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"] {
+            border-color: #2563eb !important;
+            background: #2563eb !important;
+            color: #ffffff !important;
+            box-shadow: 0 6px 14px rgba(37, 99, 235, 0.24) !important;
+        }
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"]:hover {
+            border-color: #1d4ed8 !important;
+            background: #1d4ed8 !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"]:active {
+            border-color: #1e40af !important;
+            background: #1e40af !important;
+            color: #ffffff !important;
+        }
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"]:disabled,
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"][disabled] {
+            border-color: #93c5fd !important;
+            background: #93c5fd !important;
+            color: rgba(255, 255, 255, 0.82) !important;
+            box-shadow: none !important;
+        }
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"] p,
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"] span,
+        [data-testid="stMain"] button[data-testid="stBaseButton-primary"] div[data-testid="stMarkdownContainer"] p {
+            color: #ffffff !important;
+        }
+        [data-testid="stMain"] details {
+            border-color: #d8dee8 !important;
+            border-radius: 8px !important;
+            background: #ffffff !important;
+        }
+        [data-testid="stMain"] details summary {
+            min-height: 2.25rem !important;
+            padding: 0.5rem 0.7rem !important;
+        }
+        [data-testid="stMain"] details summary p {
+            color: #344054 !important;
+            font-size: 0.84rem !important;
+            font-weight: 650 !important;
+            line-height: 1.18 !important;
+            margin: 0 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stTabs"] button[role="tab"] {
+            min-height: 2.15rem !important;
+            padding: 0.38rem 0.7rem !important;
+            font-size: 0.84rem !important;
+            font-weight: 650 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stTabs"] button[role="tab"] p,
+        [data-testid="stMain"] div[data-testid="stTabs"] button[role="tab"] span {
+            font-size: 0.82rem !important;
+            font-weight: 650 !important;
+            line-height: 1.15 !important;
+            margin: 0 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stAlert"] {
+            border-radius: 8px !important;
+            padding: 0.48rem 0.68rem !important;
+        }
+        [data-testid="stMain"] div[data-testid="stAlert"] [role="alert"],
+        [data-testid="stMain"] div[data-testid="stAlert"] div[data-baseweb="notification"] {
+            display: flex !important;
+            align-items: center !important;
+            min-height: 2rem !important;
+            padding-top: 0.36rem !important;
+            padding-bottom: 0.36rem !important;
+            box-sizing: border-box !important;
+        }
+        [data-testid="stMain"] div[data-testid="stAlert"] > div {
+            display: flex !important;
+            align-items: center !important;
+            min-height: 2rem !important;
+        }
+        [data-testid="stMain"] div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] {
+            display: flex !important;
+            align-items: center !important;
+            min-height: 1.12rem !important;
+            padding: 0 !important;
+        }
+        [data-testid="stMain"] div[data-testid="stAlert"] div[data-testid="stMarkdownContainer"] > div {
+            display: flex !important;
+            align-items: center !important;
+            min-height: 1.12rem !important;
+        }
+        [data-testid="stMain"] div[data-testid="stAlert"] p {
+            display: flex !important;
+            align-items: center !important;
+            font-size: 0.84rem !important;
+            line-height: 1.12 !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         .session-strip {
             display: grid;
@@ -1175,14 +1559,9 @@ def inject_style() -> None:
             z-index: 2147483000;
             display: flex;
             align-items: center;
-            justify-content: flex-start;
             gap: 0.62rem;
             box-sizing: border-box;
             padding: 0 0 0 1.1rem;
-            margin: 0;
-            border-bottom: 0;
-            background: transparent;
-            backdrop-filter: none;
             pointer-events: none;
         }
         .chat-topbar-title {
@@ -1228,118 +1607,23 @@ def inject_style() -> None:
         .chat-topbar-spacer {
             height: 2.85rem;
         }
-        .sidebar-brand {
-            margin: 0 0 0.65rem;
-            padding: 0.62rem 0.66rem;
-            border: 1px solid #e4e7ec;
-            border-radius: 9px;
-            background: #ffffff;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+        @media (max-width: 980px) {
+            .chat-topbar {
+                inset: 3.05rem 1rem auto 1rem;
+                height: 3.2rem;
+                padding-left: 0;
+            }
+            .chat-topbar-title { display: none; }
+            .chat-topbar .session-strip { max-width: none; }
+            .chat-topbar-spacer { height: 3.4rem; }
         }
-        .sidebar-brand-row {
-            display: flex;
-            align-items: center;
-            gap: 0.52rem;
-        }
-        .sidebar-brand-mark {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex: 0 0 auto;
-            width: 1.72rem;
-            height: 1.72rem;
-            border-radius: 7px;
-            color: #ffffff;
-            background: #1f2a44;
-            font-size: 0.68rem;
-            font-weight: 800;
+        .chat-table-meta {
+            color: #5b667a;
+            font-size: 0.76rem;
+            font-weight: 680;
+            line-height: 1.35;
+            margin: 0.75rem 0 0.28rem;
             letter-spacing: 0;
-        }
-        .sidebar-brand-title {
-            color: #111827;
-            font-size: 0.88rem;
-            font-weight: 760;
-            line-height: 1.14;
-        }
-        .sidebar-brand-subtitle {
-            color: #667085;
-            font-size: 0.66rem;
-            line-height: 1.25;
-            margin-top: 0.1rem;
-            white-space: nowrap;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] {
-            display: flex;
-            flex-direction: column;
-            gap: 0.16rem;
-            margin-bottom: 0.7rem;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label {
-            display: flex !important;
-            align-items: center !important;
-            width: 100%;
-            min-height: 2rem;
-            margin: 0 !important;
-            padding: 0.34rem 0.5rem !important;
-            border: 1px solid transparent;
-            border-radius: 7px;
-            background: transparent;
-            transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-            background: #ffffff;
-            border-color: #e4e7ec;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
-            background: #ffffff;
-            border-color: #cfd8e6;
-            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
-            color: #101828;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
-            margin: 0 !important;
-            width: 100%;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p,
-        [data-testid="stSidebar"] div[role="radiogroup"] label p {
-            display: flex !important;
-            align-items: center !important;
-            gap: 0.42rem !important;
-            color: #475467;
-            font-size: 0.78rem !important;
-            font-weight: 650 !important;
-            line-height: 1.12 !important;
-            margin: 0 !important;
-            white-space: nowrap;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p::before {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 1rem;
-            height: 1rem;
-            border-radius: 5px;
-            color: #475467;
-            background: #eef2f7;
-            border: 1px solid #d9e0ea;
-            font-size: 0.58rem;
-            font-weight: 800;
-            line-height: 1;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-of-type(1) div[data-testid="stMarkdownContainer"] p::before { content: "◔"; }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-of-type(2) div[data-testid="stMarkdownContainer"] p::before { content: "◇"; }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-of-type(3) div[data-testid="stMarkdownContainer"] p::before { content: "↧"; }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
-            color: #101828;
-            font-weight: 740 !important;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) div[data-testid="stMarkdownContainer"] p::before {
-            color: #ffffff;
-            background: #1f2a44;
-            border-color: #1f2a44;
-        }
-        [data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
-            display: none;
         }
         [data-testid="stSidebar"] .small-note {
             color: #667085;
@@ -1353,12 +1637,7 @@ def inject_style() -> None:
             line-height: 1.45;
             margin-bottom: 0.35rem;
         }
-        .config-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.36rem;
-            margin: 0.38rem 0 0.55rem;
-        }
+        .config-list { display: flex; flex-direction: column; gap: 0.36rem; margin: 0.38rem 0 0.55rem; }
         .config-row {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1373,12 +1652,7 @@ def inject_style() -> None:
             overflow-x: hidden;
         }
         .config-meta { min-width: 0; }
-        .config-label {
-            color: #344054;
-            font-size: 0.72rem;
-            font-weight: 700;
-            line-height: 1.2;
-        }
+        .config-label { color: #344054; font-size: 0.72rem; font-weight: 700; line-height: 1.2; }
         .config-env {
             display: block;
             max-width: 100%;
@@ -1425,17 +1699,8 @@ def inject_style() -> None:
             line-height: 1;
             white-space: nowrap;
         }
-        .config-badge.ok {
-            color: #067647;
-            background: #ecfdf3;
-            border: 1px solid #abefc6;
-        }
-        .config-badge.missing,
-        .config-badge.warn {
-            color: #b42318;
-            background: #fef3f2;
-            border: 1px solid #fecdca;
-        }
+        .config-badge.ok { color: #067647; background: #ecfdf3; border: 1px solid #abefc6; }
+        .config-badge.missing { color: #b42318; background: #fef3f2; border: 1px solid #fecdca; }
         .active-scope-panel {
             margin: 0.18rem 0 0.58rem;
             padding: 0.62rem 0.66rem;
@@ -1448,6 +1713,62 @@ def inject_style() -> None:
             background: #f9fafb;
             border-style: dashed;
             box-shadow: none;
+        }
+        .active-scope-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 0.5rem;
+            margin-bottom: 0.46rem;
+        }
+        .active-scope-kicker {
+            color: #667085;
+            font-size: 0.58rem;
+            font-weight: 760;
+            letter-spacing: 0.06em;
+            line-height: 1.1;
+            text-transform: uppercase;
+        }
+        .active-scope-title {
+            color: #101828;
+            font-size: 0.82rem;
+            font-weight: 760;
+            line-height: 1.18;
+            margin-top: 0.1rem;
+        }
+        .active-scope-state {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 1.24rem;
+            padding: 0.12rem 0.4rem;
+            border-radius: 999px;
+            color: #175cd3;
+            background: #eff8ff;
+            border: 1px solid #b2ddff;
+            font-size: 0.6rem;
+            font-weight: 760;
+            line-height: 1;
+            white-space: nowrap;
+        }
+        .active-scope-panel.empty .active-scope-state {
+            color: #667085;
+            background: #f2f4f7;
+            border-color: #e4e7ec;
+        }
+        .active-scope-datasets {
+            color: #344054;
+            font-size: 0.68rem;
+            font-weight: 680;
+            line-height: 1.28;
+            margin-bottom: 0.42rem;
+            word-break: keep-all;
+        }
+        .active-scope-empty-text {
+            color: #667085;
+            font-size: 0.68rem;
+            line-height: 1.42;
+            margin-top: 0.08rem;
         }
         .active-scope-chip-list {
             display: flex;
@@ -1482,6 +1803,143 @@ def inject_style() -> None:
             text-align: right;
             overflow-wrap: anywhere;
         }
+        .active-scope-chip-context {
+            grid-column: 1 / -1;
+            color: #98a2b3;
+            font-size: 0.56rem;
+            line-height: 1.12;
+            margin-top: -0.1rem;
+        }
+        .active-scope-footer {
+            margin-top: 0.42rem;
+            padding-top: 0.4rem;
+            border-top: 1px solid #edf1f7;
+            color: #667085;
+            font-size: 0.62rem;
+            font-weight: 650;
+            line-height: 1.3;
+        }
+        .sidebar-brand {
+            margin: 0 0 0.65rem;
+            padding: 0.62rem 0.66rem;
+            border: 1px solid #e4e7ec;
+            border-radius: 9px;
+            background: #ffffff;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+        }
+        .sidebar-brand-row {
+            display: flex;
+            align-items: center;
+            gap: 0.52rem;
+        }
+        .sidebar-brand-mark {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            width: 1.72rem;
+            height: 1.72rem;
+            border-radius: 7px;
+            color: #ffffff;
+            background: #1f2a44;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0;
+        }
+        .sidebar-brand-title {
+            color: #111827;
+            font-size: 0.88rem;
+            font-weight: 760;
+            line-height: 1.14;
+        }
+        .sidebar-brand-subtitle {
+            color: #667085;
+            font-size: 0.66rem;
+            line-height: 1.25;
+            margin-top: 0.1rem;
+            white-space: nowrap;
+        }
+        .sidebar-section-label {
+            color: #667085;
+            font-size: 0.64rem;
+            font-weight: 760;
+            letter-spacing: 0.06em;
+            margin: 0.45rem 0 0.24rem;
+            text-transform: uppercase;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] {
+            display: flex;
+            flex-direction: column;
+            gap: 0.16rem;
+            margin-bottom: 0.7rem;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label {
+            display: flex !important;
+            align-items: center !important;
+            width: 100%;
+            min-height: 2rem;
+            margin: 0 !important;
+            padding: 0.34rem 0.5rem !important;
+            border: 1px solid transparent;
+            border-radius: 7px;
+            background: transparent;
+            transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+            background: #ffffff;
+            border-color: #e4e7ec;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+            background: #ffffff;
+            border-color: #cfd8e6;
+            box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] {
+            margin: 0 !important;
+            width: 100%;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] div[role="radiogroup"] label p {
+            display: flex !important;
+            align-items: center !important;
+            gap: 0.42rem !important;
+            color: #475467;
+            font-size: 0.78rem !important;
+            font-weight: 650 !important;
+            line-height: 1.12 !important;
+            margin: 0 !important;
+            white-space: nowrap;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label div[data-testid="stMarkdownContainer"] p::before {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1rem;
+            height: 1rem;
+            border-radius: 5px;
+            color: #475467;
+            background: #eef2f7;
+            border: 1px solid #d9e0ea;
+            font-size: 0.58rem;
+            font-weight: 800;
+            line-height: 1;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-of-type(1) div[data-testid="stMarkdownContainer"] p::before { content: "◔"; }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-of-type(2) div[data-testid="stMarkdownContainer"] p::before { content: "◇"; }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:nth-of-type(3) div[data-testid="stMarkdownContainer"] p::before { content: "↧"; }
+        [data-testid="stSidebar"]:has(.developer-nav-enabled) div[role="radiogroup"] label:nth-of-type(4) div[data-testid="stMarkdownContainer"] p::before { content: "J"; }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p {
+            color: #101828;
+            font-weight: 740 !important;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) div[data-testid="stMarkdownContainer"] p::before {
+            color: #ffffff;
+            background: #1f2a44;
+            border-color: #1f2a44;
+        }
+        [data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
+            display: none;
+        }
         [data-testid="stSidebar"] details {
             border-radius: 8px !important;
             margin-bottom: 0.44rem !important;
@@ -1515,7 +1973,13 @@ def inject_style() -> None:
             background: #ffffff !important;
             box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04) !important;
         }
-        [data-testid="stSidebar"] div[data-testid="stButton"] button p,
+        [data-testid="stSidebar"] div[data-testid="stButton"] button p {
+            color: #344054 !important;
+            font-size: 0.7rem !important;
+            font-weight: 620 !important;
+            line-height: 1 !important;
+            margin: 0 !important;
+        }
         [data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"] div[data-testid="stMarkdownContainer"] p {
             color: #344054 !important;
             font-size: 0.7rem !important;
@@ -1528,56 +1992,85 @@ def inject_style() -> None:
             color: #111827 !important;
             background: #f9fafb !important;
         }
-        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+        [data-testid="stSidebar"] div[data-testid="stAlert"] {
             display: flex !important;
             align-items: center !important;
-            height: 2.34rem !important;
-            min-height: 2.34rem !important;
+            min-height: 2.25rem !important;
+            padding: 0.42rem 0.58rem !important;
+            border-radius: 8px !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stAlert"] [data-testid="stMarkdownContainer"],
+        [data-testid="stSidebar"] div[data-testid="stAlert"] p {
+            margin: 0 !important;
+            line-height: 1.15 !important;
+            font-size: 0.74rem !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stToggle"],
+        [data-testid="stSidebar"] div[data-testid="stCheckbox"] {
+            margin: 0.34rem 0 0.48rem !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stToggle"] label,
+        [data-testid="stSidebar"] div[data-testid="stCheckbox"] label {
+            min-height: 1.7rem !important;
+            gap: 0.42rem !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stCheckbox"] label > div:first-child {
+            transform: scale(0.78);
+            transform-origin: left center;
+            margin-right: -0.18rem;
+        }
+        [data-testid="stSidebar"] div[data-testid="stToggle"] label p,
+        [data-testid="stSidebar"] div[data-testid="stCheckbox"] label p,
+        [data-testid="stSidebar"] div[data-testid="stWidgetLabel"] p {
+            color: #344054 !important;
+            font-size: 0.78rem !important;
+            font-weight: 650 !important;
+            line-height: 1.18 !important;
+            margin: 0 !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stWidgetLabel"] {
+            min-height: 1.2rem !important;
+            margin-bottom: 0.28rem !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stWidgetLabel"] button {
+            width: 1rem !important;
+            height: 1rem !important;
+            padding: 0 !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stSelectbox"] {
+            margin-bottom: 0.62rem !important;
+        }
+        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] > div {
+            height: 2.05rem !important;
+            min-height: 2.05rem !important;
             border-radius: 7px !important;
             border-color: #cfd8e6 !important;
             background: #ffffff !important;
             box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04) !important;
         }
-        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] input,
-        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] [data-testid="stMarkdownContainer"] p,
-        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] > div > div {
-            line-height: 1.35rem !important;
+        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] * {
+            font-size: 0.78rem !important;
+            line-height: 1.15 !important;
         }
-        [data-testid="stSidebar"] div[data-testid="stSelectbox"] div[data-baseweb="select"] > div > div {
-            display: flex !important;
-            align-items: center !important;
-            min-height: 2.1rem !important;
-            padding-top: 0 !important;
-            padding-bottom: 0 !important;
-            overflow: visible !important;
-        }
-        .compact-json-block {
-            margin: 0.2rem 0 0.72rem;
-            padding: 0.5rem 0.62rem;
-            border: 1px solid #eef2f7 !important;
+        div[data-baseweb="popover"] ul[role="listbox"],
+        div[data-baseweb="popover"] div[role="listbox"] {
+            padding: 0.28rem !important;
             border-radius: 8px !important;
-            background: #ffffff !important;
-            overflow: auto;
-            box-shadow: none !important;
-            color: #344054 !important;
-            white-space: pre !important;
         }
-        .compact-json-block,
-        .compact-json-block * {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace !important;
-            font-size: 0.62rem !important;
-            line-height: 1.32 !important;
-            color: #344054 !important;
+        div[data-baseweb="popover"] li[role="option"],
+        div[data-baseweb="popover"] div[role="option"] {
+            height: 1.9rem !important;
+            min-height: 1.9rem !important;
+            padding: 0.28rem 0.5rem !important;
+            border-radius: 6px !important;
+            box-sizing: border-box !important;
+            font-size: 0.7rem !important;
+            line-height: 1.12 !important;
         }
-        @media (max-width: 980px) {
-            .chat-topbar {
-                inset: 3.05rem 1rem auto 1rem;
-                height: 3.2rem;
-                padding-left: 0;
-            }
-            .chat-topbar-title { display: none; }
-            .chat-topbar .session-strip { max-width: none; }
-            .chat-topbar-spacer { height: 3.4rem; }
+        div[data-baseweb="popover"] li[role="option"] *,
+        div[data-baseweb="popover"] div[role="option"] * {
+            font-size: 0.7rem !important;
+            line-height: 1.12 !important;
         }
         </style>
         """,
