@@ -26,31 +26,30 @@ python tools\upload_json_to_mongodb.py
 
 ## Stored Document Shape
 
-v3 upload 문서는 기존 loader 호환 필드를 유지하면서 공통 envelope를 함께 저장한다.
+이 스크립트는 로컬 seed JSON을 MongoDB에 넣기 위한 보조 도구지만, 저장 문서 자체에는 로컬 파일 경로나 upload 출처를 남기지 않는다. 실제 운영 경로는 authoring flow가 받은 자연어 text를 MongoDB metadata item으로 저장하는 방식이므로, seed upload도 loader가 읽는 lean shape에 맞춘다.
 
-공통 envelope:
+Domain 예시:
 
 ```json
 {
   "_id": "domain:process_groups:DA",
-  "schema_version": "metadata-doc.v1",
-  "agent_version": "metadata_driven_v3",
-  "metadata_type": "domain",
-  "namespace": "core",
-  "identity": {"type": "domain", "section": "process_groups", "key": "DA"},
-  "source": {"kind": "local_json", "path": ".../metadata/domain_items.json", "name": "domain_items.json"},
+  "section": "process_groups",
+  "key": "DA",
   "status": "active",
-  "payload_hash": "..."
+  "payload": {
+    "display_name": "D/A",
+    "processes": ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
+  }
 }
 ```
 
-기존 main/data-analysis loader가 읽는 필드는 그대로 남긴다.
+main/data-analysis loader가 읽는 필드는 아래처럼 metadata 종류별 식별자와 `payload`다.
 
 - Domain: `section`, `key`, `payload`
 - Table catalog: `dataset_key`, `key`, `payload`
 - Main flow filter: `filter_key`, `key`, `payload`
 
-즉 MongoDB에서 문서를 봤을 때는 metadata 종류와 출처를 바로 알 수 있고, flow 실행 로직은 기존처럼 범용 loader가 metadata payload만 읽어 동작한다.
+`schema_version`, `agent_version`, `namespace`, `identity`, `source`, `_source_file`, `_source_name`, `payload_hash`는 저장하지 않는다.
 
 ## Upload Options
 

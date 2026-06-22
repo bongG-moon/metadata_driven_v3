@@ -249,10 +249,151 @@ def _query_template_from_text(text: str) -> str:
 
 
 def _columns_from_query(query: str) -> list[str]:
-    match = re.search(r"\bselect\b\s+(.*?)\s+\bfrom\b", query, flags=re.IGNORECASE | re.DOTALL)
-    if not match:
+    sql = _strip_outer_parentheses(str(query or "").strip())
+    select_bounds = _top_level_select_bounds(sql)
+    if not select_bounds:
         return []
-    return _unique_text(_column_name_from_select_expr(part) for part in _split_select_list(match.group(1)))
+    select_start, from_start = select_bounds
+    columns = _unique_text(_column_name_from_select_expr(part) for part in _split_select_list(sql[select_start:from_start]))
+    columns = [column for column in columns if not _is_wildcard_column(column)]
+    if columns:
+        return columns
+    subquery = _first_from_subquery(sql, from_start)
+    return _columns_from_query(subquery) if subquery else []
+
+
+def _top_level_select_bounds(query: str) -> tuple[int, int] | None:
+    sql = str(query or "").strip()
+    select_index = _find_top_level_keyword(sql, "select", 0)
+    if select_index < 0:
+        return None
+    from_index = _find_top_level_keyword(sql, "from", select_index + len("select"))
+    if from_index < 0:
+        return None
+    return select_index + len("select"), from_index
+
+
+def _find_top_level_keyword(sql: str, keyword: str, start: int = 0) -> int:
+    depth = 0
+    quote = ""
+    line_comment = False
+    block_comment = False
+    index = max(0, start)
+    while index < len(sql):
+        char = sql[index]
+        next_char = sql[index + 1] if index + 1 < len(sql) else ""
+        if line_comment:
+            if char in "\r\n":
+                line_comment = False
+            index += 1
+            continue
+        if block_comment:
+            if char == "*" and next_char == "/":
+                block_comment = False
+                index += 2
+                continue
+            index += 1
+            continue
+        if quote:
+            if quote == "]" and char == "]":
+                quote = ""
+            elif char == quote:
+                if quote == "'" and next_char == "'":
+                    index += 2
+                    continue
+                quote = ""
+            index += 1
+            continue
+        if char == "-" and next_char == "-":
+            line_comment = True
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            block_comment = True
+            index += 2
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            index += 1
+            continue
+        if char == "[":
+            quote = "]"
+            index += 1
+            continue
+        if char == "(":
+            depth += 1
+            index += 1
+            continue
+        if char == ")":
+            depth = max(0, depth - 1)
+            index += 1
+            continue
+        if depth == 0 and _keyword_at(sql, index, keyword):
+            return index
+        index += 1
+    return -1
+
+
+def _keyword_at(sql: str, index: int, keyword: str) -> bool:
+    end = index + len(keyword)
+    if sql[index:end].lower() != keyword.lower():
+        return False
+    before = sql[index - 1] if index > 0 else ""
+    after = sql[end] if end < len(sql) else ""
+    return not (before.isalnum() or before == "_") and not (after.isalnum() or after == "_")
+
+
+def _strip_outer_parentheses(sql: str) -> str:
+    text = str(sql or "").strip()
+    while text.startswith("(") and text.endswith(")"):
+        close_index = _matching_parenthesis_index(text, 0)
+        if close_index != len(text) - 1:
+            break
+        text = text[1:-1].strip()
+    return text
+
+
+def _first_from_subquery(query: str, from_index: int) -> str:
+    sql = str(query or "")
+    index = from_index + len("from")
+    while index < len(sql) and sql[index].isspace():
+        index += 1
+    if index >= len(sql) or sql[index] != "(":
+        return ""
+    close_index = _matching_parenthesis_index(sql, index)
+    if close_index <= index:
+        return ""
+    return sql[index + 1 : close_index]
+
+
+def _matching_parenthesis_index(text: str, open_index: int) -> int:
+    depth = 0
+    quote = ""
+    for index in range(open_index, len(text)):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+        if quote:
+            if quote == "]" and char == "]":
+                quote = ""
+            elif char == quote:
+                if quote == "'" and next_char == "'":
+                    continue
+                quote = ""
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            continue
+        if char == "[":
+            quote = "]"
+            continue
+        if char == "(":
+            depth += 1
+            continue
+        if char == ")":
+            depth -= 1
+            if depth == 0:
+                return index
+    return -1
 
 
 def _split_select_list(select_text: str) -> list[str]:
@@ -276,6 +417,7 @@ def _split_select_list(select_text: str) -> list[str]:
 
 def _column_name_from_select_expr(expr: str) -> str:
     text = _clean(expr).strip('"`[]')
+    text = re.sub(r"^\s*distinct\s+", "", text, flags=re.IGNORECASE)
     alias = re.search(r"\s+as\s+([A-Za-z0-9_\"`\[\] ]+)$", text, flags=re.IGNORECASE)
     if alias:
         return _clean(alias.group(1)).strip('"`[]')
@@ -283,6 +425,11 @@ def _column_name_from_select_expr(expr: str) -> str:
     if len(tokens) > 1:
         return tokens[-1].strip('"`[]')
     return text.split(".")[-1].strip('"`[]')
+
+
+def _is_wildcard_column(column: str) -> bool:
+    text = _clean(column)
+    return text in {"*", ".*"} or text.endswith(".*")
 
 
 def _filter_mappings_from_text(text: str) -> dict[str, list[str]]:

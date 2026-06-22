@@ -14,9 +14,6 @@ DEFAULT_DOMAIN_COLLECTION = "agent_v3_domain_items"
 DEFAULT_TABLE_CATALOG_COLLECTION = "agent_v3_table_catalog_items"
 DEFAULT_MAIN_FLOW_FILTER_COLLECTION = "agent_v3_main_flow_filters"
 LEGACY_PREFIXES = {"agent_v1", "agent_v2", "agent_v3", "agent_v4"}
-METADATA_DOC_SCHEMA_VERSION = "metadata-doc.v1"
-AGENT_VERSION = "metadata_driven_v3"
-CORE_METADATA_TYPES = {"domain", "table_catalog", "main_flow_filter"}
 
 
 def main() -> int:
@@ -207,13 +204,13 @@ def _table_catalog_docs(path: Path) -> list[dict[str, Any]]:
     data = _read_json(path)
     docs = []
     for dataset_key, payload in data.get("datasets", {}).items():
-        docs.append(_doc(f"table_catalog:{dataset_key}", path, {"dataset_key": dataset_key, "payload": payload}))
+        docs.append(_doc(f"table_catalog:{dataset_key}", path, {"dataset_key": dataset_key, "key": dataset_key, "payload": payload}))
     return docs
 
 
 def _main_flow_filter_docs(path: Path) -> list[dict[str, Any]]:
     data = _read_json(path)
-    return [_doc(f"main_flow_filter:{key}", path, {"filter_key": key, "payload": payload}) for key, payload in data.items()]
+    return [_doc(f"main_flow_filter:{key}", path, {"filter_key": key, "key": key, "payload": payload}) for key, payload in data.items()]
 
 
 def _regression_question_docs(path: Path) -> list[dict[str, Any]]:
@@ -236,55 +233,13 @@ def _sample_row_docs(path: Path) -> list[dict[str, Any]]:
     return docs
 
 
-def _doc(doc_id: str, source_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
-    metadata_type, identity = _metadata_identity(doc_id, payload)
+def _doc(doc_id: str, _source_path: Path, payload: dict[str, Any]) -> dict[str, Any]:
     doc = {
         "_id": doc_id,
-        "schema_version": METADATA_DOC_SCHEMA_VERSION,
-        "agent_version": AGENT_VERSION,
-        "metadata_type": metadata_type,
-        "namespace": "core" if metadata_type in CORE_METADATA_TYPES else "validation",
-        "identity": identity,
-        "source": {"kind": "local_json", "path": str(source_path), "name": source_path.name},
-        "_source_file": str(source_path),
-        "_source_name": source_path.name,
         **payload,
     }
     doc.setdefault("status", "active")
-    doc["payload_hash"] = _stable_hash({key: value for key, value in payload.items() if key != "payload_hash"})
     return doc
-
-
-def _metadata_identity(doc_id: str, payload: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    if doc_id.startswith("domain:"):
-        return "domain", {
-            "type": "domain",
-            "section": _clean(payload.get("section")),
-            "key": _clean(payload.get("key")),
-        }
-    if doc_id.startswith("table_catalog:"):
-        return "table_catalog", {
-            "type": "table_catalog",
-            "dataset_key": _clean(payload.get("dataset_key")),
-        }
-    if doc_id.startswith("main_flow_filter:"):
-        return "main_flow_filter", {
-            "type": "main_flow_filter",
-            "filter_key": _clean(payload.get("filter_key")),
-        }
-    if doc_id.startswith("regression_question:"):
-        return "regression_question", {
-            "type": "regression_question",
-            "id": _clean(payload.get("id")),
-        }
-    if doc_id.startswith("sample:"):
-        return "sample_data", {
-            "type": "sample_data",
-            "dataset_key": _clean(payload.get("dataset_key")),
-            "row_index": payload.get("row_index"),
-            "row_hash": _clean(payload.get("row_hash")),
-        }
-    return "metadata", {"type": "metadata", "id": doc_id}
 
 
 def _read_json(path: Path) -> Any:

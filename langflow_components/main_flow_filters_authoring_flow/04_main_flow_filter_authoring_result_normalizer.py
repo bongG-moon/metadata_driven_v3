@@ -14,6 +14,23 @@ from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
+FILTER_LIST_FIELDS = {
+    "aliases",
+    "column_candidates",
+    "columns",
+    "required_params",
+    "sample_values",
+    "known_values",
+    "values",
+    "group_by_columns",
+    "group_columns",
+}
+OPERATOR_ALIASES = {
+    "between": "range",
+    "exists": "not_empty",
+}
+
+
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: main-flow-filter authoring LLM JSON을 MongoDB 저장 가능한 filter item으로 정규화합니다.
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
@@ -50,8 +67,9 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
     payload = deepcopy(raw_item.get("payload")) if isinstance(raw_item.get("payload"), dict) else {}
     if not filter_key:
         errors.append(f"items[{index}] filter_key가 없습니다.")
-    aliases = _as_text_list(payload.get("aliases"))
-    columns = _as_text_list(payload.get("column_candidates"))
+    _normalize_payload_aliases(payload)
+    aliases = _as_text_list(payload.get("aliases") or payload.get("display_name") or filter_key)
+    columns = _as_text_list(payload.get("column_candidates") or payload.get("columns"))
     if not aliases:
         errors.append(f"{filter_key} aliases가 필요합니다.")
     if not columns:
@@ -63,12 +81,17 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
     payload.setdefault("value_type", "string")
     payload.setdefault("value_shape", "scalar")
     payload.setdefault("operator", "eq")
+    payload["operator"] = OPERATOR_ALIASES.get(_clean(payload.get("operator")).lower(), _clean(payload.get("operator")) or "eq")
     if payload.get("required_params") is not None:
         payload["required_params"] = _as_text_list(payload.get("required_params"))
-    if payload.get("sample_values") is not None:
-        payload["sample_values"] = _as_text_list(payload.get("sample_values"))
-    if not isinstance(payload.get("value_mappings", {}), dict):
-        payload["value_mappings"] = {}
+    sample_values = _as_text_list(payload.get("sample_values") or payload.get("known_values") or payload.get("values"))
+    if sample_values:
+        payload["sample_values"] = sample_values
+    payload.pop("known_values", None)
+    payload.pop("values", None)
+    payload["value_mappings"] = _normalize_value_mappings(payload.get("value_mappings") or payload.get("value_aliases"))
+    payload.pop("value_aliases", None)
+    payload.pop("columns", None)
     return {
         "filter_key": filter_key,
         "key": filter_key,
@@ -76,6 +99,29 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
         "payload": payload,
         "confidence": _clean(raw_item.get("confidence") or "medium"),
     }, errors
+
+
+def _normalize_payload_aliases(payload: dict[str, Any]) -> None:
+    for key in FILTER_LIST_FIELDS:
+        if payload.get(key) is not None:
+            values = _as_text_list(payload.get(key))
+            if values:
+                payload[key] = values
+
+
+def _normalize_value_mappings(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    result: dict[str, Any] = {}
+    for alias, raw_values in value.items():
+        alias_text = _clean(alias)
+        if not alias_text:
+            continue
+        values = _as_text_list(raw_values)
+        if not values:
+            continue
+        result[alias_text] = values[0] if len(values) == 1 else values
+    return result
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -109,9 +155,11 @@ def _as_text_list(value: Any) -> list[str]:
         value = [value]
     result = []
     for item in value:
-        text = _clean(item)
-        if text and text not in result:
-            result.append(text)
+        parts = re.split(r"[\n,;]+", item) if isinstance(item, str) else [item]
+        for part in parts:
+            text = _clean(part)
+            if text and text not in result:
+                result.append(text)
     return result
 
 

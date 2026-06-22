@@ -23,6 +23,57 @@ ALLOWED_SECTIONS = {
     "analysis_recipes",
     "product_key_columns",
 }
+SECTION_ALIASES = {
+    "products": "product_terms",
+    "product": "product_terms",
+    "metrics": "metric_terms",
+    "metric": "metric_terms",
+    "recipe": "analysis_recipes",
+    "recipes": "analysis_recipes",
+}
+DOMAIN_LIST_FIELDS = {
+    "aliases",
+    "processes",
+    "required_quantity_terms",
+    "required_dataset_families",
+    "required_datasets",
+    "metric_terms",
+    "source_columns",
+    "required_columns",
+    "group_by_columns",
+    "column_candidates",
+    "question_cues",
+    "forbidden_question_cues",
+    "override_analysis_kinds",
+    "blocked_filter_fields",
+    "output_columns",
+    "result_columns",
+    "detail_columns",
+    "clear_filters",
+    "trigger_terms",
+    "excluded_terms",
+    "applies_to",
+    "quantity_column",
+}
+CONDITION_FILTER_KEYS = {
+    "exists",
+    "not_in",
+    "is_empty",
+    "starts_with",
+    "ends_with",
+    "last_char_in",
+    "contains",
+    "equals",
+    "eq",
+    "in",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "ne",
+    "not_eq",
+    "between",
+}
 
 
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
@@ -58,9 +109,9 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
     errors = []
     if not isinstance(raw_item, dict):
         return None, [f"items[{index}]가 object가 아닙니다."]
-    section = _clean(raw_item.get("section") or raw_item.get("gbn")).lower()
     key = _clean(raw_item.get("key") or raw_item.get("name"))
     payload = deepcopy(raw_item.get("payload")) if isinstance(raw_item.get("payload"), dict) else {}
+    section = _normalize_section(raw_item, payload)
     if section not in ALLOWED_SECTIONS:
         errors.append(f"items[{index}] section이 허용값이 아닙니다: {section}")
     if not key and section != "product_key_columns":
@@ -73,7 +124,9 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
         payload = {"columns": columns, "product_key_columns": columns}
     else:
         payload.setdefault("aliases", _as_text_list(payload.get("aliases")))
-        if section in {"product_terms", "status_terms"}:
+        _normalize_payload_lists(payload)
+        _normalize_condition_fields(payload)
+        if section in {"product_terms", "quantity_terms", "status_terms", "metric_terms"}:
             _normalize_condition_overrides(payload, errors, key)
         if section == "process_groups" and not _as_text_list(payload.get("processes")):
             errors.append(f"{key} process_groups에는 processes 목록이 필요합니다.")
@@ -86,6 +139,8 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
                 payload["output_column"] = _clean(payload.get("output_column"))
         if section == "analysis_recipes":
             _normalize_analysis_recipe_payload(payload)
+        if section == "metric_terms":
+            _normalize_metric_role_filters(payload)
     if not payload:
         errors.append(f"items[{index}] payload가 비어 있습니다.")
     item = {
@@ -98,6 +153,19 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
     if raw_item.get("columns"):
         item["columns"] = _as_text_list(raw_item.get("columns"))
     return item, errors
+
+
+def _normalize_section(raw_item: dict[str, Any], payload: dict[str, Any]) -> str:
+    section = _clean(raw_item.get("section") or raw_item.get("gbn") or payload.get("section") or payload.get("gbn")).lower()
+    return SECTION_ALIASES.get(section, section)
+
+
+def _normalize_payload_lists(payload: dict[str, Any]) -> None:
+    for key in DOMAIN_LIST_FIELDS:
+        if payload.get(key) is not None:
+            values = _as_text_list(payload.get(key))
+            if values:
+                payload[key] = values
 
 
 def _normalize_analysis_recipe_payload(payload: dict[str, Any]) -> None:
@@ -130,6 +198,28 @@ def _normalize_analysis_recipe_payload(payload: dict[str, Any]) -> None:
         payload["top_n_policy"] = _clean(payload.get("top_n_policy"))
 
 
+def _normalize_condition_fields(payload: dict[str, Any]) -> None:
+    if payload.get("condition") not in (None, "", [], {}):
+        condition = _normalize_condition_object(payload.get("condition"))
+        if condition:
+            payload["condition"] = condition
+    for filter_key in ("filters", "filter"):
+        if payload.get(filter_key) in (None, "", [], {}):
+            continue
+        filters, conditions, changed = _normalize_filter_descriptors(payload.get(filter_key))
+        if not changed:
+            continue
+        if filters:
+            payload["filters"] = filters
+        payload.pop("filter", None)
+        if conditions:
+            current_condition = payload.get("condition") if isinstance(payload.get("condition"), dict) else {}
+            current_condition = deepcopy(current_condition)
+            for column, condition in conditions.items():
+                _merge_condition(current_condition, column, condition)
+            payload["condition"] = current_condition
+
+
 def _normalize_condition_overrides(payload: dict[str, Any], errors: list[str], key: str) -> None:
     for field_name in ("condition_by_dataset", "condition_by_family"):
         value = payload.get(field_name)
@@ -145,10 +235,204 @@ def _normalize_condition_overrides(payload: dict[str, Any], errors: list[str], k
             if not clean_key:
                 continue
             if isinstance(condition, dict):
-                clean_value[clean_key] = condition
+                clean_value[clean_key] = _normalize_condition_object(condition) or condition
             else:
                 errors.append(f"{key} {field_name}.{clean_key}는 condition object여야 합니다.")
         payload[field_name] = clean_value
+
+
+def _normalize_metric_role_filters(payload: dict[str, Any]) -> None:
+    for roles_key in ("source_roles", "comparison_roles"):
+        roles = payload.get(roles_key)
+        if not isinstance(roles, dict):
+            continue
+        for role in roles.values():
+            if not isinstance(role, dict):
+                continue
+            _normalize_condition_fields(role)
+
+
+def _normalize_condition_object(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    if any(key in value for key in ("column", "columns", "field", "fields", "op", "operator")):
+        filters, conditions, changed = _normalize_column_condition_filter(value)
+        if changed and conditions:
+            return conditions
+        if changed and filters:
+            return filters
+    result: dict[str, Any] = {}
+    for column, condition_value in value.items():
+        column_text = _clean(column)
+        if not column_text:
+            continue
+        if column_text in {"$and", "$or"}:
+            nested = [_normalize_condition_object(item) for item in _as_list(condition_value)]
+            nested = [item for item in nested if item]
+            if nested:
+                result[column_text] = nested
+            continue
+        if isinstance(condition_value, dict):
+            if any(_clean(key) in CONDITION_FILTER_KEYS for key in condition_value):
+                result[column_text] = deepcopy(condition_value)
+            else:
+                result[column_text] = _normalize_condition_object(condition_value) or deepcopy(condition_value)
+            continue
+        parsed_condition = _condition_from_text(condition_value)
+        result[column_text] = parsed_condition or deepcopy(condition_value)
+    return result
+
+
+def _normalize_filter_descriptors(value: Any) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    if isinstance(value, dict):
+        if any(key in value for key in ("column", "columns", "field", "fields", "op", "operator")):
+            return _normalize_column_condition_filter(value)
+        filters: dict[str, Any] = {}
+        conditions: dict[str, Any] = {}
+        for field, raw_value in value.items():
+            field_text = _clean(field)
+            if not field_text:
+                continue
+            if isinstance(raw_value, dict) and any(_clean(key) in CONDITION_FILTER_KEYS for key in raw_value):
+                _merge_condition(conditions, field_text, raw_value)
+            else:
+                _merge_filter_values(filters, field_text, raw_value)
+        return filters, conditions, bool(filters or conditions)
+    if not isinstance(value, list):
+        return {}, {}, False
+
+    merged_filters: dict[str, Any] = {}
+    merged_conditions: dict[str, Any] = {}
+    for item in value:
+        filters, conditions, changed = _normalize_column_condition_filter(item)
+        if not changed:
+            return {}, {}, False
+        for field, filter_values in filters.items():
+            _merge_filter_values(merged_filters, field, filter_values)
+        for column, condition in conditions.items():
+            _merge_condition(merged_conditions, column, condition)
+    return merged_filters, merged_conditions, bool(merged_filters or merged_conditions)
+
+
+def _normalize_column_condition_filter(value: Any) -> tuple[dict[str, Any], dict[str, Any], bool]:
+    if not isinstance(value, dict):
+        return {}, {}, False
+    columns = _as_text_list(value.get("column") or value.get("columns") or value.get("field") or value.get("fields"))
+    if not columns:
+        return {}, {}, False
+    op = _clean(value.get("op") or value.get("operator")).lower()
+    raw_values = value.get("values") if value.get("values") is not None else value.get("value")
+    raw_condition = value.get("condition") or value.get("conditions")
+    filters: dict[str, Any] = {}
+    conditions: dict[str, Any] = {}
+
+    if op in {"eq", "equals", "="}:
+        for column in columns:
+            _merge_filter_values(filters, column, raw_values)
+        return filters, {}, True
+    if op == "in":
+        for column in columns:
+            _merge_filter_values(filters, column, raw_values)
+        return filters, {}, True
+    if op in {"not_empty", "exists", "not_null", "is_not_null"}:
+        for column in columns:
+            _merge_condition(conditions, column, {"exists": True, "not_in": [None, ""]})
+        return {}, conditions, True
+    if op in {"is_empty", "is_null", "null"}:
+        for column in columns:
+            _merge_condition(conditions, column, {"is_empty": True})
+        return {}, conditions, True
+    if op in {"starts_with", "ends_with", "contains", "gt", "gte", "lt", "lte", "ne", "not_eq", "between"}:
+        for column in columns:
+            _merge_condition(conditions, column, {op: deepcopy(raw_values)})
+        return {}, conditions, True
+
+    if raw_condition not in (None, "", [], {}):
+        filter_values = _filter_values_from_condition_text(raw_condition)
+        if filter_values:
+            for column in columns:
+                _merge_filter_values(filters, column, filter_values)
+            return filters, {}, True
+        condition = _condition_from_text(raw_condition)
+        if condition:
+            for column in columns:
+                _merge_condition(conditions, column, condition)
+            return {}, conditions, True
+    return {}, {}, False
+
+
+def _condition_from_text(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict) and any(_clean(key) in CONDITION_FILTER_KEYS for key in value):
+        return deepcopy(value)
+    text = str(value or "").strip()
+    lowered = text.lower().replace('"', "'")
+    if not lowered:
+        return {}
+    condition: dict[str, Any] = {}
+    if "is not null" in lowered or "not null" in lowered or "exists" in lowered or "존재" in lowered:
+        condition["exists"] = True
+    if "!= ''" in lowered or "<> ''" in lowered or "not empty" in lowered or "not blank" in lowered or "빈칸" in lowered:
+        condition["not_in"] = [None, ""]
+    if "is null" in lowered or "null" == lowered or "비어" in lowered:
+        condition["is_empty"] = True
+    starts_with = re.search(r"(?:starts?_?with|prefix)\s*['\"]?([^'\",\s]+)", text, flags=re.IGNORECASE)
+    if not starts_with:
+        starts_with = re.search(r"([0-9A-Za-z가-힣_./-]+)\s*로\s*시작", text, flags=re.IGNORECASE)
+    if starts_with:
+        condition["starts_with"] = starts_with.group(1)
+    ends_with = re.search(r"(?:ends?_?with|suffix)\s*['\"]?([^'\",\s]+)", text, flags=re.IGNORECASE)
+    if ends_with:
+        condition["ends_with"] = ends_with.group(1)
+    contains = re.search(r"(?:contains|include|포함)\s*['\"]?([^'\",\s]+)", text, flags=re.IGNORECASE)
+    if contains:
+        condition["contains"] = contains.group(1)
+    return condition
+
+
+def _filter_values_from_condition_text(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        for key in ("equals", "eq", "in"):
+            if value.get(key) is not None:
+                return _as_text_list(value.get(key))
+        return []
+    text = str(value or "").strip()
+    if not text:
+        return []
+    match = re.match(r"^(?:=|==)\s*(.+)$", text)
+    if not match:
+        match = re.match(r"^[A-Za-z0-9_./ -]+\s*=\s*(.+)$", text)
+    if not match:
+        match = re.match(r"(?i)^in\s*\((.*)\)$", text)
+    if not match:
+        return []
+    raw_values = match.group(1).strip().strip("()[]")
+    return [_clean(item).strip("'\"") for item in _as_text_list(raw_values) if _clean(item).strip("'\"")]
+
+
+def _merge_filter_values(target: dict[str, Any], field: str, values: Any) -> None:
+    field_text = _clean(field)
+    if not field_text:
+        return
+    merged = _as_text_list(target.get(field_text)) + _as_text_list(values)
+    result = []
+    for value in merged:
+        if value and value not in result:
+            result.append(value)
+    if result:
+        target[field_text] = result
+
+
+def _merge_condition(target: dict[str, Any], column: str, condition: dict[str, Any]) -> None:
+    column_text = _clean(column)
+    if not column_text or not condition:
+        return
+    existing = target.get(column_text)
+    if isinstance(existing, dict):
+        merged = deepcopy(existing)
+        merged.update(deepcopy(condition))
+        target[column_text] = merged
+    else:
+        target[column_text] = deepcopy(condition)
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -182,9 +466,11 @@ def _as_text_list(value: Any) -> list[str]:
         value = [value]
     result = []
     for item in value:
-        text = _clean(item)
-        if text and text not in result:
-            result.append(text)
+        parts = re.split(r"[\n,;]+", item) if isinstance(item, str) else [item]
+        for part in parts:
+            text = _clean(part)
+            if text and text not in result:
+                result.append(text)
     return result
 
 

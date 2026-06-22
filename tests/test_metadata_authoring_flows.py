@@ -139,6 +139,44 @@ def test_domain_authoring_preserves_dataset_specific_conditions_and_metric_depen
     ]
 
 
+def test_domain_authoring_normalizes_filter_descriptors_to_executable_conditions() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    payload = {"metadata_type": "domain", "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "section": "product_terms",
+                "key": "pop",
+                "payload": {
+                    "aliases": "POP 제품",
+                    "filters": [
+                        {"column": "MODE", "condition": "starts_with LP"},
+                        {"column": "PKG_TYPE1", "op": "in", "values": ["LFBGA", "TFBGA"]},
+                        {"column": "MCP_NO", "condition": "not null and not empty"},
+                    ],
+                    "condition_by_family": {
+                        "equipment": {"column": "PKG1", "op": "eq", "value": "HBM"},
+                    },
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+    item_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert item_payload["aliases"] == ["POP 제품"]
+    assert item_payload["filters"] == {"PKG_TYPE1": ["LFBGA", "TFBGA"]}
+    assert item_payload["condition"] == {
+        "MODE": {"starts_with": "LP"},
+        "MCP_NO": {"exists": True, "not_in": [None, ""]},
+    }
+    assert item_payload["condition_by_family"] == {"equipment": {"PKG1": ["HBM"]}}
+
+
 def test_table_catalog_authoring_requires_source_config_and_detects_same_dataset_key() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     similarity = load_module("langflow_components/table_catalog_authoring_flow/05_table_catalog_similarity_checker.py")
@@ -371,6 +409,44 @@ filter_mappings는 DATE -> WORK_DT, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_
     assert item_payload["required_param_mappings"]["DATE"] == ["WORK_DT"]
     assert item_payload["date_format"] == "YYYYMMDD"
     assert item_payload["primary_quantity_column"] == "PRODUCTION"
+
+
+def test_table_catalog_authoring_extracts_columns_from_top_level_sql_select() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    query = """
+WITH base AS (
+  SELECT WORK_DT, INTERNAL_ONLY, PROD_QTY
+  FROM PRODUCTION_RAW
+  WHERE WORK_DT = {DATE}
+),
+ranked AS (
+  SELECT WORK_DT, PROD_QTY, ROW_NUMBER() OVER (PARTITION BY WORK_DT ORDER BY PROD_QTY DESC) AS RN
+  FROM base
+)
+SELECT
+  r.WORK_DT,
+  r.PROD_QTY AS PRODUCTION,
+  CASE WHEN r.PROD_QTY > 0 THEN 'Y' ELSE 'N' END AS HAS_OUTPUT,
+  (SELECT MAX(o.OPER_SEQ) FROM OPER_DIM o WHERE o.WORK_DT = r.WORK_DT) AS MAX_OPER_SEQ
+FROM ranked r
+WHERE r.RN = 1
+"""
+
+    assert normalizer._columns_from_query(query) == ["WORK_DT", "PRODUCTION", "HAS_OUTPUT", "MAX_OPER_SEQ"]
+
+
+def test_table_catalog_authoring_expands_inline_view_star_columns() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    query = """
+SELECT *
+FROM (
+  SELECT LOT_ID, HOLD_CD AS HOLD_CODE, IN_TAT
+  FROM HOLD_HISTORY
+  WHERE WORK_DT = {DATE}
+) hold_rows
+"""
+
+    assert normalizer._columns_from_query(query) == ["LOT_ID", "HOLD_CODE", "IN_TAT"]
 
 
 def test_table_catalog_writer_does_not_block_missing_default_detail_columns() -> None:
@@ -632,3 +708,39 @@ def test_main_flow_filter_authoring_normalizes_runtime_hint_lists() -> None:
     assert item_payload["sample_values"] == ["20260612"]
     assert item_payload["required_params"] == ["DATE"]
     assert item_payload["value_mappings"] == {}
+
+
+def test_main_flow_filter_authoring_accepts_legacy_field_names() -> None:
+    normalizer = load_module("langflow_components/main_flow_filters_authoring_flow/04_main_flow_filter_authoring_result_normalizer.py")
+    payload = {"metadata_type": "main_flow_filter", "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "filter_key": "OPER_NAME",
+                "payload": {
+                    "display_name": "공정명",
+                    "aliases": "공정, 오퍼명",
+                    "columns": "OPER_NAME, OPER_DESC",
+                    "semantic_role": "process_name",
+                    "value_type": "string",
+                    "value_shape": "list",
+                    "operator": "between",
+                    "known_values": "D/A1, W/B1",
+                    "value_aliases": {"DA": ["D/A1", "D/A2"], "WB": "W/B1"},
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_main_flow_filter_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+    item_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert item_payload["column_candidates"] == ["OPER_NAME", "OPER_DESC"]
+    assert item_payload["operator"] == "range"
+    assert item_payload["sample_values"] == ["D/A1", "W/B1"]
+    assert item_payload["value_mappings"] == {"DA": ["D/A1", "D/A2"], "WB": "W/B1"}
+    assert "known_values" not in item_payload
+    assert "value_aliases" not in item_payload

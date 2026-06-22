@@ -31,6 +31,21 @@ TABLE_BULK_TEXT = read_marked_example(TABLE_EXAMPLE_PATH, "bulk_table_catalog")
 TABLE_HOLD_HISTORY_TEXT = read_marked_example(TABLE_EXAMPLE_PATH, "single_hold_history")
 FILTER_BULK_TEXT = read_marked_example(FILTER_EXAMPLE_PATH, "bulk_main_flow_filters")
 FILTER_EQP_MODEL_TEXT = read_marked_example(FILTER_EXAMPLE_PATH, "single_eqp_model")
+FORBIDDEN_STORAGE_FIELDS = {
+    "schema_version",
+    "agent_version",
+    "metadata_type",
+    "namespace",
+    "identity",
+    "source",
+    "_source_file",
+    "_source_name",
+    "payload_hash",
+}
+
+
+def assert_lean_metadata_doc(doc: dict[str, Any]) -> None:
+    assert not (FORBIDDEN_STORAGE_FIELDS & set(doc))
 
 
 def load_module(relative_path: str):
@@ -447,10 +462,9 @@ def test_worker_single_domain_text_input_saves_one_process_group(monkeypatch: An
     assert written["write_result"]["saved_count"] == 1
     docs = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]
     doc = docs["domain:process_groups:DA"]
-    assert doc["metadata_type"] == "domain"
-    assert doc["identity"] == {"type": "domain", "section": "process_groups", "key": "DA"}
-    assert doc["source"]["kind"] == "langflow_authoring_flow"
-    assert len(doc["payload_hash"]) == 12
+    assert_lean_metadata_doc(doc)
+    assert doc["section"] == "process_groups"
+    assert doc["key"] == "DA"
     assert doc["payload"]["processes"] == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
 
 
@@ -492,10 +506,9 @@ def test_worker_single_table_text_input_saves_hold_history(monkeypatch: Any) -> 
     assert written["write_result"]["saved_count"] == 1
     docs = store[("metadata_driven_agent_v3", "agent_v3_table_catalog_items")]
     doc = docs["table_catalog:hold_history"]
-    assert doc["metadata_type"] == "table_catalog"
-    assert doc["identity"] == {"type": "table_catalog", "dataset_key": "hold_history"}
-    assert doc["source"]["kind"] == "langflow_authoring_flow"
-    assert len(doc["payload_hash"]) == 12
+    assert_lean_metadata_doc(doc)
+    assert doc["dataset_key"] == "hold_history"
+    assert doc["key"] == "hold_history"
     assert doc["payload"]["source_type"] == "oracle"
 
 
@@ -523,8 +536,7 @@ def test_worker_single_filter_text_input_saves_eqp_model(monkeypatch: Any) -> No
     assert written["write_result"]["saved_count"] == 1
     docs = store[("metadata_driven_agent_v3", "agent_v3_main_flow_filters")]
     doc = docs["main_flow_filter:EQP_MODEL"]
-    assert doc["metadata_type"] == "main_flow_filter"
-    assert doc["identity"] == {"type": "main_flow_filter", "filter_key": "EQP_MODEL"}
-    assert doc["source"]["kind"] == "langflow_authoring_flow"
-    assert len(doc["payload_hash"]) == 12
+    assert_lean_metadata_doc(doc)
+    assert doc["filter_key"] == "EQP_MODEL"
+    assert doc["key"] == "EQP_MODEL"
     assert doc["payload"]["column_candidates"] == ["EQP_MODEL"]

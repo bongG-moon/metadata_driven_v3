@@ -4,6 +4,8 @@
 이 filter들은 main agent가 사용자 표현을 조회 parameter, 물리 column, pandas filter로 매핑하는 데 사용됩니다.
 runtime normalization이 date/process/product/status/equipment filter를 구분할 때 semantic_role을 사용하므로 일관되게 작성하세요.
 사용자 업무 표현과 저장 값이 다르면 sample_values 또는 value_mappings를 포함하세요.
+정제 설명에 known_values, value_aliases, columns, process_name, between 같은 이전 명칭이 있으면 현재 schema의 sample_values, value_mappings, column_candidates, process/generic semantic_role, range로 변환하세요.
+filter_key는 table_catalog.filter_mappings가 참조할 수 있는 안정적인 표준 key여야 합니다. 이미 표준 key가 있으면 dataset별 물리 key를 새로 만들지 마세요.
 이 metadata는 dataset-neutral하게 유지하세요. main_flow_filters.column_candidates는 넓은 후보 column name만 담습니다. PKG_TYPE1->PKG1 또는 MCP_NO->MCPSALENO 같은 dataset-specific mapping은 table_catalog.filter_mappings에 넣어야 합니다.
 main_flow_filter item 안에는 table_catalog filter_mappings, source_type, query_template, document ID, DB key를 넣지 마세요.
 

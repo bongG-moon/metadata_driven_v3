@@ -2,6 +2,9 @@
 반드시 하나의 엄격한 JSON object만 반환하세요. markdown으로 감싸지 마세요.
 정제된 설명에 있는 정보만 사용하세요. 필수 정보가 부족하면 missing_information에 넣으세요.
 조건은 가능한 한 구조화된 JSON으로 표현하세요. 예: {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}.
+실행에 쓰이는 필터 조건을 자연어 문장으로 저장하지 마세요. 컬럼 판정은 condition object로, 정확한 값 매칭은 filters object로 저장하세요.
+descriptor 형태 입력은 실행 가능한 구조로 변환하세요. 예: {{"column": "TSV_DIE_TYP", "condition": "not null and not empty"}}는 {{"condition": {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}}}가 됩니다.
+공정값이나 상태값처럼 정확히 일치해야 하는 값은 문장 대신 {{"filters": {{"OPER_NAME": ["INPUT"]}}}} 같은 구조로 저장하세요.
 같은 업무 용어가 dataset별 또는 dataset_family별로 다른 물리 필터를 사용해야 하면 condition_by_dataset 또는 condition_by_family를 사용하세요.
 metric_terms에는 텍스트가 필요한 수량이나 결과명을 설명하는 경우 required_quantity_terms와 output_column을 포함하세요.
 질문 패턴에 따라 어떤 분석 계획을 만들어야 하는지 설명되어 있으면 analysis_recipes를 사용하세요.

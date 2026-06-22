@@ -4,6 +4,10 @@
 원본 사용자 입력은 literal SQL, query_template block, SELECT column, filter_mappings, dataset_key, db_key, source_type에 대한 기준 정보입니다.
 정제된 설명은 요약되어 있을 수 있습니다. 원본 사용자 입력에 있는 구조화 정보를 누락하지 마세요.
 query_template, API URL, document ID, sheet name, DB key, 물리 column을 지어내지 마세요.
+SQL query_template은 WITH 절, CTE, inline view, nested subquery, comment, placeholder, 줄바꿈을 포함해 실행 가능한 전체 SQL로 보존하세요. SQL을 "...", "생략", "truncated" 같은 표현이나 설명 문장으로 대체하지 마세요.
+payload.columns를 SQL에서 만들 때는 dataset output을 만드는 최종/top-level SELECT 목록을 기준으로 하세요. CTE 내부 SELECT, scalar subquery 내부 SELECT, WHERE/JOIN/GROUP BY/ORDER BY에만 등장하는 column은 columns에 넣지 마세요.
+최종 SELECT가 inline view/subquery에서 "*" 또는 alias.*만 선택한다면 해당 immediate subquery의 출력 column이 명시적일 때만 그 column을 사용하세요. 안전하게 펼칠 수 없으면 column을 지어내지 말고 missing_information에 적으세요.
+CASE, NVL, SUM, COUNT, analytic function, scalar subquery 같은 expression은 AS 뒤의 출력 alias를 column name으로 사용하세요. alias가 없으면 명확한 물리 source column만 사용하고, 그렇지 않으면 missing_information에 적으세요.
 source가 YYYYMMDD 또는 YYYY-MM-DD 같은 특정 날짜 표현을 기대하면 date_format을 저장하세요.
 상세 행 조회에서 운영자가 일부 column만 보기를 기대하면 default_detail_columns를 저장하세요.
 source별 필수 정보: oracle은 db_key와 query_template이 필요하고, datalake는 query_template이 필요하고, h_api는 api_url이 필요하고, goodocs는 doc_id만 필요합니다.
@@ -43,7 +47,7 @@ source의 물리 column 이름이 표준 분석 column 이름과 다르면 stand
         "filter_mappings": {{"DATE": ["WORK_DT"]}},
         "standard_column_aliases": {{"standard analysis column": ["physical columns"]}},
         "default_detail_columns": ["선택적 detail output column"],
-        "columns": ["physical columns"]
+        "columns": ["최종 SELECT의 dataset output column"]
       }},
       "confidence": "high | medium | low"
     }}

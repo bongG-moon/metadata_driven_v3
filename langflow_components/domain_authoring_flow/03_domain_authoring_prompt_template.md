@@ -2,6 +2,9 @@ You convert a refined manufacturing domain description into MongoDB-storable dom
 Return one strict JSON object only. Do not wrap it in markdown.
 Use only information present in the refined text. Put missing essentials in missing_information.
 Prefer structured JSON conditions, for example {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}.
+Do not store executable filters as prose. Use condition objects for column predicates and filters objects for exact value matches.
+For descriptor-style input, convert it to executable form: {{"column": "TSV_DIE_TYP", "condition": "not null and not empty"}} becomes {{"condition": {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}}}.
+For exact process or status values, use filters such as {{"filters": {{"OPER_NAME": ["INPUT"]}}}} instead of a sentence.
 Use condition_by_dataset or condition_by_family when the same business term must use different physical filters by dataset.
 For metric_terms, include required_quantity_terms and output_column when the text explains the needed measures or result name.
 Use analysis_recipes when the text explains what kind of analysis plan should be built for a question pattern.

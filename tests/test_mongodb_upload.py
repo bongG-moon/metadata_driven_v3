@@ -6,6 +6,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "upload_json_to_mongodb.py"
+FORBIDDEN_STORAGE_FIELDS = {
+    "schema_version",
+    "agent_version",
+    "metadata_type",
+    "namespace",
+    "identity",
+    "source",
+    "_source_file",
+    "_source_name",
+    "payload_hash",
+}
 
 
 def _load_upload_module():
@@ -35,7 +46,7 @@ def test_mongodb_upload_default_batches_include_only_core_metadata():
     }
 
 
-def test_mongodb_upload_docs_include_v3_envelope_and_legacy_fields():
+def test_mongodb_upload_docs_use_lean_metadata_shape():
     module = _load_upload_module()
     batches = module.build_upload_batches(
         ROOT,
@@ -45,28 +56,22 @@ def test_mongodb_upload_docs_include_v3_envelope_and_legacy_fields():
     )
 
     domain_doc = next(doc for doc in batches["factory_domain_metadata"] if doc["_id"] == "domain:process_groups:DA")
-    assert domain_doc["schema_version"] == "metadata-doc.v1"
-    assert domain_doc["agent_version"] == "metadata_driven_v3"
-    assert domain_doc["metadata_type"] == "domain"
-    assert domain_doc["namespace"] == "core"
-    assert domain_doc["identity"] == {"type": "domain", "section": "process_groups", "key": "DA"}
-    assert domain_doc["source"]["kind"] == "local_json"
-    assert len(domain_doc["payload_hash"]) == 12
+    assert not (FORBIDDEN_STORAGE_FIELDS & set(domain_doc))
     assert domain_doc["section"] == "process_groups"
     assert domain_doc["key"] == "DA"
     assert domain_doc["status"] == "active"
     assert "payload" in domain_doc
 
     table_doc = next(doc for doc in batches["factory_table_catalog_metadata"] if doc["_id"] == "table_catalog:wip_today")
-    assert table_doc["metadata_type"] == "table_catalog"
-    assert table_doc["identity"] == {"type": "table_catalog", "dataset_key": "wip_today"}
+    assert not (FORBIDDEN_STORAGE_FIELDS & set(table_doc))
     assert table_doc["dataset_key"] == "wip_today"
+    assert table_doc["key"] == "wip_today"
     assert table_doc["status"] == "active"
 
     filter_doc = next(doc for doc in batches["factory_filter_metadata"] if doc["_id"] == "main_flow_filter:DATE")
-    assert filter_doc["metadata_type"] == "main_flow_filter"
-    assert filter_doc["identity"] == {"type": "main_flow_filter", "filter_key": "DATE"}
+    assert not (FORBIDDEN_STORAGE_FIELDS & set(filter_doc))
     assert filter_doc["filter_key"] == "DATE"
+    assert filter_doc["key"] == "DATE"
     assert filter_doc["status"] == "active"
 
 
@@ -84,8 +89,8 @@ def test_mongodb_upload_optional_batches_include_regression_and_samples():
     assert "agent_v3_regression_questions" in batches
     assert "agent_v3_sample_wip_today" in batches
     assert len(batches["agent_v3_regression_questions"]) >= 16
-    assert batches["agent_v3_regression_questions"][0]["metadata_type"] == "regression_question"
-    assert batches["agent_v3_sample_wip_today"][0]["metadata_type"] == "sample_data"
+    assert not (FORBIDDEN_STORAGE_FIELDS & set(batches["agent_v3_regression_questions"][0]))
+    assert not (FORBIDDEN_STORAGE_FIELDS & set(batches["agent_v3_sample_wip_today"][0]))
 
 
 def test_mongodb_upload_docs_have_deterministic_ids():

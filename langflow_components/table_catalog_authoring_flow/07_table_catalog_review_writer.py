@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -21,8 +20,6 @@ from lfx.schema.data import Data
 DEFAULT_COLLECTION_NAME = "agent_v3_table_catalog_items"
 COLLECTION_ENV_KEY = "MONGODB_TABLE_CATALOG_COLLECTION"
 LEGACY_COLLECTION_SUFFIX = "table_catalog_items"
-METADATA_DOC_SCHEMA_VERSION = "metadata-doc.v1"
-AGENT_VERSION = "metadata_driven_v3"
 
 
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
@@ -121,6 +118,7 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
             if existing and action == "merge":
                 doc = _deep_merge(_json_ready(existing), doc)
                 doc["_id"] = existing.get("_id", doc["_id"])
+            doc = _strip_storage_envelope(doc)
             coll.replace_one({"_id": doc["_id"]}, doc, upsert=True)
             result["saved_count"] += 1
             result["saved_items"].append({"dataset_key": dataset_key, "_id": doc["_id"]})
@@ -140,24 +138,30 @@ def _table_doc(item: dict[str, Any]) -> dict[str, Any]:
     payload = deepcopy(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
     doc = {
         "_id": f"table_catalog:{dataset_key}",
-        "schema_version": METADATA_DOC_SCHEMA_VERSION,
-        "agent_version": AGENT_VERSION,
-        "metadata_type": "table_catalog",
-        "namespace": "core",
-        "identity": {"type": "table_catalog", "dataset_key": dataset_key},
-        "source": {
-            "kind": "langflow_authoring_flow",
-            "flow": "table_catalog_authoring_flow",
-            "component": "07_table_catalog_review_writer",
-        },
         "dataset_key": dataset_key,
         "key": dataset_key,
         "status": _clean(item.get("status") or "active"),
         "payload": payload,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
-    doc["payload_hash"] = _stable_hash({"dataset_key": dataset_key, "payload": payload})
     return doc
+
+
+def _strip_storage_envelope(doc: dict[str, Any]) -> dict[str, Any]:
+    cleaned = dict(doc)
+    for key in (
+        "schema_version",
+        "agent_version",
+        "metadata_type",
+        "namespace",
+        "identity",
+        "source",
+        "_source_file",
+        "_source_name",
+        "payload_hash",
+    ):
+        cleaned.pop(key, None)
+    return cleaned
 
 
 def _deep_merge(base: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -338,11 +342,6 @@ def _payload(value: Any) -> dict[str, Any]:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
-
-
-def _stable_hash(value: Any) -> str:
-    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha1(raw).hexdigest()[:12]
 
 
 def _resolve_collection_name(collection_name: Any = "", collection_prefix: Any = "") -> str:

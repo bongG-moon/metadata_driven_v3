@@ -4,6 +4,10 @@ Use only information present in the refined text. Put missing essentials in miss
 Use the original user text as the authority for literal SQL, query_template blocks, SELECT columns, filter_mappings, dataset_key, db_key, and source_type.
 The refined text may be summarized; do not drop structured details that are present in the original user text.
 Do not invent query_template, API URL, document ID, sheet name, DB key, or physical columns.
+For SQL query_template values, preserve the full SQL exactly enough to execute, including WITH clauses, CTEs, inline views, nested subqueries, comments, placeholders, and line breaks. Never replace SQL with "...", "omitted", "truncated", or prose.
+For payload.columns derived from SQL, use the final/top-level SELECT list that defines the dataset output. Do not use CTE-internal SELECT columns, scalar subquery internals, WHERE-only columns, JOIN-only columns, GROUP BY-only columns, or ORDER BY-only columns.
+If the final SELECT uses "*" or alias.* from an inline view/subquery, derive columns from that immediate subquery output when it is explicit. If it cannot be expanded safely, do not invent columns.
+For expressions such as CASE, NVL, SUM, COUNT, analytic functions, or scalar subqueries, use the output alias after AS as the column name. If there is no alias, use only a clear physical source column name and otherwise put the issue in missing_information.
 Capture date_format when a source expects dates in a specific representation such as YYYYMMDD or YYYY-MM-DD.
 Capture default_detail_columns when operators expect detail rows to show only a subset of columns.
 Source-specific essentials: oracle requires db_key and query_template; datalake requires query_template; h_api requires api_url; goodocs requires doc_id only.
@@ -43,7 +47,7 @@ Required JSON schema:
         "filter_mappings": {{"DATE": ["WORK_DT"]}},
         "standard_column_aliases": {{"standard analysis column": ["physical columns"]}},
         "default_detail_columns": ["optional detail output columns"],
-        "columns": ["physical columns"]
+        "columns": ["dataset output columns from the final SELECT"]
       }},
       "confidence": "high | medium | low"
     }}
