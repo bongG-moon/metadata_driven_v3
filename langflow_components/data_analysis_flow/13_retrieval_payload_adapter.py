@@ -31,18 +31,11 @@ def adapt_retrieval_payload(main_payload_value: Any, retrieval_payload_value: An
     runtime_sources: dict[str, list[dict[str, Any]]] = {}
     compact_results: list[dict[str, Any]] = []
     errors: list[str] = []
-    metadata = main_payload.get("metadata") if isinstance(main_payload.get("metadata"), dict) else {}
-    jobs_by_dataset = _jobs_by_dataset(main_payload)
     for result in source_results:
         source_alias = str(result.get("source_alias") or result.get("dataset_key") or "")
         dataset_key = str(result.get("dataset_key") or "")
         source_type = str(result.get("source_type") or "dummy")
-        rows = _standardize_rows_for_dataset(
-            dataset_key,
-            _rows_from_result(result),
-            metadata,
-            jobs_by_dataset.get(dataset_key),
-        )
+        rows = _rows_from_result(result)
         runtime_sources[source_alias] = rows
         compact = deepcopy(result)
         compact.pop("data", None)
@@ -165,80 +158,6 @@ def _rows_from_result(result: dict[str, Any]) -> list[dict[str, Any]]:
     if not isinstance(rows, list):
         return []
     return [dict(row) for row in rows if isinstance(row, dict)]
-
-
-def _jobs_by_dataset(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
-    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
-    result: dict[str, dict[str, Any]] = {}
-    for job in jobs:
-        if not isinstance(job, dict):
-            continue
-        dataset_key = str(job.get("dataset_key") or "").strip()
-        if dataset_key and dataset_key not in result:
-            result[dataset_key] = job
-    return result
-
-
-def _standardize_rows_for_dataset(
-    dataset_key: str,
-    rows: list[dict[str, Any]],
-    metadata: dict[str, Any],
-    job: dict[str, Any] | None = None,
-) -> list[dict[str, Any]]:
-    if not rows:
-        return rows
-    catalog = (((metadata.get("table_catalog") or {}).get("datasets") or {}).get(dataset_key) or {}) if isinstance(metadata, dict) else {}
-    if not isinstance(catalog, dict):
-        catalog = {}
-    aliases = _standard_aliases(catalog, job if isinstance(job, dict) else {})
-    if not aliases:
-        return rows
-    standardized = []
-    for row in rows:
-        clean_row = dict(row)
-        for standard, candidates in aliases.items():
-            if clean_row.get(standard) not in (None, ""):
-                continue
-            for candidate in candidates:
-                if clean_row.get(candidate) not in (None, ""):
-                    clean_row[standard] = clean_row[candidate]
-                    break
-        standardized.append(clean_row)
-    return standardized
-
-
-def _standard_aliases(catalog: dict[str, Any], job: dict[str, Any] | None = None) -> dict[str, list[str]]:
-    aliases: dict[str, list[str]] = {
-        "INPUT_PLAN": ["INPUT계획"],
-        "OUT_PLAN": ["OUT계획", "TARGET"],
-        "PKG_TYPE1": ["PKG1", "PKG_TYP"],
-        "PKG_TYPE2": ["PKG2", "PKG_TYP_2", "PKG_TYP2"],
-        "MCP_NO": ["MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
-        "MODE": ["Mode", "PROD_TYP"],
-        "TECH": ["TECH_NM"],
-        "DEN": ["DEN_TYP"],
-        "LEAD": ["LEAD_CNT"],
-        "EQP_MODEL": ["EQP_MODEL_CD"],
-    }
-    for source in (catalog, job or {}):
-        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
-            mapping = source.get(field) if isinstance(source.get(field), dict) else {}
-            for standard, candidates in mapping.items():
-                if not isinstance(candidates, list):
-                    candidates = [candidates]
-                aliases.setdefault(str(standard), [])
-                aliases[str(standard)].extend(str(item) for item in candidates if str(item or "").strip())
-    return {key: _unique([item for item in values if item != key]) for key, values in aliases.items()}
-
-
-def _unique(values: list[Any]) -> list[str]:
-    result = []
-    for value in values:
-        text = str(value or "").strip()
-        if text and text not in result:
-            result.append(text)
-    return result
 
 
 def _payload(value: Any) -> dict[str, Any]:

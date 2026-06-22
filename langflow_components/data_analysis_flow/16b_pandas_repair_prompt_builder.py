@@ -20,15 +20,16 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
     repair = payload.get("pandas_repair") if isinstance(payload.get("pandas_repair"), dict) else {}
     if not repair.get("required"):
-        prompt = json.dumps(
-            {
-                "code": "result_df = pd.DataFrame([])",
-                "output_columns": [],
-                "reasoning_steps": [
-                    "No pandas repair is required; downstream repair executor should pass through the previous successful payload."
-                ],
-            },
-            ensure_ascii=False,
+        route = str(repair.get("route") or "success")
+        reason = str(repair.get("reason") or "Pandas repair is not required.")
+        prompt = "\n".join(
+            [
+                "Pandas repair is not required for this payload.",
+                f"Repair route: {route}",
+                f"Reason: {reason}",
+                "Do not generate pandas code for this branch.",
+                "The downstream repair executor should pass through the existing payload unchanged.",
+            ]
         )
         return {
             "prompt": prompt,

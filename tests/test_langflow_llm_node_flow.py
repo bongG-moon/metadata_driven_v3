@@ -825,7 +825,7 @@ def test_intent_normalizer_prunes_lot_status_for_followup_equipment_count(monkey
     assert plan["previous_result_restore_mode"] == "summary"
 
 
-def test_retrieval_adapter_adds_standard_columns_from_physical_catalog_aliases(monkeypatch: Any) -> None:
+def test_retrieval_adapter_preserves_raw_source_columns_for_pandas_stage(monkeypatch: Any) -> None:
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     retrieval_adapter = load_component("langflow_components/data_analysis_flow/13_retrieval_payload_adapter.py")
 
@@ -844,9 +844,11 @@ def test_retrieval_adapter_adds_standard_columns_from_physical_catalog_aliases(m
     adapted = retrieval_adapter.adapt_retrieval_payload(payload, retrieval_payload)
     row = adapted["runtime_sources"]["equipment"][0]
 
-    assert row["PKG_TYPE1"] == "UFBGA"
-    assert row["PKG_TYPE2"] == "MOBILE"
-    assert row["MCP_NO"] == "EMPTY"
+    assert row == {"EQPID": "EQP1", "PKG1": "UFBGA", "PKG2": "MOBILE", "MCPSALENO": "EMPTY", "MODE": "LPDDR5"}
+    assert "PKG_TYPE1" not in row
+    assert "PKG_TYPE2" not in row
+    assert "MCP_NO" not in row
+    assert adapted["source_results"][0]["columns"] == ["EQPID", "PKG1", "PKG2", "MCPSALENO", "MODE"]
 
 
 def test_intent_normalizer_keeps_cross_source_join_keys_as_standard_columns() -> None:
@@ -1381,13 +1383,16 @@ def test_pandas_executor_joins_physical_source_columns_with_standard_aliases() -
     pandas_llm_json = {
         "code": "\n".join(
             [
+                "prod_source_columns = list(sources['production_data'].columns)",
                 "product_keys = plan['product_grain']",
                 "prod = sources['production_data'].groupby(product_keys, as_index=False)['PRODUCTION'].sum()",
                 "wip = sources['wip_data'].groupby(product_keys, as_index=False)['WIP'].sum()",
                 "result_df = prod.merge(wip, on=product_keys, how='inner')",
+                "result_df['HAS_PKG1'] = 'PKG1' in prod_source_columns",
+                "result_df['HAS_PKG_TYPE1'] = 'PKG_TYPE1' in prod_source_columns",
             ]
         ),
-        "output_columns": [*product_keys, "PRODUCTION", "WIP"],
+        "output_columns": [*product_keys, "PRODUCTION", "WIP", "HAS_PKG1", "HAS_PKG_TYPE1"],
         "reasoning_steps": ["Join sources by standard product keys."],
     }
 
@@ -1400,6 +1405,67 @@ def test_pandas_executor_joins_physical_source_columns_with_standard_aliases() -
     assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
     assert result["analysis"]["rows"][0]["PRODUCTION"] == 100
     assert result["analysis"]["rows"][0]["WIP"] == 40
+    assert result["analysis"]["rows"][0]["HAS_PKG1"] is False
+    assert result["analysis"]["rows"][0]["HAS_PKG_TYPE1"] is True
+
+
+def test_pandas_prompt_uses_standardized_source_columns_for_pandas_view() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    payload = {
+        "request": {"question": "production and wip join by product"},
+        "intent_plan": {
+            "analysis_kind": "aggregate_join",
+            "product_grain": product_keys,
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production",
+                    "source_alias": "production_data",
+                    "filter_mappings": {
+                        "DEN": ["DENSITY"],
+                        "PKG_TYPE1": ["PKG1"],
+                        "PKG_TYPE2": ["PKG2"],
+                        "MCP_NO": ["MCPSALENO"],
+                    },
+                    "standard_column_aliases": {
+                        "DEN": ["DENSITY"],
+                        "PKG_TYPE1": ["PKG1"],
+                        "PKG_TYPE2": ["PKG2"],
+                        "MCP_NO": ["MCPSALENO"],
+                    },
+                }
+            ],
+        },
+        "runtime_sources": {
+            "production_data": [
+                {
+                    "TECH": "TSV",
+                    "DENSITY": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG1": "HBM",
+                    "PKG2": "HBM",
+                    "LEAD": "LF",
+                    "MCPSALENO": "H-HBM16E",
+                    "PRODUCTION": 100,
+                }
+            ]
+        },
+    }
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload)
+    summary = prompt_payload["source_summary"]["production_data"]
+
+    assert "DENSITY" not in summary["columns"]
+    assert "PKG1" not in summary["columns"]
+    assert "PKG2" not in summary["columns"]
+    assert "MCPSALENO" not in summary["columns"]
+    assert "DEN" in summary["columns"]
+    assert "PKG_TYPE1" in summary["columns"]
+    assert "PKG_TYPE2" in summary["columns"]
+    assert "MCP_NO" in summary["columns"]
+    assert summary["preview_rows"][0]["DEN"] == "2048G"
+    assert summary["preview_rows"][0]["PKG_TYPE1"] == "HBM"
+    assert summary["preview_rows"][0]["MCP_NO"] == "H-HBM16E"
 
 
 def test_pandas_prompt_tells_llm_not_to_output_rank_group_source_field() -> None:
@@ -1763,9 +1829,18 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     assert "missing_alias" in prompt_payload["prompt"]
 
     retry_exceeded = repair_payload_builder.build_pandas_repair_payload({**failed, "pandas_retry_attempt": 1})
+    retry_exceeded_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(retry_exceeded)
+    retry_exceeded_passthrough = pandas_executor.execute_pandas_from_llm(
+        retry_exceeded,
+        json.dumps({"code": "result_df = pd.DataFrame([])", "output_columns": []}, ensure_ascii=False),
+    )
     assert retry_exceeded["pandas_repair"]["required"] is False
     assert retry_exceeded["pandas_repair"]["route"] == "failed"
     assert retry_exceeded["pandas_execution_branch"]["route"] == "failed"
+    assert retry_exceeded_prompt["prompt_type"] == "pandas_repair_skip"
+    assert "result_df = pd.DataFrame([])" not in retry_exceeded_prompt["prompt"]
+    assert retry_exceeded_passthrough["analysis"]["status"] == "error"
+    assert retry_exceeded_passthrough["analysis"]["analysis_code"] == failed["analysis"]["analysis_code"]
 
 
 def test_pandas_executor_passes_successful_payload_through_repair_branch() -> None:
@@ -1784,11 +1859,14 @@ def test_pandas_executor_passes_successful_payload_through_repair_branch() -> No
 
     successful = pandas_executor.execute_pandas_from_llm(payload, json.dumps(good_pandas_json, ensure_ascii=False))
     repair_payload = repair_payload_builder.build_pandas_repair_payload(successful)
+    repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
+    skip_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
     passed_through = pandas_executor.execute_pandas_from_llm(repair_payload, "{}")
 
     assert successful["analysis"]["status"] == "ok"
     assert repair_payload["pandas_repair"]["required"] is False
     assert repair_payload["pandas_execution_branch"]["route"] == "success"
+    assert "result_df = pd.DataFrame([])" not in skip_prompt["prompt"]
     assert passed_through["analysis"]["rows"] == successful["analysis"]["rows"]
 
 

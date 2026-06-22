@@ -1251,13 +1251,35 @@ def _standardize_source_frame_for_alias(frame: pd.DataFrame, alias: str, plan: d
         return frame
     result = frame.copy()
     for standard, candidates in aliases.items():
-        if standard in result.columns:
+        standard_text = str(standard or "").strip()
+        if not standard_text:
             continue
-        for candidate in candidates:
-            if candidate in result.columns:
-                result[standard] = result[candidate]
-                break
+        candidate_columns = [
+            str(candidate)
+            for candidate in candidates
+            if str(candidate or "").strip()
+            and str(candidate) != standard_text
+            and str(candidate) in result.columns
+        ]
+        if not candidate_columns:
+            continue
+        if standard_text in result.columns:
+            for candidate in candidate_columns:
+                if candidate in result.columns:
+                    result[standard_text] = _fill_blank_series(result[standard_text], result[candidate])
+            result = result.drop(columns=[column for column in candidate_columns if column in result.columns], errors="ignore")
+            continue
+        rename_source = candidate_columns[0]
+        result = result.rename(columns={rename_source: standard_text})
+        drop_columns = [column for column in candidate_columns[1:] if column in result.columns]
+        if drop_columns:
+            result = result.drop(columns=drop_columns, errors="ignore")
     return result
+
+
+def _fill_blank_series(base: pd.Series, fallback: pd.Series) -> pd.Series:
+    blank_mask = base.isna() | (base.astype(str).str.strip() == "")
+    return base.where(~blank_mask, fallback)
 
 
 def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, list[str]]:
@@ -1571,7 +1593,7 @@ def _mark_repair_attempt_result(repair_value: Any, analysis: dict[str, Any]) -> 
 def _should_pass_through_repair_payload(payload: dict[str, Any]) -> bool:
     repair = payload.get("pandas_repair") if isinstance(payload.get("pandas_repair"), dict) else {}
     analysis = payload.get("analysis") if isinstance(payload.get("analysis"), dict) else {}
-    return repair.get("required") is False and bool(analysis) and not analysis.get("errors")
+    return repair.get("required") is False and bool(analysis)
 
 
 def _is_repair_attempt_payload(payload: dict[str, Any]) -> bool:

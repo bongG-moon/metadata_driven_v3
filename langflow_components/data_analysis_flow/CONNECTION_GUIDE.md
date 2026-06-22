@@ -123,7 +123,7 @@ Pandas Repair LLM.Output
   -> second 15 Pandas Code Executor.LLM Response
 ```
 
-`16B`는 repair prompt만 만드는 노드입니다. repair가 필요 없으면 `16A.payload_out`이 pass-through되고, 두 번째 executor는 원래 성공 payload를 그대로 다음 단계로 넘깁니다.
+`16B`는 repair prompt만 만드는 노드입니다. repair가 필요 없으면 `16A.payload_out`은 두 번째 executor에서 pass-through되고, 성공 payload와 repair 횟수 초과/repair 불필요 실패 payload를 모두 그대로 다음 단계로 넘깁니다. 이 경로에서는 빈 `result_df = pd.DataFrame([])` 코드를 새로 실행하지 않습니다.
 
 ## Answer, Store, Output
 

@@ -33,7 +33,7 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
     plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     runtime_sources = payload.get("runtime_sources") if isinstance(payload.get("runtime_sources"), dict) else {}
-    source_summary = _source_summary(runtime_sources)
+    source_summary = _source_summary(runtime_sources, plan)
     source_filters = _filters_by_source(plan)
 
     prompt = "\n".join(
@@ -45,9 +45,11 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "plan and state are Python dicts. Use plan['key'], plan.get('key'), state.get('key'); never use plan.key or state.key.",
             "The code must assign the final pandas DataFrame to result_df.",
             "Final result columns must use the standard contract names requested by the normalized plan.",
-            "Runtime source DataFrames may contain physical source columns and standard alias columns copied from table_catalog.filter_mappings/standard_column_aliases.",
-            "For product_grain, group_by, join_keys, and cross-source joins, use the standard analysis column names from plan, not dataset-specific physical names.",
-            "Use physical source column names only when the plan explicitly asks for a source-only measure/detail column that has no standard alias.",
+            "Before this code runs, each source DataFrame is converted to a standardized pandas analysis view.",
+            "Physical source columns listed in table_catalog.filter_mappings/required_param_mappings/standard_column_aliases are renamed to the standard names used by the plan.",
+            "For joins, grouping, ranking, and output shaping, use the standard analysis column names from plan.",
+            "Do not expect both a physical column and its standard alias to remain in sources; use standard names from product_grain, group_by, join_keys, and analysis_output_columns.",
+            "Use physical source column names only when the source summary shows that column and the plan explicitly asks for a source-only measure/detail column with no standard alias.",
             "Do not translate measure columns to Korean labels, and do not keep temporary names such as PRODUCTION_sum, WIP_sum, OUT_PLAN_sum, or lowercase rank in result_df.",
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, or subprocess.",
             "Do not use numpy, np, or np.where. Use pandas Series operations such as div, fillna, where, mask, and boolean comparisons.",
@@ -235,17 +237,172 @@ def _job_matches_dataset(job: dict[str, Any], token: str) -> bool:
     return token in text
 
 
-def _source_summary(runtime_sources: dict[str, Any]) -> dict[str, Any]:
+def _source_summary(runtime_sources: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
     summary = {}
     for alias, rows in runtime_sources.items():
         clean_rows = rows if isinstance(rows, list) else []
-        first_row = clean_rows[0] if clean_rows and isinstance(clean_rows[0], dict) else {}
+        preview_rows = _standardize_preview_rows(str(alias), clean_rows[:5], plan)
         summary[str(alias)] = {
             "row_count": len(clean_rows),
-            "columns": list(first_row.keys()),
-            "preview_rows": deepcopy(clean_rows[:5]),
+            "columns": _columns_from_rows(preview_rows),
+            "preview_rows": preview_rows,
         }
     return summary
+
+
+def _standardize_preview_rows(alias: str, rows: list[Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
+    aliases = _standard_aliases_for_source(alias, plan)
+    result_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        result = deepcopy(row)
+        for standard, candidates in aliases.items():
+            standard_text = str(standard or "").strip()
+            if not standard_text:
+                continue
+            candidate_columns = [
+                str(candidate)
+                for candidate in candidates
+                if str(candidate or "").strip()
+                and str(candidate) != standard_text
+                and str(candidate) in result
+            ]
+            if not candidate_columns:
+                continue
+            if standard_text in result:
+                for candidate in candidate_columns:
+                    if _is_blank(result.get(standard_text)) and not _is_blank(result.get(candidate)):
+                        result[standard_text] = result.get(candidate)
+                    result.pop(candidate, None)
+                continue
+            rename_source = candidate_columns[0]
+            result[standard_text] = result.pop(rename_source)
+            for candidate in candidate_columns[1:]:
+                result.pop(candidate, None)
+        result_rows.append(result)
+    return result_rows
+
+
+def _columns_from_rows(rows: list[dict[str, Any]]) -> list[str]:
+    columns: list[str] = []
+    for row in rows:
+        for column in row:
+            column_text = str(column or "").strip()
+            if column_text and column_text not in columns:
+                columns.append(column_text)
+    return columns
+
+
+def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, list[str]]:
+    job = _job_for_source_alias(alias, plan)
+    aliases: dict[str, list[str]] = {}
+    for standard in _standard_columns_from_plan(plan):
+        equivalents = [name for name in _equivalent_column_names(standard) if name != standard]
+        if equivalents:
+            aliases[standard] = equivalents
+    if isinstance(job, dict):
+        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+            mapping = job.get(field) if isinstance(job.get(field), dict) else {}
+            for standard, candidates in mapping.items():
+                standard_text = str(standard or "").strip()
+                if not standard_text:
+                    continue
+                if not isinstance(candidates, list):
+                    candidates = [candidates]
+                aliases.setdefault(standard_text, [])
+                aliases[standard_text].extend(str(item) for item in candidates if str(item or "").strip())
+    return {key: _unique_columns([item for item in values if item != key]) for key, values in aliases.items()}
+
+
+def _job_for_source_alias(alias: str, plan: dict[str, Any]) -> dict[str, Any]:
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        job_alias = str(job.get("source_alias") or job.get("dataset_key") or "")
+        if job_alias == alias:
+            return job
+    return {}
+
+
+def _standard_columns_from_plan(plan: dict[str, Any]) -> list[str]:
+    columns: list[str] = []
+    for key in ("product_grain", "analysis_output_columns"):
+        value = plan.get(key)
+        if isinstance(value, list):
+            columns.extend(str(item) for item in value if str(item or "").strip())
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        for key in ("group_by", "join_keys", "output_columns"):
+            value = step.get(key)
+            if isinstance(value, list):
+                columns.extend(str(item) for item in value if str(item or "").strip())
+        for key in ("metric", "target_column", "count_column"):
+            value = str(step.get(key) or "").strip()
+            if value:
+                columns.append(value)
+    for key in ("metric", "target_column", "production_column"):
+        value = str(plan.get(key) or "").strip()
+        if value:
+            columns.append(value)
+    return _unique_columns(columns)
+
+
+def _equivalent_column_names(column: str) -> list[str]:
+    alias_columns = {
+        "MODE": ["Mode", "PROD_TYP"],
+        "PKG_TYPE1": ["PKG1", "PKG_TYP"],
+        "PKG_TYPE2": ["PKG2", "PKG_TYP_2", "PKG_TYP2"],
+        "MCP_NO": ["MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
+        "TECH": ["TECH_NM"],
+        "DEN": ["DENSITY", "DEN_TYP"],
+        "LEAD": ["LEAD_CNT"],
+        "OUT_PLAN": ["TARGET"],
+        "EQP_MODEL": ["EQP_MODEL_CD"],
+    }
+    standard = _standard_column_for_alias(column) or column
+    names = [standard, *alias_columns.get(standard, [])]
+    if column not in names:
+        names.insert(0, column)
+    return _unique_columns(names)
+
+
+def _standard_column_for_alias(alias: str) -> str:
+    alias_to_standard = {
+        "Mode": "MODE",
+        "PROD_TYP": "MODE",
+        "PKG1": "PKG_TYPE1",
+        "PKG_TYP": "PKG_TYPE1",
+        "PKG2": "PKG_TYPE2",
+        "PKG_TYP_2": "PKG_TYPE2",
+        "PKG_TYP2": "PKG_TYPE2",
+        "MCP NO": "MCP_NO",
+        "MCPSALENO": "MCP_NO",
+        "PROD_GRP_ID": "MCP_NO",
+        "MCP_SALE_CD": "MCP_NO",
+        "TECH_NM": "TECH",
+        "DENSITY": "DEN",
+        "DEN_TYP": "DEN",
+        "LEAD_CNT": "LEAD",
+        "TARGET": "OUT_PLAN",
+        "EQP_MODEL_CD": "EQP_MODEL",
+    }
+    return alias_to_standard.get(alias, "")
+
+
+def _is_blank(value: Any) -> bool:
+    return value is None or str(value).strip() == ""
+
+
+def _unique_columns(columns: list[str]) -> list[str]:
+    result = []
+    for column in columns:
+        if column not in result:
+            result.append(column)
+    return result
 
 
 def _filters_by_source(plan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
