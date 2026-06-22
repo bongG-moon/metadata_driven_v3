@@ -576,6 +576,100 @@ filter_mappings: DATE -> WORK_DT, PKG_TYPE1 -> PKG_TYPE1, PKG_TYPE2 -> PKG_TYPE2
     assert "PKG_TYPE1,," not in stored_query
 
 
+def test_table_catalog_authoring_preserves_raw_query_template_with_blank_lines() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_query = "\n".join(
+        [
+            "WITH base AS (",
+            "  SELECT WORK_DT, PROD_QTY",
+            "  FROM PRODUCTION_RAW",
+            "  WHERE WORK_DT = {DATE}",
+            "),",
+            "",
+            "final_rows AS (",
+            "  SELECT WORK_DT, SUM(PROD_QTY) AS PRODUCTION",
+            "  FROM base",
+            "  GROUP BY WORK_DT",
+            ")",
+            "SELECT WORK_DT, PRODUCTION",
+            "FROM final_rows",
+        ]
+    )
+    raw_text = f"""dataset_key=production_today
+source_type=oracle
+db_key=PNT_RPT
+dataset_family=production
+
+query_template:
+{raw_query}
+
+filter_mappings: DATE -> WORK_DT"""
+    payload = {"metadata_type": "table_catalog", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "production_today",
+                "payload": {
+                    "display_name": "Production Today",
+                    "dataset_family": "production",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "WITH base AS ( SELECT ... ) SELECT WORK_DT, PRODUCTION FROM final_rows",
+                    },
+                    "columns": ["WORK_DT"],
+                    "filter_mappings": {"DATE": ["WORK_DT"]},
+                    "required_params": ["DATE"],
+                    "required_param_mappings": {"DATE": ["WORK_DT"]},
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+    item_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert item_payload["source_config"]["query_template"] == raw_query
+    assert item_payload["columns"] == ["WORK_DT", "PRODUCTION"]
+    assert normalized["query_template_checks"][0]["line_count"] == len(raw_query.splitlines())
+    assert normalized["query_template_checks"][0]["contains_truncation_marker"] is False
+
+
+def test_table_catalog_authoring_blocks_truncated_query_template_without_raw_sql() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    payload = {"metadata_type": "table_catalog", "raw_text": "dataset_key=production_today", "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "production_today",
+                "payload": {
+                    "display_name": "Production Today",
+                    "dataset_family": "production",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT ... FROM PRODUCTION_TABLE WHERE WORK_DT = {DATE}",
+                    },
+                    "columns": ["WORK_DT", "PRODUCTION"],
+                    "filter_mappings": {"DATE": ["WORK_DT"]},
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["query_template_checks"][0]["contains_truncation_marker"] is True
+    assert any("query_template" in error for error in normalized["errors"])
+
+
 def test_table_catalog_authoring_extracts_columns_from_top_level_sql_select() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     query = """
@@ -636,6 +730,41 @@ def test_table_catalog_writer_does_not_block_missing_default_detail_columns() ->
 
     assert result["review"]["ready_to_save"] is True
     assert result["review"]["supplement_requests"] == []
+
+
+def test_table_catalog_writer_blocks_truncated_query_template_even_when_review_passes() -> None:
+    writer = load_module("langflow_components/table_catalog_authoring_flow/07_table_catalog_review_writer.py")
+    payload = {
+        "metadata_type": "table_catalog",
+        "items": [
+            {
+                "dataset_key": "production_today",
+                "payload": {
+                    "display_name": "Production Today",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT WORK_DT\nFROM PRODUCTION_TABLE\nWHERE ...",
+                    },
+                    "columns": ["WORK_DT"],
+                },
+            }
+        ],
+        "duplicate_decision": {"action": "replace", "requires_user_choice": False},
+        "errors": [],
+    }
+    review_json = {"ready_to_save": True, "supplement_requests": [], "item_reviews": [{"decision": "pass"}]}
+
+    result = writer.review_and_write_table_catalog_payload(
+        payload,
+        json.dumps(review_json, ensure_ascii=False),
+        mongo_uri="mongodb://example",
+    )
+
+    assert result["write_result"]["status"] == "error"
+    assert result["write_result"]["saved_count"] == 0
+    assert any("query_template" in error for error in result["write_result"]["errors"])
 
 
 def test_table_catalog_writer_does_not_block_optional_goodocs_sheet_or_query_fields() -> None:

@@ -608,6 +608,9 @@ def test_intent_prompt_tells_llm_to_use_group_label_not_raw_rank_field(monkeypat
     assert "rank_groups[].field" in prompt
     assert "Do not include that raw field in final output_columns" in prompt
     assert "use OPER_GROUP in final output_columns rather than OPER_NAME" in prompt
+    assert "Keep product_grain, step_plan[].group_by, step_plan[].join_keys" in prompt
+    assert "retrieval_jobs[].required_columns, request the dataset's physical/source columns" in prompt
+    assert "standard_column_aliases" in prompt
 
 
 def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any) -> None:
@@ -645,9 +648,9 @@ def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any
     assert {"TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"}.issubset(
         set(jobs["production_today"]["required_columns"])
     )
-    assert {"TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"}.issubset(
-        set(jobs["target"]["required_columns"])
-    )
+    assert {"TECH", "DEN", "Mode", "PKG1", "PKG2", "LEAD", "MCP NO"}.issubset(set(jobs["target"]["required_columns"]))
+    assert "PKG_TYPE1" not in jobs["target"]["required_columns"]
+    assert "PKG_TYPE2" not in jobs["target"]["required_columns"]
     assert any("params/filters를 보완" in item for item in payload["info"])
     assert not any("params/filters를 보완" in item for item in payload["warnings"])
 
@@ -914,6 +917,83 @@ def test_intent_normalizer_keeps_cross_source_join_keys_as_standard_columns() ->
 
     assert normalized["intent_plan"]["step_plan"][0]["join_keys"] == product_keys
     assert normalized["retrieval_jobs"][0]["filter_mappings"]["DEN"] == ["DENSITY"]
+
+
+def test_intent_normalizer_maps_standard_required_columns_to_physical_source_columns() -> None:
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    product_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    mapped_catalog = {
+        "dataset_family": "production",
+        "source_type": "oracle",
+        "source_config": {"source_type": "oracle", "db_key": "PNT_RPT", "query_template": "SELECT * FROM T WHERE WORK_DT = {DATE}"},
+        "required_params": ["DATE"],
+        "columns": ["WORK_DT", "TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCPSALENO", "PRODUCTION"],
+        "filter_mappings": {
+            "DATE": ["WORK_DT"],
+            "TECH": ["TECH"],
+            "DEN": ["DENSITY"],
+            "MODE": ["MODE"],
+            "PKG_TYPE1": ["PKG1"],
+            "PKG_TYPE2": ["PKG2"],
+            "LEAD": ["LEAD"],
+            "MCP_NO": ["MCPSALENO"],
+        },
+        "standard_column_aliases": {
+            "DEN": ["DENSITY"],
+            "PKG_TYPE1": ["PKG1"],
+            "PKG_TYPE2": ["PKG2"],
+            "MCP_NO": ["MCPSALENO"],
+        },
+        "primary_quantity_column": "PRODUCTION",
+    }
+    payload = {
+        "request": {"question": "어제 DA공정 제품별 실적과 재공 조인", "request_date": "20260621"},
+        "state": {},
+        "metadata": {
+            "domain_items": {"product_key_columns": product_keys},
+            "table_catalog": {"datasets": {"production": mapped_catalog}},
+        },
+    }
+    intent_llm_json = {
+        "intent_type": "multi_source_analysis",
+        "analysis_kind": "aggregate_join",
+        "datasets": ["production"],
+        "product_grain": product_keys,
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production",
+                "source_alias": "production_data",
+                "required_columns": [*product_keys, "PRODUCTION"],
+                "filter_mappings": {"DATE": ["WORK_DT"]},
+                "filters": [],
+                "params": {},
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "join_result",
+                "operation": "left_join",
+                "source_alias": "production_data",
+                "join_keys": product_keys,
+            }
+        ],
+    }
+
+    normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    job = normalized["retrieval_jobs"][0]
+
+    assert normalized["intent_plan"]["step_plan"][0]["join_keys"] == product_keys
+    assert {"TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCPSALENO", "PRODUCTION"}.issubset(
+        set(job["required_columns"])
+    )
+    assert "PKG_TYPE1" not in job["required_columns"]
+    assert "PKG_TYPE2" not in job["required_columns"]
+    assert "MCP_NO" not in job["required_columns"]
+    assert job["filter_mappings"]["DATE"] == ["WORK_DT"]
+    assert job["filter_mappings"]["PKG_TYPE1"] == ["PKG1"]
+    assert job["standard_column_aliases"]["PKG_TYPE1"] == ["PKG1"]
+    assert job["pandas_preprocessing"]["standardize_columns"] is True
+    assert normalized["intent_plan"]["pandas_preprocessing"]["standardize_columns"] is True
 
 
 def test_intent_normalizer_marks_full_previous_result_restore_for_previous_result_row_analysis(monkeypatch: Any) -> None:
@@ -2260,6 +2340,39 @@ def test_answer_prompt_tells_llm_not_to_render_result_tables() -> None:
 
     assert "Do not include Markdown tables" in prompt
     assert "answer_message must be narrative text only" in prompt
+
+
+def test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract() -> None:
+    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/18_answer_prompt_builder.py")
+    payload = {
+        "request": {"question": "제품별 생산량과 재공 조인"},
+        "intent_plan": {
+            "intent_type": "multi_source_analysis",
+            "analysis_kind": "aggregate_join",
+            "product_grain": ["PKG_TYPE1", "PKG_TYPE2", "MCP_NO"],
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production",
+                    "source_alias": "production_data",
+                    "filter_mappings": {"PKG_TYPE1": ["PKG1"], "PKG_TYPE2": ["PKG2"], "MCP_NO": ["MCPSALENO"]},
+                    "standard_column_aliases": {"PKG_TYPE1": ["PKG1"], "PKG_TYPE2": ["PKG2"], "MCP_NO": ["MCPSALENO"]},
+                }
+            ],
+        },
+        "analysis": {
+            "columns": ["PKG_TYPE1", "PKG_TYPE2", "MCP_NO", "PRODUCTION", "WIP"],
+            "rows": [],
+            "row_count": 0,
+            "errors": ["pandas join returned no rows"],
+        },
+    }
+
+    prompt_payload = answer_prompt_builder.build_answer_prompt_payload(payload)
+    prompt = prompt_payload["prompt"]
+
+    assert "Column-name rule" in prompt
+    assert "do not ask the user to modify metadata just because the source used the physical names" in prompt
+    assert prompt_payload["answer_context"]["column_standardization"][0]["mappings"]["PKG_TYPE1"] == ["PKG1"]
 
 
 def load_seed_metadata_payload(module: Any, payload: dict[str, Any], monkeypatch: Any) -> dict[str, Any]:

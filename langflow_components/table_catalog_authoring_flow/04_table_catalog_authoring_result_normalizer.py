@@ -39,6 +39,24 @@ SOURCE_REQUIRED_FIELDS = {
     "goodocs": ["doc_id"],
 }
 
+TRUNCATED_QUERY_MARKERS = ("...", "…", "<생략>", "생략", "omitted", "truncated")
+QUERY_BLOCK_STOP_FIELDS = {
+    "dataset_key",
+    "display_name",
+    "dataset_family",
+    "date_scope",
+    "source_type",
+    "db_key",
+    "required_params",
+    "required_param_mappings",
+    "filter_mappings",
+    "standard_column_aliases",
+    "default_detail_columns",
+    "columns",
+    "date_format",
+    "primary_quantity_column",
+}
+
 
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: table catalog authoring LLM JSON을 MongoDB 저장 가능한 dataset item으로 정규화합니다.
@@ -60,6 +78,7 @@ def normalize_table_catalog_authoring_result(payload_value: Any, llm_response_va
         errors.extend(item_errors)
     next_payload = dict(payload)
     next_payload["items"] = items
+    next_payload["query_template_checks"] = _query_template_checks(items)
     next_payload["authoring"] = {
         "missing_information": _as_list(parsed.get("missing_information")),
         "warnings": _as_list(parsed.get("warnings")),
@@ -83,12 +102,17 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
     payload["source_type"] = source_type
     source_config = deepcopy(payload.get("source_config")) if isinstance(payload.get("source_config"), dict) else {}
     source_config.setdefault("source_type", source_type)
+    _normalize_source_config_query(source_config)
     payload["source_config"] = source_config
     if raw_item_count == 1:
         _backfill_structured_fields(payload, source_text)
+    _normalize_source_config_query(payload["source_config"])
     for field in SOURCE_REQUIRED_FIELDS.get(source_type, []):
-        if not _clean(source_config.get(field)):
+        if not _clean(payload["source_config"].get(field)):
             errors.append(f"{dataset_key} source_type={source_type}에는 source_config.{field}가 필요합니다.")
+    query_template = _clean(payload["source_config"].get("query_template"))
+    if _query_template_looks_truncated(query_template):
+        errors.append(f"{dataset_key} source_config.query_template이 축약되어 저장할 수 없습니다. 실제 실행 SQL 전체를 입력해 주세요.")
     if not _clean(payload.get("dataset_family")):
         errors.append(f"{dataset_key} dataset_family가 필요합니다.")
     if not _as_text_list(payload.get("columns")):
@@ -155,7 +179,7 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     if db_key and not _clean(source_config.get("db_key")):
         source_config["db_key"] = db_key
     query_template = _query_template_from_text(source_text)
-    if query_template:
+    if query_template and _should_replace_query_template(query_template, source_config.get("query_template")):
         source_config["query_template"] = query_template
     doc_id = _goodocs_doc_id_from_text(source_text)
     if doc_id and not _clean(source_config.get("doc_id")):
@@ -229,6 +253,7 @@ def _query_template_from_text(text: str) -> str:
     lines = str(text or "").splitlines()
     collected: list[str] = []
     collecting = False
+    in_fence = False
     for line in lines:
         if not collecting:
             match = re.match(r"\s*query_template\s*:\s*(.*)$", line, flags=re.IGNORECASE)
@@ -236,17 +261,113 @@ def _query_template_from_text(text: str) -> str:
                 continue
             collecting = True
             first = match.group(1).rstrip()
+            if first.strip().startswith("```"):
+                in_fence = True
+                continue
             if first.strip():
                 collected.append(first)
             continue
         stripped = line.strip()
-        if not stripped and collected:
-            break
-        if re.match(r"\s*(filter_mappings|default_detail_columns|columns|standard_column_aliases)\b", line, flags=re.IGNORECASE):
-            break
-        if stripped:
+        if in_fence:
+            if stripped.startswith("```"):
+                break
             collected.append(line.rstrip())
-    return "\n".join(collected).strip()
+            continue
+        if stripped.startswith("```"):
+            in_fence = True
+            continue
+        if _is_query_block_stop_line(line):
+            break
+        collected.append(line.rstrip())
+    return _strip_query_template_semicolon("\n".join(_trim_blank_lines(collected)))
+
+
+def _is_query_block_stop_line(line: str) -> bool:
+    text = str(line or "").strip()
+    if not text:
+        return False
+    for field in QUERY_BLOCK_STOP_FIELDS:
+        if re.match(rf"^{re.escape(field)}\s*(?::|=|는|은)\s*", text, flags=re.IGNORECASE):
+            return True
+    return False
+
+
+def _trim_blank_lines(lines: list[str]) -> list[str]:
+    start = 0
+    end = len(lines)
+    while start < end and not lines[start].strip():
+        start += 1
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return lines[start:end]
+
+
+def _normalize_source_config_query(source_config: dict[str, Any]) -> None:
+    lines = source_config.get("query_template_lines")
+    if isinstance(lines, list) and not _clean(source_config.get("query_template")):
+        joined = "\n".join(str(line) for line in lines)
+        if joined.strip():
+            source_config["query_template"] = joined
+    source_config.pop("query_template_lines", None)
+    for alias in ("sql_template", "oracle_sql", "sql", "query"):
+        if _clean(source_config.get(alias)) and not _clean(source_config.get("query_template")):
+            source_config["query_template"] = source_config.get(alias)
+    if _clean(source_config.get("query_template")):
+        source_config["query_template"] = _strip_query_template_semicolon(source_config.get("query_template"))
+
+
+def _should_replace_query_template(candidate: str, current: Any) -> bool:
+    current_text = _strip_query_template_semicolon(current)
+    candidate_text = _strip_query_template_semicolon(candidate)
+    if not candidate_text:
+        return False
+    if not current_text:
+        return True
+    if _query_template_looks_truncated(candidate_text) and not _query_template_looks_truncated(current_text):
+        return False
+    if not _query_template_looks_truncated(candidate_text):
+        return True
+    return len(candidate_text) >= len(current_text)
+
+
+def _strip_query_template_semicolon(value: Any) -> str:
+    text = str(value or "").strip()
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    while text.endswith(";"):
+        text = text[:-1].rstrip()
+    return text
+
+
+def _query_template_looks_truncated(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return any(marker.lower() in text for marker in TRUNCATED_QUERY_MARKERS)
+
+
+def _query_template_tail(value: Any, max_lines: int = 8) -> str:
+    lines = [line.rstrip() for line in str(value or "").splitlines() if line.strip()]
+    return "\n".join(lines[-max_lines:])
+
+
+def _query_template_checks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    for item in items:
+        payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+        source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
+        query_template = str(source_config.get("query_template") or "")
+        if not query_template:
+            continue
+        checks.append(
+            {
+                "dataset_key": item.get("dataset_key", ""),
+                "char_count": len(query_template),
+                "line_count": len(query_template.splitlines()),
+                "contains_truncation_marker": _query_template_looks_truncated(query_template),
+                "tail_preview": _query_template_tail(query_template),
+            }
+        )
+    return checks
 
 
 def _columns_from_query(query: str) -> list[str]:

@@ -110,9 +110,12 @@ def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
                             "purpose": "why this data is needed",
                             "params": {},
                             "filters": [],
-                            "required_columns": [],
+                            "required_columns": ["dataset physical/source columns needed for retrieval"],
                             "required_param_mappings": {"DATE": ["physical column copied from metadata"]},
+                            "filter_mappings": {"standard logical column": ["dataset physical/source columns copied from metadata"]},
+                            "standard_column_aliases": {"standard logical column": ["dataset physical/source columns copied from metadata"]},
                             "date_format": "copy metadata.datasets[dataset_key].date_format when present",
+                            "pandas_preprocessing": {"standardize_columns": True},
                         }
                     ],
                     "step_plan": [
@@ -153,6 +156,9 @@ def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
             f"- If a dataset date_format is YYYY-MM-DD, DATE must look like {_date_param_value_for_dataset(request_date, {'date_format': 'YYYY-MM-DD'})}. Do not output {_date_param_value_for_dataset(request_date, {'date_format': 'YYYYMMDD'})} for that dataset.",
             "- Never copy target's YYYY-MM-DD format to production_today, wip_today, or other datasets unless that dataset's own metadata says YYYY-MM-DD.",
             "- When a retrieval job contains DATE params, also copy required_param_mappings and date_format from the dataset metadata into that retrieval_jobs item when present.",
+            "- Keep product_grain, step_plan[].group_by, step_plan[].join_keys, and final output_columns in standard logical column names from metadata. Do not replace them with dataset-specific physical names such as PKG1, PKG2, DENSITY, or MCPSALENO.",
+            "- In retrieval_jobs[].required_columns, request the dataset's physical/source columns from table_catalog.columns/filter_mappings/standard_column_aliases. The pandas stage standardizes source DataFrames before joins, grouping, ranking, and output shaping.",
+            "- Copy table_catalog.filter_mappings and standard_column_aliases into each retrieval job when present, so physical columns such as PKG1/PKG2/MCPSALENO can be standardized to PKG_TYPE1/PKG_TYPE2/MCP_NO for pandas.",
             "- Use intent_type=followup_transform when the question says 이 제품/그 제품/해당 제품/이때/그때/방금 결과 and needs previous state.",
             "- For follow-up equipment questions, use only equipment_status unless the user explicitly asks for Lot, Hold, wafer, or die data.",
             "- For follow-up 장비 현황/설비 현황 questions, use analysis_kind=equipment_for_previous_products and return equipment detail rows.",
@@ -206,6 +212,8 @@ def _metadata_summary(metadata: dict[str, Any], request_date: str) -> dict[str, 
             "date_param_value_for_current_request": _date_param_value_for_dataset(request_date, item),
             "quantity": item.get("primary_quantity_column"),
             "filter_fields": sorted((item.get("filter_mappings") or {}).keys()),
+            "filter_mappings": item.get("filter_mappings", {}),
+            "standard_column_aliases": item.get("standard_column_aliases", {}),
             "columns": item.get("columns", []),
         }
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}

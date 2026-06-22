@@ -20,6 +20,7 @@ from lfx.schema.data import Data
 DEFAULT_COLLECTION_NAME = "agent_v3_table_catalog_items"
 COLLECTION_ENV_KEY = "MONGODB_TABLE_CATALOG_COLLECTION"
 LEGACY_COLLECTION_SUFFIX = "table_catalog_items"
+TRUNCATED_QUERY_MARKERS = ("...", "…", "<생략>", "생략", "omitted", "truncated")
 
 
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
@@ -105,21 +106,35 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
     result = {"status": "ok", "saved_count": 0, "saved_items": [], "errors": [], "skipped_reason": ""}
     client = None
     try:
-        mongo_client_cls = getattr(import_module("pymongo"), "MongoClient")
-        client = mongo_client_cls(mongo_uri, serverSelectionTimeoutMS=5000)
-        coll = client[database][collection]
+        docs: list[dict[str, Any]] = []
         for item in items:
             if not isinstance(item, dict):
                 continue
-            dataset_key = _clean(item.get("dataset_key"))
+            doc = _table_doc(item)
+            doc_errors = _storage_doc_errors(doc)
+            if doc_errors:
+                result["errors"].extend(doc_errors)
+                continue
+            docs.append(doc)
+        if result["errors"] and not docs:
+            result["status"] = "error"
+            return result
+        mongo_client_cls = getattr(import_module("pymongo"), "MongoClient")
+        client = mongo_client_cls(mongo_uri, serverSelectionTimeoutMS=5000)
+        coll = client[database][collection]
+        for doc in docs:
+            dataset_key = _clean(doc.get("dataset_key"))
             existing = coll.find_one({"dataset_key": dataset_key})
             if existing and action == "create_new":
                 result["errors"].append(f"{dataset_key}는 이미 존재합니다. create_new를 쓰려면 새 dataset_key가 필요합니다.")
                 continue
-            doc = _table_doc(item)
             if existing and action == "merge":
                 doc = _deep_merge(_json_ready(existing), doc)
                 doc["_id"] = existing.get("_id", doc["_id"])
+                merge_errors = _storage_doc_errors(doc)
+                if merge_errors:
+                    result["errors"].extend(merge_errors)
+                    continue
             doc = _strip_storage_envelope(doc)
             coll.replace_one({"_id": doc["_id"]}, doc, upsert=True)
             result["saved_count"] += 1
@@ -138,6 +153,7 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
 def _table_doc(item: dict[str, Any]) -> dict[str, Any]:
     dataset_key = _clean(item.get("dataset_key"))
     payload = deepcopy(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
+    _normalize_payload_query_template(payload)
     doc = {
         "_id": f"table_catalog:{dataset_key}",
         "dataset_key": dataset_key,
@@ -147,6 +163,40 @@ def _table_doc(item: dict[str, Any]) -> dict[str, Any]:
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     return doc
+
+
+def _normalize_payload_query_template(payload: dict[str, Any]) -> None:
+    source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
+    query_template = _strip_query_template_semicolon(source_config.get("query_template"))
+    if query_template:
+        source_config = deepcopy(source_config)
+        source_config["query_template"] = query_template
+        payload["source_config"] = source_config
+
+
+def _storage_doc_errors(doc: dict[str, Any]) -> list[str]:
+    payload = doc.get("payload") if isinstance(doc.get("payload"), dict) else {}
+    source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
+    query_template = source_config.get("query_template")
+    if _query_template_looks_truncated(query_template):
+        dataset_key = _clean(doc.get("dataset_key"))
+        return [f"{dataset_key}: source_config.query_template이 축약되어 저장할 수 없습니다. 실제 SQL 전체를 다시 입력해 주세요."]
+    return []
+
+
+def _strip_query_template_semicolon(value: Any) -> str:
+    text = str(value or "").strip()
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
+    while text.endswith(";"):
+        text = text[:-1].rstrip()
+    return text
+
+
+def _query_template_looks_truncated(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return any(marker.lower() in text for marker in TRUNCATED_QUERY_MARKERS)
 
 
 def _strip_storage_envelope(doc: dict[str, Any]) -> dict[str, Any]:

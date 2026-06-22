@@ -52,6 +52,7 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "row_count": analysis.get("row_count", 0),
         },
         "source_results": _compact_source_results(source_results),
+        "column_standardization": _column_standardization_context(plan),
         "metadata_context": metadata_context,
         "info": payload.get("info", []),
         "warnings": payload.get("warnings", []),
@@ -65,6 +66,8 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Be concise but include the applied conditions, datasets used, and any important caveat.",
             "Do not include Markdown tables, tab-separated tables, plain text tables, or row-by-row result listings in answer_message.",
             "The downstream Answer Message Adapter renders the result table deterministically from data.rows; answer_message must be narrative text only.",
+            "Column-name rule: if column_standardization maps physical source columns to standard analysis columns, do not describe that physical-vs-standard difference as a metadata problem.",
+            "For example, if PKG1/PKG2/MCPSALENO are mapped to PKG_TYPE1/PKG_TYPE2/MCP_NO, explain joins using the standard columns and do not ask the user to modify metadata just because the source used the physical names.",
             "If there are errors, explain what failed and what the user can retry.",
             "",
             "Return either plain Korean text or one strict JSON object with this schema:",
@@ -95,6 +98,45 @@ def _compact_source_results(source_results: list[Any]) -> list[dict[str, Any]]:
             }
         )
     return compact
+
+
+def _column_standardization_context(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    context: list[dict[str, Any]] = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        mappings: dict[str, Any] = {}
+        for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+            mapping = job.get(field) if isinstance(job.get(field), dict) else {}
+            for standard, candidates in mapping.items():
+                standard_text = str(standard or "").strip()
+                if not standard_text:
+                    continue
+                values = candidates if isinstance(candidates, list) else [candidates]
+                clean_values = [str(item) for item in values if str(item or "").strip() and str(item) != standard_text]
+                if clean_values:
+                    mappings.setdefault(standard_text, [])
+                    mappings[standard_text].extend(clean_values)
+        if mappings:
+            context.append(
+                {
+                    "source_alias": job.get("source_alias") or job.get("dataset_key"),
+                    "dataset_key": job.get("dataset_key"),
+                    "standardize_columns": True,
+                    "mappings": {key: _unique(values) for key, values in mappings.items()},
+                }
+            )
+    return context
+
+
+def _unique(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
 
 
 def _payload(value: Any) -> dict[str, Any]:

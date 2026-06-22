@@ -96,13 +96,16 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             job["date_format"] = deepcopy(dataset_catalog["date_format"])
         if "primary_quantity_column" not in job and dataset_catalog.get("primary_quantity_column"):
             job["primary_quantity_column"] = deepcopy(dataset_catalog["primary_quantity_column"])
-        if "filter_mappings" not in job and isinstance(dataset_catalog.get("filter_mappings"), dict):
-            job["filter_mappings"] = deepcopy(dataset_catalog["filter_mappings"])
-        if "standard_column_aliases" not in job and isinstance(dataset_catalog.get("standard_column_aliases"), dict):
-            job["standard_column_aliases"] = deepcopy(dataset_catalog["standard_column_aliases"])
+        _attach_column_standardization_contract(job, dataset_catalog)
         normalized_jobs.append(job)
     plan["retrieval_jobs"] = normalized_jobs
     plan["datasets"] = _unique([job["dataset_key"] for job in normalized_jobs] or llm_json.get("datasets", []))
+    if normalized_jobs:
+        plan["pandas_preprocessing"] = {
+            "standardize_columns": True,
+            "source": "retrieval_jobs.filter_mappings/required_param_mappings/standard_column_aliases",
+            "note": "Retrievers preserve physical source columns; pandas execution standardizes them to plan column names.",
+        }
     _attach_result_scope_columns(plan, normalized_jobs, metadata, question)
     if not plan.get("step_plan"):
         fallback_steps = _fallback_step_plan(plan, metadata, payload)
@@ -690,6 +693,9 @@ def _fallback_retrieval_jobs(
                 "required_param_mappings": deepcopy(dataset_catalog.get("required_param_mappings", {})),
                 "date_format": deepcopy(dataset_catalog.get("date_format", "")),
                 "primary_quantity_column": deepcopy(dataset_catalog.get("primary_quantity_column")),
+                "filter_mappings": deepcopy(dataset_catalog.get("filter_mappings", {})),
+                "standard_column_aliases": deepcopy(dataset_catalog.get("standard_column_aliases", {})),
+                "pandas_preprocessing": {"standardize_columns": True},
             }
         )
     return jobs
@@ -698,22 +704,27 @@ def _fallback_retrieval_jobs(
 def _normalize_required_columns(raw_columns: Any, catalog: dict[str, Any], product_grain: list[str] | None = None) -> list[str]:
     catalog_columns = _unique(catalog.get("columns", []))
     filter_mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
+    standard_aliases = catalog.get("standard_column_aliases") if isinstance(catalog.get("standard_column_aliases"), dict) else {}
     columns = _unique(raw_columns if isinstance(raw_columns, list) and raw_columns else catalog_columns)
     normalized: list[str] = []
     for column in columns:
         if column in catalog_columns:
             normalized.append(column)
             continue
-        mapped_columns = _unique(filter_mappings.get(column, []))
+        mapped_columns = _source_columns_for_standard_column(str(column), catalog)
         if mapped_columns:
             normalized.extend(item for item in mapped_columns if item in catalog_columns or item not in normalized)
         elif column:
             normalized.append(column)
     quantity = catalog.get("primary_quantity_column")
     quantity_columns = quantity if isinstance(quantity, list) else [quantity] if quantity else []
-    normalized.extend(str(item) for item in quantity_columns if str(item or "").strip())
-    supported_product_columns = [column for column in _unique(product_grain or []) if column in filter_mappings or column in catalog_columns]
-    normalized.extend(supported_product_columns)
+    normalized.extend(_source_columns_for_standard_columns(quantity_columns, catalog))
+    supported_product_columns = [
+        column
+        for column in _unique(product_grain or [])
+        if column in filter_mappings or column in standard_aliases or column in catalog_columns
+    ]
+    normalized.extend(_source_columns_for_standard_columns(supported_product_columns, catalog))
     return _unique(normalized)
 
 
@@ -732,8 +743,75 @@ def _required_product_grain(plan: dict[str, Any], catalog: dict[str, Any]) -> li
     if kind not in product_grain_kinds:
         return []
     mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
+    standard_aliases = catalog.get("standard_column_aliases") if isinstance(catalog.get("standard_column_aliases"), dict) else {}
     product_grain = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
-    return [column for column in product_grain if column in mappings or column in _unique(catalog.get("columns", []))]
+    catalog_columns = _unique(catalog.get("columns", []))
+    return [column for column in product_grain if column in mappings or column in standard_aliases or column in catalog_columns]
+
+
+def _attach_column_standardization_contract(job: dict[str, Any], dataset_catalog: dict[str, Any]) -> None:
+    for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+        merged = _merged_mapping_dict(dataset_catalog.get(field), job.get(field))
+        if merged:
+            job[field] = merged
+    has_mapping = any(
+        isinstance(job.get(key), dict) and job.get(key)
+        for key in ("filter_mappings", "required_param_mappings", "standard_column_aliases")
+    )
+    if has_mapping:
+        job["pandas_preprocessing"] = {
+            "standardize_columns": True,
+            "source": "table_catalog filter/alias mappings",
+        }
+
+
+def _merged_mapping_dict(catalog_value: Any, job_value: Any) -> dict[str, list[str]]:
+    merged: dict[str, list[str]] = {}
+    for mapping in (catalog_value, job_value):
+        if not isinstance(mapping, dict):
+            continue
+        for key, raw_candidates in mapping.items():
+            key_text = str(key or "").strip()
+            if not key_text:
+                continue
+            candidates = raw_candidates if isinstance(raw_candidates, list) else [raw_candidates]
+            merged.setdefault(key_text, [])
+            merged[key_text].extend(str(item) for item in candidates if str(item or "").strip())
+    return {key: _unique(values) for key, values in merged.items()}
+
+
+def _source_columns_for_standard_columns(columns: Any, catalog: dict[str, Any]) -> list[str]:
+    result: list[str] = []
+    values = columns if isinstance(columns, list) else [columns] if columns else []
+    for column in values:
+        result.extend(_source_columns_for_standard_column(str(column or "").strip(), catalog))
+    return _unique(result)
+
+
+def _source_columns_for_standard_column(column: str, catalog: dict[str, Any]) -> list[str]:
+    text = str(column or "").strip()
+    if not text:
+        return []
+    catalog_columns = _unique(catalog.get("columns", []))
+    catalog_column_set = set(catalog_columns)
+    mappings: list[str] = []
+    for field in ("filter_mappings", "standard_column_aliases", "required_param_mappings"):
+        mapping = catalog.get(field) if isinstance(catalog.get(field), dict) else {}
+        candidates = mapping.get(text)
+        if candidates is None:
+            continue
+        if not isinstance(candidates, list):
+            candidates = [candidates]
+        mappings.extend(str(item) for item in candidates if str(item or "").strip())
+    mappings = _unique(mappings)
+    mapped_existing = [item for item in mappings if item in catalog_column_set]
+    if mapped_existing:
+        return mapped_existing
+    if text in catalog_column_set:
+        return [text]
+    if mappings:
+        return mappings
+    return [text]
 
 
 def _normalize_step_plan_columns(plan: dict[str, Any], jobs: list[dict[str, Any]], catalog: dict[str, Any]) -> None:
