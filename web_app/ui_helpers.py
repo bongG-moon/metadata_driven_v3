@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from typing import Any
 
 import pandas as pd
@@ -45,7 +46,8 @@ def compact_json_html(value: Any) -> str:
 
 def safe_markdown_text(value: Any) -> str:
     text = str(value or "")
-    return text.replace("~~", "\\~\\~")
+    # Langflow/API 응답에 포함된 ~ 문자가 Markdown 취소선으로 해석되지 않게 막습니다.
+    return re.sub(r"(?<!\\)~", r"\\~", text)
 
 
 def chat_table_visible_rows(max_height: int = TABLE_MAX_HEIGHT) -> int:
@@ -101,4 +103,3 @@ def _format_number(value: Any, mode: str) -> Any:
     if float(number).is_integer():
         return f"{int(number):,}"
     return f"{number:,.1f}"
-

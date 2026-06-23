@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from web_app.ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame
+from web_app.ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, safe_markdown_text
 
 
 def test_table_height_uses_auto_for_small_results_and_caps_large_results() -> None:
@@ -29,3 +29,9 @@ def test_compact_json_html_escapes_values() -> None:
     assert "&lt;tag&gt;" in rendered
     assert "compact-json-boolean" in rendered
     assert "compact-json-null" in rendered
+
+
+def test_safe_markdown_text_escapes_tildes_without_double_escaping() -> None:
+    rendered = safe_markdown_text(r"OPER D/A1~D/A6 and ~~HOLD~~ and already \~safe")
+
+    assert rendered == r"OPER D/A1\~D/A6 and \~\~HOLD\~\~ and already \~safe"
