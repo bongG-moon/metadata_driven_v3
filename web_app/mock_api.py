@@ -7,8 +7,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from reference_runtime.agent import run_agent
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SESSION_STATE = {"chat_history": [], "context": {}, "current_data": {}}
@@ -35,7 +33,7 @@ class MockApiClient:
         if metadata_qa:
             self.sessions[session] = deepcopy(metadata_qa.get("state") or DEFAULT_SESSION_STATE)
             return metadata_qa
-        payload = run_agent(text, state=previous_state, session_id=session, root=str(self.root), request_date=DEFAULT_REQUEST_DATE)
+        payload = _run_reference_agent(text, state=previous_state, session_id=session, root=str(self.root), request_date=DEFAULT_REQUEST_DATE)
         compacted = self._compact_query_payload(payload, session)
         self.sessions[session] = deepcopy(compacted.get("state") or DEFAULT_SESSION_STATE)
         return compacted
@@ -316,6 +314,17 @@ class MockApiClient:
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _run_reference_agent(question: str, state: dict[str, Any], session_id: str, root: str, request_date: str) -> dict[str, Any]:
+    try:
+        from reference_runtime.agent import run_agent
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Python mock query mode requires the repository reference_runtime package. "
+            "Standalone web deployment should use LANGFLOW_ROUTER_API_URL or LANGFLOW_ROUTER_FLOW_ID instead."
+        ) from exc
+    return run_agent(question, state=state, session_id=session_id, root=root, request_date=request_date)
 
 
 def _normalize_metadata_type(value: str) -> str:

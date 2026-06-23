@@ -15,14 +15,14 @@ REPO_ROOT = APP_DIR.parent
 try:
     from .data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from .langflow_client import LangflowApiClient, LangflowSettings
-    from .mock_api import MockApiClient
+    from .metadata_store import collection_name_for, load_metadata_items
     from .ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, json_text, safe_markdown_text
 except ImportError:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     from web_app.data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from web_app.langflow_client import LangflowApiClient, LangflowSettings
-    from web_app.mock_api import MockApiClient
+    from web_app.metadata_store import collection_name_for, load_metadata_items
     from web_app.ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, json_text, safe_markdown_text
 
 
@@ -88,8 +88,6 @@ def main() -> None:
 
 
 def ensure_state() -> None:
-    if "mock_api" not in st.session_state:
-        st.session_state.mock_api = MockApiClient()
     api_settings = LangflowSettings.from_env()
     if "langflow_api" not in st.session_state or getattr(st.session_state.langflow_api, "settings", None) != api_settings:
         st.session_state.langflow_api = LangflowApiClient(api_settings)
@@ -386,7 +384,7 @@ def settings_sidebar() -> dict[str, Any]:
         """
         <div class="small-note">
         채팅과 메타데이터 등록은 Langflow Run API를 통해 실행됩니다.
-        조회/내보내기는 현재 v3 metadata JSON/Mock store 기준으로 표시됩니다.
+        조회/내보내기는 MongoDB metadata 컬렉션 기준으로 표시됩니다.
         </div>
         """,
         unsafe_allow_html=True,
@@ -1366,7 +1364,7 @@ def render_domain_item_detail(item: dict[str, Any], settings: dict[str, Any], ke
         "key": item.get("key", ""),
         "status": item.get("status", ""),
         "display_name": payload.get("display_name") or item.get("display_name", ""),
-        "collection": "metadata/domain_items.json",
+        "collection": collection_name_for("domain", settings.get("api_settings") if isinstance(settings, dict) else None),
     }
     tab_summary, tab_payload, tab_langflow, tab_document = st.tabs(["요약", "Payload", "Langflow JSON", "원본 Document"])
     with tab_summary:
@@ -1399,7 +1397,7 @@ def render_table_item_detail(item: dict[str, Any], settings: dict[str, Any], key
         "display_name": item.get("display_name") or payload.get("display_name", ""),
         "source_type": item.get("source_type") or payload.get("source_type", ""),
         "tool_name": payload.get("tool_name", ""),
-        "collection": "metadata/table_catalog.json",
+        "collection": collection_name_for("table_catalog", settings.get("api_settings") if isinstance(settings, dict) else None),
     }
     tab_summary, tab_metadata, tab_columns, tab_langflow, tab_document = st.tabs(["요약", "Metadata", "Columns", "Langflow JSON", "원본 Document"])
     with tab_summary:
@@ -1432,7 +1430,7 @@ def render_main_filter_item_detail(item: dict[str, Any], settings: dict[str, Any
         "status": item.get("status", ""),
         "value_type": payload.get("value_type", ""),
         "semantic_role": item.get("semantic_role") or payload.get("semantic_role", ""),
-        "collection": "metadata/main_flow_filters.json",
+        "collection": collection_name_for("main_flow_filter", settings.get("api_settings") if isinstance(settings, dict) else None),
     }
     tab_summary, tab_payload, tab_document = st.tabs(["요약", "Payload", "원본 Document"])
     with tab_summary:
@@ -1447,6 +1445,29 @@ def filter_metadata_status(rows: list[dict[str, Any]], status: str) -> list[dict
     if status == "all":
         return rows
     return [row for row in rows if str(row.get("status") or "active") == status]
+
+
+def load_lookup_metadata(metadata_type: str, status: str, settings: dict[str, Any]) -> list[dict[str, Any]]:
+    api_settings = settings.get("api_settings")
+    mongo_uri = str(getattr(api_settings, "mongo_uri", "") or "")
+    mongo_database = str(getattr(api_settings, "mongo_database", "") or "metadata_driven_agent_v3")
+    collection_name = collection_name_for(metadata_type, api_settings)
+    loaded = load_metadata_items(
+        metadata_type,
+        mongo_uri=mongo_uri,
+        mongo_database=mongo_database,
+        collection_name=collection_name,
+        status=status,
+    )
+    if not loaded.get("ok"):
+        render_inline_status(
+            "조회 불가",
+            f"{loaded.get('collection_name') or collection_name}: {loaded.get('message') or 'metadata를 불러오지 못했습니다.'}",
+            tone="warning",
+        )
+        return []
+    st.caption(f"MongoDB `{loaded.get('database')}` / `{loaded.get('collection_name')}`에서 {len(loaded.get('items', [])):,}건을 불러왔습니다.")
+    return [item for item in loaded.get("items", []) if isinstance(item, dict)]
 
 
 def domain_export_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1488,14 +1509,14 @@ def main_filter_export_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
 def render_lookup(settings: dict[str, Any]) -> None:
     st.title(PAGE_LOOKUP)
-    st.caption("현재 v3 metadata item을 확인하고 Langflow 입력 JSON으로 내보냅니다.")
+    st.caption("MongoDB에 저장된 v3 metadata item을 확인하고 Langflow 입력 JSON으로 내보냅니다.")
     tab_domain, tab_table, tab_filters = st.tabs(["도메인", "테이블 카탈로그", "Main Flow Filters"])
 
     with tab_domain:
         filter_status, filter_type = st.columns(2)
         with filter_status:
             status = st.selectbox("Domain Status", ["active", "review_required", "deleted", "all"], index=0, key="domain_status")
-        all_domain_items = filter_metadata_status(st.session_state.mock_api.list_metadata("domain"), status)
+        all_domain_items = load_lookup_metadata("domain", status, settings)
         domain_types = sorted({str(item.get("gbn") or item.get("section") or "").strip() for item in all_domain_items if str(item.get("gbn") or item.get("section") or "").strip()})
         with filter_type:
             gbn_filter = st.selectbox("Domain Type", ["all", *domain_types], index=0, key="domain_gbn_filter")
@@ -1516,7 +1537,7 @@ def render_lookup(settings: dict[str, Any]) -> None:
         filter_status, _filter_spacer = st.columns([1, 1])
         with filter_status:
             status = st.selectbox("Table Status", ["active", "review_required", "deleted", "all"], index=0, key="table_status")
-        items = filter_metadata_status(st.session_state.mock_api.list_metadata("table_catalog"), status)
+        items = load_lookup_metadata("table_catalog", status, settings)
         st.dataframe(table_frame(items), width="stretch", hide_index=True)
         catalog_json = table_catalog_export_payload(items)
         st.download_button("Table Catalog JSON 다운로드", data=json_text(catalog_json), file_name="langflow_main_table_catalog_export.json", mime="application/json", width="stretch")
@@ -1533,7 +1554,7 @@ def render_lookup(settings: dict[str, Any]) -> None:
         filter_status, _filter_spacer = st.columns([1, 1])
         with filter_status:
             status = st.selectbox("Filter Status", ["active", "review_required", "deleted", "all"], index=0, key="main_filter_status")
-        items = filter_metadata_status(st.session_state.mock_api.list_metadata("main_flow_filter"), status)
+        items = load_lookup_metadata("main_flow_filter", status, settings)
         st.dataframe(main_filter_frame(items), width="stretch", hide_index=True)
         filters_json = {"main_flow_filters": {"items": items}}
         st.download_button("Main Flow Filters JSON 다운로드", data=json_text(filters_json), file_name="langflow_main_flow_filters_export.json", mime="application/json", width="stretch")

@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+import sys
+import types
+from typing import Any
+
+from web_app.metadata_store import load_metadata_items, normalize_metadata_document
+
+
+class FakeCursor(list):
+    def sort(self, fields: list[tuple[str, int]]) -> "FakeCursor":
+        key = fields[0][0] if fields else ""
+        return FakeCursor(sorted(self, key=lambda item: str(item.get(key) or "")))
+
+
+class FakeCollection:
+    def __init__(self, docs: list[dict[str, Any]]) -> None:
+        self.docs = docs
+
+    def find(self, query: dict[str, Any], projection: dict[str, Any] | None = None) -> FakeCursor:
+        if query.get("status"):
+            return FakeCursor([doc for doc in self.docs if doc.get("status") == query["status"]])
+        return FakeCursor(list(self.docs))
+
+
+class FakeDatabase:
+    def __init__(self, collection: FakeCollection) -> None:
+        self.collection = collection
+
+    def __getitem__(self, name: str) -> FakeCollection:
+        return self.collection
+
+
+class FakeClient:
+    def __init__(self, collection: FakeCollection) -> None:
+        self.collection = collection
+        self.closed = False
+
+    def __getitem__(self, name: str) -> FakeDatabase:
+        return FakeDatabase(self.collection)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def install_fake_pymongo(monkeypatch: Any, docs: list[dict[str, Any]]) -> FakeClient:
+    client = FakeClient(FakeCollection(docs))
+
+    def mongo_client(*args: Any, **kwargs: Any) -> FakeClient:
+        return client
+
+    monkeypatch.setitem(sys.modules, "pymongo", types.SimpleNamespace(MongoClient=mongo_client))
+    return client
+
+
+def test_load_metadata_items_reads_mongodb_documents(monkeypatch: Any) -> None:
+    client = install_fake_pymongo(
+        monkeypatch,
+        [
+            {"section": "process_groups", "key": "WB", "status": "deleted", "payload": {"display_name": "WB"}},
+            {"section": "process_groups", "key": "DA", "status": "active", "payload": {"display_name": "DA"}},
+        ],
+    )
+
+    loaded = load_metadata_items(
+        "domain",
+        mongo_uri="mongodb://fake",
+        mongo_database="metadata_driven_agent_v3",
+        collection_name="agent_v3_domain_items",
+        status="active",
+    )
+
+    assert loaded["ok"] is True
+    assert [item["key"] for item in loaded["items"]] == ["DA"]
+    assert loaded["items"][0]["gbn"] == "process_groups"
+    assert client.closed is True
+
+
+def test_normalize_metadata_document_handles_table_payload() -> None:
+    item = normalize_metadata_document(
+        "table_catalog",
+        {
+            "dataset_key": "production_today",
+            "payload": {
+                "display_name": "오늘 생산",
+                "dataset_family": "production",
+                "source_config": {"source_type": "oracle"},
+            },
+        },
+    )
+
+    assert item["display_name"] == "오늘 생산"
+    assert item["dataset_family"] == "production"
+    assert item["source_type"] == "oracle"

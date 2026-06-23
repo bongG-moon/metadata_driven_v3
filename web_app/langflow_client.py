@@ -51,6 +51,9 @@ class LangflowSettings:
     mongo_uri: str = ""
     mongo_database: str = "metadata_driven_agent_v3"
     session_state_collection: str = "agent_v3_session_states"
+    domain_collection: str = DEFAULT_COLLECTIONS["domain"]
+    table_catalog_collection: str = DEFAULT_COLLECTIONS["table_catalog"]
+    main_flow_filter_collection: str = DEFAULT_COLLECTIONS["main_flow_filter"]
     session_state_preview_row_limit: int = 5
     session_state_history_limit: int = 10
 
@@ -85,6 +88,13 @@ class LangflowSettings:
             mongo_uri=mongo_uri,
             mongo_database=_env("MONGODB_DATABASE", local_env) or _env("MONGO_DB_NAME", local_env) or "metadata_driven_agent_v3",
             session_state_collection=_env("MONGODB_SESSION_STATE_COLLECTION", local_env) or "agent_v3_session_states",
+            domain_collection=_env("MONGODB_DOMAIN_COLLECTION", local_env) or _env("DOMAIN_COLLECTION_NAME", local_env) or DEFAULT_COLLECTIONS["domain"],
+            table_catalog_collection=_env("MONGODB_TABLE_CATALOG_COLLECTION", local_env)
+            or _env("TABLE_CATALOG_COLLECTION_NAME", local_env)
+            or DEFAULT_COLLECTIONS["table_catalog"],
+            main_flow_filter_collection=_env("MONGODB_MAIN_FLOW_FILTER_COLLECTION", local_env)
+            or _env("MAIN_FLOW_FILTER_COLLECTION_NAME", local_env)
+            or DEFAULT_COLLECTIONS["main_flow_filter"],
             session_state_preview_row_limit=_int_env("SESSION_STATE_PREVIEW_ROW_LIMIT", 5, local_env),
             session_state_history_limit=_int_env("SESSION_STATE_HISTORY_LIMIT", 10, local_env),
         )
