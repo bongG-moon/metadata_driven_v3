@@ -620,6 +620,33 @@ def test_intent_prompt_tells_llm_to_use_group_label_not_raw_rank_field(monkeypat
     assert "For 차수별/공정 차수별 questions, group by OPER_NUM" in prompt
 
 
+def test_pandas_prompt_tells_llm_to_handle_dates_without_datetime_imports() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    payload = {
+        "request": {"question": "오늘 생산 데이터를 일자 형식에 맞춰 보여줘"},
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "production_today",
+                    "source_alias": "production_data",
+                    "params": {"DATE": "20260623"},
+                    "date_format": "YYYYMMDD",
+                }
+            ],
+        },
+        "state": {},
+        "runtime_sources": {"production_data": [{"DATE": "20260623", "PRODUCTION": 10}]},
+    }
+
+    prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
+
+    assert "For date/date-format handling" in prompt
+    assert "do not import datetime/date/timedelta" in prompt
+    assert "pd.to_datetime(..., errors='coerce')" in prompt
+    assert "prefer using that string value directly" in prompt
+
+
 def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
@@ -2292,6 +2319,9 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     assert prompt_payload["prompt_type"] == "pandas_code_repair"
     assert "Failed execution context" in prompt_payload["prompt"]
     assert "missing_alias" in prompt_payload["prompt"]
+    assert "For date/date-format repairs" in prompt_payload["prompt"]
+    assert "do not import datetime/date/timedelta" in prompt_payload["prompt"]
+    assert "pd.to_datetime(..., errors='coerce')" in prompt_payload["prompt"]
 
     retry_exceeded = repair_payload_builder.build_pandas_repair_payload({**failed, "pandas_retry_attempt": 1})
     retry_exceeded_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(retry_exceeded)

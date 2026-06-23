@@ -53,6 +53,7 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "The code must assign the final pandas DataFrame to result_df.",
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, subprocess, numpy, np, or np.where.",
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
+            "For date/date-format repairs, do not import datetime/date/timedelta. Use pandas only: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, or direct string comparison with DATE values already present in the plan.",
             "Fix the failed code using the same intent plan and available source DataFrames. Keep result columns aligned to the requested output contract.",
             "Do not use .to_frame() in repaired code. For one total row with multiple metrics, build result_df with pd.DataFrame([{...}]).",
             "Do not use DataFrame.agg(named_metric=(column, func)).to_frame().T; DataFrame.agg can already return a DataFrame and then to_frame will fail.",

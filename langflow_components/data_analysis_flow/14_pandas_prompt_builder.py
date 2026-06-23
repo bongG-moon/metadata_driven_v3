@@ -55,6 +55,8 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, or subprocess.",
             "Do not use numpy, np, or np.where. Use pandas Series operations such as div, fillna, where, mask, and boolean comparisons.",
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
+            "For date/date-format handling, do not import datetime/date/timedelta. Use pandas only: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, or direct string comparison with the DATE values already present in plan filters/params.",
+            "If a dataset already received a DATE param/filter from metadata, prefer using that string value directly instead of recomputing dates inside pandas code.",
             "Do not use .to_frame() in generated code. For one total row with multiple metrics, build result_df with pd.DataFrame([{...}]).",
             "Do not use DataFrame.agg(named_metric=(column, func)).to_frame().T; DataFrame.agg can already return a DataFrame and then to_frame will fail.",
             "When combining scalar totals from multiple sources with no group_by, create one DataFrame row directly instead of merging DataFrames with no common key.",

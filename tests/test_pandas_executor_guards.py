@@ -97,6 +97,37 @@ def test_pandas_executor_drops_redundant_source_alias_columns_before_llm_code_ru
     assert result["analysis"]["rows"][0]["TARGET_QTY"] == 20
 
 
+def test_pandas_executor_datetime_import_error_guides_repair() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "date_format_test",
+            "retrieval_jobs": [{"dataset_key": "production_today", "source_alias": "production_data"}],
+        },
+        "state": {},
+        "runtime_sources": {"production_data": [{"DATE": "20260623", "PRODUCTION": 10}]},
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "import datetime",
+                "target_date = datetime.datetime.strptime('20260623', '%Y%m%d')",
+                "result_df = sources['production_data'].copy()",
+            ]
+        ),
+        "output_columns": ["DATE", "PRODUCTION"],
+        "reasoning_steps": ["Convert the date with datetime."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "error"
+    assert result["analysis"]["executed"] is False
+    assert result["analysis"]["safety_passed"] is False
+    assert "Imports are not allowed in generated pandas code." in result["analysis"]["errors"]
+    assert "Use pd.to_datetime and pandas string/date operations instead of importing datetime." in result["analysis"]["errors"]
+
+
 def test_pandas_executor_normalizes_lot_process_column_alias() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {

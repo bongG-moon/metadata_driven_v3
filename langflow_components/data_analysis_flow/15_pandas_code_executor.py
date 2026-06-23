@@ -1470,8 +1470,14 @@ def _check_code_safety(code: str) -> list[str]:
 
     errors = []
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import):
             errors.append("Imports are not allowed in generated pandas code.")
+            if any(alias.name.split(".", 1)[0] == "datetime" for alias in node.names):
+                errors.append("Use pd.to_datetime and pandas string/date operations instead of importing datetime.")
+        if isinstance(node, ast.ImportFrom):
+            errors.append("Imports are not allowed in generated pandas code.")
+            if str(node.module or "").split(".", 1)[0] == "datetime":
+                errors.append("Use pd.to_datetime and pandas string/date operations instead of importing datetime.")
         if isinstance(node, ast.Call):
             name = _call_name(node.func)
             if name in FORBIDDEN_CALL_NAMES:
