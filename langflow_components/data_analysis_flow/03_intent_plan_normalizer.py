@@ -92,6 +92,7 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             raw_required_columns,
             dataset_catalog,
             _required_product_grain(plan, dataset_catalog),
+            metadata,
         )
         job["source_type"] = dataset_catalog.get("source_type", job.get("source_type", "dummy"))
         if isinstance(dataset_catalog.get("source_config"), dict):
@@ -978,7 +979,12 @@ def _fallback_retrieval_jobs(
     return jobs
 
 
-def _normalize_required_columns(raw_columns: Any, catalog: dict[str, Any], product_grain: list[str] | None = None) -> list[str]:
+def _normalize_required_columns(
+    raw_columns: Any,
+    catalog: dict[str, Any],
+    product_grain: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> list[str]:
     catalog_columns = _unique(catalog.get("columns", []))
     filter_mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
     standard_aliases = catalog.get("standard_column_aliases") if isinstance(catalog.get("standard_column_aliases"), dict) else {}
@@ -988,7 +994,8 @@ def _normalize_required_columns(raw_columns: Any, catalog: dict[str, Any], produ
         if column in catalog_columns:
             normalized.append(column)
             continue
-        mapped_columns = _source_columns_for_standard_column(str(column), catalog)
+        standard_column = _standard_column_for_required_column(str(column), catalog, product_grain, metadata)
+        mapped_columns = _source_columns_for_standard_column(standard_column, catalog)
         if mapped_columns:
             normalized.extend(item for item in mapped_columns if item in catalog_columns or item not in normalized)
         elif column:
@@ -1003,6 +1010,74 @@ def _normalize_required_columns(raw_columns: Any, catalog: dict[str, Any], produ
     ]
     normalized.extend(_source_columns_for_standard_columns(supported_product_columns, catalog))
     return _unique(normalized)
+
+
+def _standard_column_for_required_column(
+    column: str,
+    catalog: dict[str, Any],
+    product_grain: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> str:
+    text = str(column or "").strip()
+    if not text:
+        return ""
+    aliases = _standard_column_aliases(catalog, product_grain, metadata)
+    for alias, standard in aliases:
+        if text == alias:
+            return standard
+    normalized_text = _column_identity(text)
+    if not normalized_text:
+        return text
+    for alias, standard in aliases:
+        if _column_identity(alias) == normalized_text:
+            return standard
+    return text
+
+
+def _standard_column_aliases(
+    catalog: dict[str, Any],
+    product_grain: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> list[tuple[str, str]]:
+    aliases: list[tuple[str, str]] = []
+    main_filters = metadata.get("main_flow_filters") if isinstance(metadata, dict) and isinstance(metadata.get("main_flow_filters"), dict) else {}
+    for standard, spec in main_filters.items():
+        standard_text = str(standard or "").strip()
+        if not standard_text:
+            continue
+        _append_standard_alias(aliases, standard_text, standard_text)
+        if isinstance(spec, dict):
+            candidates = spec.get("column_candidates") if isinstance(spec.get("column_candidates"), list) else []
+            for candidate in candidates:
+                _append_standard_alias(aliases, candidate, standard_text)
+
+    domain = metadata.get("domain_items") if isinstance(metadata, dict) and isinstance(metadata.get("domain_items"), dict) else {}
+    domain_product_keys = domain.get("product_key_columns") if isinstance(domain.get("product_key_columns"), list) else []
+    for standard in _unique([*(product_grain or []), *domain_product_keys]):
+        _append_standard_alias(aliases, standard, standard)
+
+    for field in ("filter_mappings", "standard_column_aliases", "required_param_mappings"):
+        mapping = catalog.get(field) if isinstance(catalog.get(field), dict) else {}
+        for standard, candidates in mapping.items():
+            standard_text = str(standard or "").strip()
+            if not standard_text:
+                continue
+            _append_standard_alias(aliases, standard_text, standard_text)
+            candidate_list = candidates if isinstance(candidates, list) else [candidates]
+            for candidate in candidate_list:
+                _append_standard_alias(aliases, candidate, standard_text)
+    return aliases
+
+
+def _append_standard_alias(aliases: list[tuple[str, str]], alias: Any, standard: Any) -> None:
+    alias_text = str(alias or "").strip()
+    standard_text = str(standard or "").strip()
+    if alias_text and standard_text and (alias_text, standard_text) not in aliases:
+        aliases.append((alias_text, standard_text))
+
+
+def _column_identity(value: Any) -> str:
+    return "".join(char for char in str(value or "").upper() if char.isalnum())
 
 
 def _required_product_grain(plan: dict[str, Any], catalog: dict[str, Any]) -> list[str]:

@@ -1082,7 +1082,7 @@ def test_intent_normalizer_maps_standard_required_columns_to_physical_source_col
         "source_type": "oracle",
         "source_config": {"source_type": "oracle", "db_key": "PNT_RPT", "query_template": "SELECT * FROM T WHERE WORK_DATE = {DATE}"},
         "required_params": ["DATE"],
-        "columns": ["WORK_DATE", "TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCP_NO", "OPER", "PRODUCTION"],
+        "columns": ["WORK_DATE", "TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "ORG", "MCP_NO", "OPER", "PRODUCTION"],
         "filter_mappings": {
             "DATE": ["WORK_DATE"],
             "TECH": ["TECH"],
@@ -1108,6 +1108,9 @@ def test_intent_normalizer_maps_standard_required_columns_to_physical_source_col
         "state": {},
         "metadata": {
             "domain_items": {"product_key_columns": product_keys},
+            "main_flow_filters": {
+                "MCP_NO": {"column_candidates": ["MCP_NO", "MCP NO", "MCP number"]},
+            },
             "table_catalog": {"datasets": {"production": mapped_catalog}},
         },
     }
@@ -1120,7 +1123,18 @@ def test_intent_normalizer_maps_standard_required_columns_to_physical_source_col
             {
                 "dataset_key": "production",
                 "source_alias": "production_data",
-                "required_columns": [*product_keys, "PRODUCTION"],
+                "required_columns": [
+                    "TECH",
+                    "DEN",
+                    "MODE",
+                    "PKG_TYPE1",
+                    "PKG_TYPE2",
+                    "LEAD",
+                    "ORG",
+                    "MCP NO",
+                    "MCP number",
+                    "PRODUCTION",
+                ],
                 "filter_mappings": {"DATE": ["WORK_DT"]},
                 "filters": [],
                 "params": {},
@@ -1143,9 +1157,12 @@ def test_intent_normalizer_maps_standard_required_columns_to_physical_source_col
     assert {"TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCP_NO", "PRODUCTION"}.issubset(
         set(job["required_columns"])
     )
+    assert "ORG" in job["required_columns"]
     assert "PKG_TYPE1" not in job["required_columns"]
     assert "PKG_TYPE2" not in job["required_columns"]
     assert "DEN" not in job["required_columns"]
+    assert "MCP NO" not in job["required_columns"]
+    assert "MCP number" not in job["required_columns"]
     assert job["filter_mappings"]["DATE"] == ["WORK_DATE"]
     assert job["filter_mappings"]["PKG_TYPE1"] == ["PKG1"]
     assert job["standard_column_aliases"]["PKG_TYPE1"] == ["PKG1"]
