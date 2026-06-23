@@ -14,6 +14,22 @@ DEFAULT_DOMAIN_COLLECTION = "agent_v3_domain_items"
 DEFAULT_TABLE_CATALOG_COLLECTION = "agent_v3_table_catalog_items"
 DEFAULT_MAIN_FLOW_FILTER_COLLECTION = "agent_v3_main_flow_filters"
 LEGACY_PREFIXES = {"agent_v1", "agent_v2", "agent_v3", "agent_v4"}
+CORE_METADATA_KINDS = ("domain_items", "table_catalog", "main_flow_filters")
+METADATA_KIND_ALIASES = {
+    "domain": "domain_items",
+    "domain_item": "domain_items",
+    "domain_items": "domain_items",
+    "table": "table_catalog",
+    "table_catalog": "table_catalog",
+    "table_catalog_items": "table_catalog",
+    "data_catalog": "table_catalog",
+    "catalog": "table_catalog",
+    "filter": "main_flow_filters",
+    "filters": "main_flow_filters",
+    "main_filter": "main_flow_filters",
+    "main_flow_filter": "main_flow_filters",
+    "main_flow_filters": "main_flow_filters",
+}
 
 
 def main() -> int:
@@ -40,6 +56,16 @@ def main() -> int:
         action="store_true",
         help="Also upload sample_data/*.json collections. Use only for local validation fixtures.",
     )
+    parser.add_argument(
+        "--metadata-kind",
+        "--kind",
+        action="append",
+        default=[],
+        help=(
+            "Core metadata kind to upload. Repeat or comma-separate values. "
+            "Values: all, domain, table-catalog, main-flow-filter. Default uploads all core metadata."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print upload plan without connecting to MongoDB.")
     parser.add_argument(
         "--mode",
@@ -48,6 +74,11 @@ def main() -> int:
         help="upsert updates by deterministic _id. replace drops target collections before inserting.",
     )
     args = parser.parse_args()
+
+    try:
+        metadata_kinds = _normalize_metadata_kinds(args.metadata_kind)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     root = Path(args.root).resolve()
     batches = build_upload_batches(
@@ -58,6 +89,7 @@ def main() -> int:
         include_regression=args.include_regression,
         include_sample_data=args.include_sample_data,
         collection_prefix=args.collection_prefix,
+        metadata_kinds=metadata_kinds,
     )
     if args.dry_run:
         print_upload_plan(batches, database=args.database)
@@ -92,6 +124,7 @@ def build_upload_batches(
     include_regression: bool = False,
     include_sample_data: bool = False,
     collection_prefix: str = "",
+    metadata_kinds: Any = None,
 ) -> dict[str, list[dict[str, Any]]]:
     metadata_dir = root / "metadata"
     sample_dir = root / "sample_data"
@@ -103,11 +136,16 @@ def build_upload_batches(
     )
     auxiliary_prefix = _resolve_auxiliary_prefix(collection_prefix, collections["domain_items"])
 
-    batches: dict[str, list[dict[str, Any]]] = {
-        collections["domain_items"]: _domain_item_docs(metadata_dir / "domain_items.json"),
-        collections["table_catalog"]: _table_catalog_docs(metadata_dir / "table_catalog.json"),
-        collections["main_flow_filters"]: _main_flow_filter_docs(metadata_dir / "main_flow_filters.json"),
+    selected_kinds = set(_normalize_metadata_kinds(metadata_kinds))
+    metadata_doc_builders = {
+        "domain_items": lambda: _domain_item_docs(metadata_dir / "domain_items.json"),
+        "table_catalog": lambda: _table_catalog_docs(metadata_dir / "table_catalog.json"),
+        "main_flow_filters": lambda: _main_flow_filter_docs(metadata_dir / "main_flow_filters.json"),
     }
+    batches: dict[str, list[dict[str, Any]]] = {}
+    for kind in CORE_METADATA_KINDS:
+        if kind in selected_kinds:
+            batches[collections[kind]] = metadata_doc_builders[kind]()
 
     if include_regression:
         batches[f"{auxiliary_prefix}_regression_questions"] = _regression_question_docs(metadata_dir / "regression_questions.json")
@@ -117,6 +155,35 @@ def build_upload_batches(
             batches[f"{auxiliary_prefix}_sample_{path.stem}"] = _sample_row_docs(path)
 
     return batches
+
+
+def _normalize_metadata_kinds(values: Any = None) -> list[str]:
+    if values in (None, "", []):
+        return list(CORE_METADATA_KINDS)
+    if isinstance(values, str):
+        values = [values]
+
+    requested: list[str] = []
+    invalid: list[str] = []
+    for value in values:
+        for raw_token in str(value or "").replace(";", ",").split(","):
+            token = raw_token.strip()
+            if not token:
+                continue
+            normalized = token.lower().replace("-", "_").replace(" ", "_")
+            if normalized in {"all", "*"}:
+                return list(CORE_METADATA_KINDS)
+            kind = METADATA_KIND_ALIASES.get(normalized)
+            if not kind:
+                invalid.append(token)
+                continue
+            if kind not in requested:
+                requested.append(kind)
+
+    if invalid:
+        valid_values = "all, domain, table-catalog, main-flow-filter"
+        raise ValueError(f"Invalid --metadata-kind value(s): {', '.join(invalid)}. Valid values: {valid_values}.")
+    return requested or list(CORE_METADATA_KINDS)
 
 
 def _resolve_metadata_collections(

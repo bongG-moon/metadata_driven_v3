@@ -65,7 +65,7 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "",
             "Sequential plan execution rules:",
             "- Source retrieval applies only required source parameters such as DATE or LOT_ID. Apply every retrieval_jobs[*].filters condition inside the pandas code before aggregation/ranking/joining.",
-            "- For filters, use the source_alias matching the retrieval job. Support op='eq', op='in', op='not_empty'/'exists', and ignore only PRODUCT_GRAIN/from_state filters that are explicitly state-driven.",
+            "- For filters, use the source_alias matching the retrieval job. Support op='eq', op='in', op='not_in', op='not_empty'/'exists', op='empty', op='starts_with', and op='last_char_in'; ignore only PRODUCT_GRAIN/from_state filters that are explicitly state-driven.",
             "- Read plan['step_plan'] and implement every step in order; do not collapse a multi-step plan into only the easiest count or groupby.",
             "- Maintain a local dict named step_outputs. After every step, store the step DataFrame as step_outputs[step_id], and read previous steps from step_outputs for downstream filtering/joining.",
             "- Preserve intermediate DataFrames for ranked/filtering steps, then use them in later filtering, aggregation, and join steps.",

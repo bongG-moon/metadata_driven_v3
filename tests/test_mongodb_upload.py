@@ -46,6 +46,37 @@ def test_mongodb_upload_default_batches_include_only_core_metadata():
     }
 
 
+def test_mongodb_upload_can_select_domain_only():
+    module = _load_upload_module()
+    batches = module.build_upload_batches(ROOT, metadata_kinds=["domain"])
+
+    assert list(batches) == ["agent_v3_domain_items"]
+    assert "domain:process_groups:DA" in {doc["_id"] for doc in batches["agent_v3_domain_items"]}
+
+
+def test_mongodb_upload_can_select_multiple_metadata_kinds_with_aliases():
+    module = _load_upload_module()
+    batches = module.build_upload_batches(ROOT, metadata_kinds=["table-catalog,main-flow-filter"])
+
+    assert list(batches) == [
+        "agent_v3_table_catalog_items",
+        "agent_v3_main_flow_filters",
+    ]
+    assert "table_catalog:wip_today" in {doc["_id"] for doc in batches["agent_v3_table_catalog_items"]}
+    assert "main_flow_filter:DATE" in {doc["_id"] for doc in batches["agent_v3_main_flow_filters"]}
+
+
+def test_mongodb_upload_rejects_unknown_metadata_kind():
+    module = _load_upload_module()
+
+    try:
+        module.build_upload_batches(ROOT, metadata_kinds=["unknown"])
+    except ValueError as exc:
+        assert "Invalid --metadata-kind" in str(exc)
+    else:
+        raise AssertionError("unknown metadata kind should fail")
+
+
 def test_mongodb_upload_docs_use_lean_metadata_shape():
     module = _load_upload_module()
     batches = module.build_upload_batches(

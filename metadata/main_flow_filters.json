@@ -32,7 +32,7 @@
     "description": "Lead"
   },
   "MCP_NO": {
-    "column_candidates": ["MCP_NO", "MCP NO", "MCP_SALE_CD", "MCPSALENO"],
+    "column_candidates": ["MCP_NO", "MCP NO", "MCP_SALES_NO", "MCP_SALE_CD", "MCPSALENO"],
     "description": "제품 코드"
   },
   "DEVICE_DESC": {
@@ -51,9 +51,25 @@
     "column_candidates": ["OPER_NUM", "OPER", "OPER_NO"],
     "description": "공정 번호"
   },
+  "OPER_DESC": {
+    "column_candidates": ["OPER_DESC", "OPER_NAME", "OPER_SHORT_DESC"],
+    "description": "공정 설명"
+  },
   "OPER_SEQ": {
     "column_candidates": ["OPER_SEQ"],
     "description": "공정 순서"
+  },
+  "FAB": {
+    "column_candidates": ["FAB", "FAB_ID"],
+    "description": "FAB"
+  },
+  "OWNER": {
+    "column_candidates": ["OWNER", "OWNER_CD", "OWER"],
+    "description": "제품 owner"
+  },
+  "GRADE": {
+    "column_candidates": ["GRADE", "GRADE_CD"],
+    "description": "제품 grade"
   },
   "DIE_ATTACH_QTY": {
     "column_candidates": ["DIE_ATTACH_QTY"],

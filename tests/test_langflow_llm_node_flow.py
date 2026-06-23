@@ -815,28 +815,58 @@ def test_intent_normalizer_replaces_wrong_product_alias_filter_with_metadata_con
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
 
-    payload = request_loader.build_request_payload("HBM 제품의 장비 모델별 현황을 보여줘", "test-session")
+    payload = request_loader.build_request_payload("HBM 제품의 생산량을 보여줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
-        "analysis_kind": "equipment_by_model",
-        "datasets": ["equipment_status"],
+        "analysis_kind": "aggregate_total",
+        "datasets": ["production_today"],
         "retrieval_jobs": [
             {
-                "dataset_key": "equipment_status",
-                "source_alias": "equipment",
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
                 "filters": [{"field": "TECH", "op": "eq", "value": "HBM"}],
                 "params": {},
             }
         ],
-        "step_plan": [{"step_id": "by_model", "operation": "group_by"}],
+        "step_plan": [{"step_id": "aggregate_production", "operation": "aggregate_total"}],
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     job = payload["retrieval_jobs"][0]
 
-    assert _filter_values(job, "PKG_TYPE1") == ["HBM"]
+    assert any(item.get("field") == "TSV_DIE_TYP" and item.get("op") == "not_empty" for item in job["filters"])
     assert _filter_values(job, "TECH") == []
+
+
+def test_intent_normalizer_converts_rich_product_conditions_to_filters(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload("POP 제품 생산량을 보여줘", "test-session")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_total",
+        "datasets": ["production_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "filters": [],
+                "params": {},
+            }
+        ],
+        "step_plan": [{"step_id": "aggregate_production", "operation": "aggregate_total"}],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    filters = payload["retrieval_jobs"][0]["filters"]
+
+    assert {"field": "MODE", "op": "starts_with", "value": "LP"} in filters
+    assert {"field": "PKG_TYPE1", "op": "in", "values": ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]} in filters
+    assert {"field": "MCP_NO", "op": "not_empty"} in filters
 
 
 def test_intent_normalizer_aligns_followup_equipment_to_state_products(monkeypatch: Any) -> None:

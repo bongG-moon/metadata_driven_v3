@@ -150,6 +150,17 @@ python tools\upload_json_to_mongodb.py --dry-run
 python tools\validate_service_readiness.py
 ```
 
+필요한 metadata만 부분 업로드하려면 `--metadata-kind`를 사용합니다. 기본값은 3종 전체 업로드입니다.
+
+```powershell
+# domain metadata만 확인/업로드
+python tools\upload_json_to_mongodb.py --dry-run --metadata-kind domain
+python tools\upload_json_to_mongodb.py --metadata-kind domain
+
+# table catalog와 main flow filter만 업로드
+python tools\upload_json_to_mongodb.py --metadata-kind table-catalog --metadata-kind main-flow-filter
+```
+
 현장 작업자가 JSON을 직접 올리는 대신 자연어로 metadata를 등록하는 경우에는 각 authoring flow 폴더의 `raw_text_input_example.md` 예시 문장을 해당 flow 입력으로 사용하세요.
 
 ## Langflow 연결 문서

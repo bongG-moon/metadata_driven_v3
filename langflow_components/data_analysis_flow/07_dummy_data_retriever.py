@@ -605,6 +605,8 @@ def _row_matches_filter(
         return apply_missing_field_as_match
     if op in {"not_empty", "exists"}:
         return any(value not in (None, "") for value in present_values)
+    if op == "empty":
+        return any(value in (None, "") for value in present_values)
     normalized_values = {_normalize_compare_value(value) for value in values}
     if op in {"in", "eq", "="}:
         return any(_normalize_compare_value(value) in normalized_values for value in present_values)
@@ -612,6 +614,10 @@ def _row_matches_filter(
         return all(_normalize_compare_value(value) not in normalized_values for value in present_values)
     if op in {"contains", "like"}:
         return any(any(str(target) in _normalize_compare_value(value) for target in normalized_values) for value in present_values)
+    if op == "starts_with":
+        return any(any(_normalize_compare_value(value).startswith(str(target)) for target in normalized_values) for value in present_values)
+    if op == "last_char_in":
+        return any(bool(_normalize_compare_value(value)) and _normalize_compare_value(value)[-1:] in normalized_values for value in present_values)
     return True
 
 
@@ -627,7 +633,7 @@ def _field_candidates(field: str) -> list[str]:
         "LOT_HOLD_STAT_CD": ["LOT_HOLD_STAT_CD"],
         "PKG_TYPE1": ["PKG_TYPE1", "PKG1", "PKG_TYP1", "PKG_TYP"],
         "PKG_TYPE2": ["PKG_TYPE2", "PKG2", "PKG_TYP2", "PKG_TYP_2"],
-        "MCP_NO": ["MCP_NO", "MCP NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
+        "MCP_NO": ["MCP_NO", "MCP NO", "MCP_SALES_NO", "MCPSALENO", "PROD_GRP_ID", "MCP_SALE_CD"],
         "TECH": ["TECH", "TECH_NM"],
         "DEN": ["DEN", "DENSITY", "DEN_TYP"],
         "MODE": ["MODE", "Mode", "PROD_TYP"],
@@ -637,6 +643,10 @@ def _field_candidates(field: str) -> list[str]:
         "DEVICE_DESC": ["DEVICE_DESC"],
         "OPER_NUM": ["OPER_NUM", "OPER", "OPER_NO"],
         "OPER_SEQ": ["OPER_SEQ"],
+        "OPER_DESC": ["OPER_DESC", "OPER_NAME", "OPER_SHORT_DESC"],
+        "FAB": ["FAB", "FAB_ID"],
+        "OWNER": ["OWNER", "OWNER_CD", "OWER"],
+        "GRADE": ["GRADE", "GRADE_CD"],
         "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
         "NETDIE_300_CNT": ["NETDIE_300_CNT"],
         "EQP_ID": ["EQP_ID", "EQPID"],

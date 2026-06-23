@@ -32,6 +32,16 @@ dataset마다 실제 컬럼명이 다르면 table catalog의 alias 정보를 사
 EQP_MODEL은 장비 모델 필터야.
 사용자가 eqp model, equipment model, 장비 모델, 설비 모델이라고 말하면 EQP_MODEL 조건으로 해석해줘.
 실제 컬럼 후보는 EQP_MODEL, EQP_MODEL_CD야.
+
+[제품 코드와 INPUT 공정 설명 필터]
+MCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO를 실제 컬럼 후보로 사용해.
+OPER_DESC는 공정 설명 필터야. 투입량처럼 OPER_DESC가 INPUT인 조건을 표현할 때 사용하고, 실제 컬럼 후보는 OPER_DESC, OPER_NAME, OPER_SHORT_DESC야.
+
+[유연제품 비교 키]
+FAB, OWNER, GRADE는 유연제품 조건에서 DEVICE와 함께 쓰는 제품 속성 필터야.
+FAB의 실제 컬럼 후보는 FAB, FAB_ID야.
+OWNER의 실제 컬럼 후보는 OWNER, OWNER_CD, OWER야.
+GRADE의 실제 컬럼 후보는 GRADE, GRADE_CD야.
 ```
 <!-- bulk_main_flow_filters:end -->
 

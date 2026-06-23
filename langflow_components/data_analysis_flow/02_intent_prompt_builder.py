@@ -97,7 +97,7 @@ def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
                             "LOT_ID": "optional",
                         }
                     },
-                    "filters": [{"field": "metadata filter field", "op": "eq|in|not_empty|tuple_in", "value": "optional", "values": []}],
+                    "filters": [{"field": "metadata filter field", "op": "eq|in|not_in|not_empty|empty|starts_with|last_char_in|tuple_in", "value": "optional", "values": []}],
                     "product_grain": ["columns used for product/process grouping, or [] for total/detail rows"],
                     "metric": "standard metric column for ranking/aggregation, such as WIP or PRODUCTION",
                     "top_n": "positive integer for top/rank questions",

@@ -155,7 +155,11 @@ FILTER_AUTHORING_HINTS: dict[str, dict[str, Any]] = {
     "DEVICE_DESC": {"aliases": ["device", "device code", "DEVICE_DESC"], "semantic_role": "device"},
     "TSV_DIE_TYP": {"aliases": ["HBM 판별", "3DS 판별", "TSV 판별"], "semantic_role": "product_condition"},
     "OPER_NUM": {"aliases": ["공정 번호", "OPER_NUM"], "semantic_role": "process_number"},
+    "OPER_DESC": {"aliases": ["공정 설명", "OPER_DESC", "INPUT 공정"], "semantic_role": "process_description"},
     "OPER_SEQ": {"aliases": ["공정 순서", "OPER_SEQ"], "semantic_role": "process_sequence"},
+    "FAB": {"aliases": ["FAB"], "semantic_role": "product_attribute"},
+    "OWNER": {"aliases": ["OWNER", "OWER"], "semantic_role": "product_attribute"},
+    "GRADE": {"aliases": ["GRADE"], "semantic_role": "product_attribute"},
     "DIE_ATTACH_QTY": {"aliases": ["Die attach 수량", "DIE_ATTACH_QTY"], "semantic_role": "quantity"},
     "NETDIE_300_CNT": {"aliases": ["Net die 수량", "NETDIE_300_CNT"], "semantic_role": "quantity"},
     "LOT_ID": {"aliases": ["Lot ID", "LOT 번호"], "semantic_role": "lot_id"},
@@ -391,12 +395,19 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
 
     assert written["raw_text"] == DOMAIN_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 38
+    assert written["write_result"]["saved_count"] == 59
     docs = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]
     assert set(docs) >= {
+        "domain:process_groups:DP",
         "domain:process_groups:DA",
+        "domain:process_groups:WB",
+        "domain:process_groups:DS",
         "domain:product_terms:hbm",
+        "domain:product_terms:pop",
+        "domain:product_terms:mobile",
+        "domain:product_terms:flexible_product",
         "domain:product_terms:lpddr5",
+        "domain:quantity_terms:input_production",
         "domain:quantity_terms:lot_count",
         "domain:quantity_terms:hold_lot_count",
         "domain:quantity_terms:in_tat",
@@ -408,7 +419,13 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "domain:analysis_recipes:top_wip_product_oldest_lot",
         "domain:analysis_recipes:top_production_products_equipment_count",
     }
-    assert docs["domain:product_terms:hbm"]["payload"]["condition_by_family"]["equipment"] == {"PKG_TYPE1": "HBM"}
+    assert docs["domain:process_groups:DP"]["payload"]["processes"] == ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
+    assert docs["domain:process_groups:DS"]["payload"]["condition"] == {"PKG_TYPE1": {"in": ["FCBGA"]}}
+    assert docs["domain:product_terms:hbm"]["payload"]["condition"] == {"TSV_DIE_TYP": {"exists": True, "not_in": [None, ""]}}
+    assert docs["domain:product_terms:pop"]["payload"]["condition"]["MODE"] == {"starts_with": "LP"}
+    assert docs["domain:product_terms:mobile"]["payload"]["condition"]["MCP_NO"] == {"empty": True}
+    assert docs["domain:product_terms:flexible_product"]["payload"]["comparison_keys"] == ["FAB", "DEVICE", "OWNER", "GRADE"]
+    assert docs["domain:quantity_terms:input_production"]["payload"]["condition"] == {"OPER_DESC": "INPUT"}
     assert docs["domain:quantity_terms:lot_count"]["payload"]["aggregation"] == "nunique"
     assert docs["domain:quantity_terms:hold_lot_count"]["payload"]["output_column"] == "HOLD_LOT_COUNT"
     assert docs["domain:quantity_terms:in_tat"]["payload"]["aggregation"] == "mean"
@@ -522,9 +539,9 @@ def test_worker_bulk_filter_text_input_saves_all_current_filters(monkeypatch: An
 
     assert written["raw_text"] == FILTER_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 22
+    assert written["write_result"]["saved_count"] == 26
     docs = store[("metadata_driven_agent_v3", "agent_v3_main_flow_filters")]
-    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL"}
+    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL", "main_flow_filter:OPER_DESC", "main_flow_filter:FAB", "main_flow_filter:OWNER", "main_flow_filter:GRADE"}
     assert docs["main_flow_filter:DATE"]["payload"]["semantic_role"] == "date"
 
 

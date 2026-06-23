@@ -608,8 +608,14 @@ def _apply_source_filters_for_alias(frame: pd.DataFrame, alias: str, plan: dict[
             result = result[~normalized_series.isin(normalized_values)]
         elif op in {"not_empty", "exists"}:
             result = result[series.notna() & (series.astype(str) != "")]
+        elif op == "empty":
+            result = result[series.isna() | (series.astype(str).str.strip() == "")]
         elif op in {"contains", "like"}:
             result = result[normalized_series.map(lambda value: any(target in value for target in normalized_values))]
+        elif op == "starts_with":
+            result = result[normalized_series.map(lambda value: any(value.startswith(target) for target in normalized_values))]
+        elif op == "last_char_in":
+            result = result[normalized_series.map(lambda value: bool(value) and value[-1:] in normalized_values)]
     return result
 
 

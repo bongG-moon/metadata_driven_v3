@@ -112,4 +112,13 @@ python tools\upload_json_to_mongodb.py --dry-run
 python tools\upload_json_to_mongodb.py
 ```
 
+부분 업로드가 필요하면 `--metadata-kind`를 사용합니다.
+
+```powershell
+python tools\upload_json_to_mongodb.py --dry-run --metadata-kind domain
+python tools\upload_json_to_mongodb.py --metadata-kind table-catalog
+python tools\upload_json_to_mongodb.py --metadata-kind main-flow-filter
+python tools\upload_json_to_mongodb.py --metadata-kind table-catalog,main-flow-filter
+```
+
 `tools/upload_json_to_mongodb.py`는 실행 시 `.env`를 자동으로 읽는다. CLI 옵션이 `.env`보다 우선한다.

@@ -1,73 +1,180 @@
 {
   "process_groups": {
-    "DA": {
-      "display_name": "D/A",
-      "aliases": ["DA", "D/A", "da", "d/a"],
-      "processes": ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
-    },
-    "WB": {
-      "display_name": "W/B",
-      "aliases": ["WB", "W/B", "wb", "w/b"],
-      "processes": ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
-    },
     "DP": {
       "display_name": "D/P",
-      "aliases": ["DP", "D/P", "dp", "d/p"],
-      "processes": ["D/P1", "D/P2"]
+      "aliases": ["DP", "D/P"],
+      "processes": ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
+    },
+    "WET": {
+      "display_name": "WET",
+      "aliases": ["WET"],
+      "processes": ["WET1", "WET2"]
+    },
+    "LT": {
+      "display_name": "L/T",
+      "aliases": ["LT", "L/T"],
+      "processes": ["L/T1", "L/T2"]
     },
     "BG": {
       "display_name": "B/G",
-      "aliases": ["BG", "B/G", "b/g"],
+      "aliases": ["BG", "B/G"],
       "processes": ["B/G1", "B/G2"]
+    },
+    "HS": {
+      "display_name": "H/S",
+      "aliases": ["HS", "H/S"],
+      "processes": ["H/S1", "H/S2"]
+    },
+    "WS": {
+      "display_name": "W/S",
+      "aliases": ["WS", "W/S"],
+      "processes": ["W/S1", "W/S2"]
     },
     "WSD": {
       "display_name": "WSD",
-      "aliases": ["WSD", "wsd"],
+      "aliases": ["WSD"],
       "processes": ["WSD1", "WSD2"]
+    },
+    "WEC": {
+      "display_name": "WEC",
+      "aliases": ["WEC"],
+      "processes": ["WEC1", "WEC2"]
+    },
+    "WLS": {
+      "display_name": "WLS",
+      "aliases": ["WLS"],
+      "processes": ["WLS1", "WLS2"]
+    },
+    "DA": {
+      "display_name": "D/A",
+      "aliases": ["D/A", "DA"],
+      "processes": ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
+    },
+    "PCO": {
+      "display_name": "PCO",
+      "aliases": ["PCO"],
+      "processes": ["PCO1", "PCO2", "PCO3", "PCO4", "PCO5", "PCO6"]
+    },
+    "DC": {
+      "display_name": "D/C",
+      "aliases": ["D/C"],
+      "processes": ["D/C1", "D/C2", "D/C3", "D/C4"]
+    },
+    "DI": {
+      "display_name": "D/I",
+      "aliases": ["D/I", "DI", "DVI"],
+      "processes": ["D/I"]
     },
     "DS": {
       "display_name": "D/S",
-      "aliases": ["DS", "D/S", "ds", "d/s"],
-      "processes": ["D/S1", "D/S2"]
+      "aliases": ["D/S", "DS"],
+      "processes": ["D/S1"],
+      "condition": {"PKG_TYPE1": {"in": ["FCBGA"]}}
     },
     "FCB": {
       "display_name": "FCB",
-      "aliases": ["FCB", "fcb"],
-      "processes": ["FCB1", "FCB2"]
+      "aliases": ["FCB"],
+      "processes": ["FCB1", "FCB2", "FCB/H"]
     },
     "FCBH": {
-      "display_name": "FCBH",
-      "aliases": ["FCBH", "fcbh"],
-      "processes": ["FCBH1", "FCBH2"]
+      "display_name": "FCB/H",
+      "aliases": ["FCB/H", "FCBH"],
+      "processes": ["FCB/H"]
     },
     "BM": {
       "display_name": "B/M",
-      "aliases": ["BM", "B/M", "비엠", "bm", "b/m"],
-      "processes": ["B/M1", "B/M2"]
+      "aliases": ["B/M", "BM", "비엠"],
+      "processes": ["B/M"]
+    },
+    "PC": {
+      "display_name": "P/C",
+      "aliases": ["P/C"],
+      "processes": ["P/C1", "P/C2", "P/C3", "P/C4", "P/C5"]
+    },
+    "WB": {
+      "display_name": "W/B",
+      "aliases": ["W/B", "WB"],
+      "processes": ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
+    },
+    "QCSPC": {
+      "display_name": "QCSPC",
+      "aliases": ["QCSPC"],
+      "processes": ["QCSPC1", "QCSPC2", "QCSPC3", "QCSPC4"]
+    },
+    "SAT": {
+      "display_name": "SAT",
+      "aliases": ["SAT"],
+      "processes": ["SAT1", "SAT2"]
+    },
+    "PLH": {
+      "display_name": "P/L",
+      "aliases": ["P/L", "PLH"],
+      "processes": ["PLH"]
     }
   },
   "product_terms": {
     "hbm": {
       "display_name": "HBM/3DS/TSV 제품",
-      "aliases": ["HBM", "3DS", "TSV", "HBM제품", "HBM 제품"],
-      "condition": {"TSV_DIE_TYP": {"exists": true, "not_in": [null, ""]}},
-      "condition_by_family": {
-        "production": {"PKG_TYPE1": "HBM"},
-        "wip": {"PKG_TYPE1": "HBM"},
-        "target": {"PKG_TYPE1": "HBM"},
-        "lot": {"PKG_TYPE1": "HBM"},
-        "equipment": {"PKG_TYPE1": "HBM"}
-      }
+      "aliases": ["HBM", "3DS", "TSV", "HBM제품", "HBM 제품", "3DS제품", "3DS 제품"],
+      "condition": {"TSV_DIE_TYP": {"exists": true, "not_in": [null, ""]}}
     },
     "lpddr5": {
       "display_name": "LPDDR5 제품",
       "aliases": ["LPDDR5", "LPDDR5제품", "LPDDR5 제품"],
       "condition": {"MODE": "LPDDR5"}
     },
+    "pop": {
+      "display_name": "POP 제품",
+      "aliases": ["POP", "POP제품", "POP 제품"],
+      "condition": {
+        "MODE": {"starts_with": "LP"},
+        "PKG_TYPE1": {"in": ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]},
+        "MCP_NO": {"exists": true, "not_in": [null, ""]}
+      },
+      "source_column_aliases": {"MCP_NO": ["MCP_SALES_NO"]}
+    },
+    "mobile": {
+      "display_name": "MOBILE 제품",
+      "aliases": ["MOBILE", "MOBILE제품", "MOBILE 제품", "모바일", "모바일 제품"],
+      "condition": {
+        "MODE": {"starts_with": "LP"},
+        "PKG_TYPE1": {"in": ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]},
+        "MCP_NO": {"empty": true}
+      },
+      "source_column_aliases": {"MCP_NO": ["MCP_SALES_NO"]}
+    },
     "automotive": {
       "display_name": "AUTO향 제품",
       "aliases": ["AUTO향", "오토모티브향", "오토향"],
-      "condition": {"MCP_NO": {"exists": true, "last_char_in": ["I", "O", "N", "P", "Q", "V"]}}
+      "condition": {"MCP_NO": {"exists": true, "last_char_in": ["I", "O", "N", "P", "Q", "V"]}},
+      "source_column_aliases": {"MCP_NO": ["MCP_SALES_NO"]}
+    },
+    "stack_2hi": {
+      "display_name": "2Hi 제품",
+      "aliases": ["2Hi", "2HI", "2hi"],
+      "condition": {"TSV_DIE_TYP": "2Hi"}
+    },
+    "stack_4hi": {
+      "display_name": "4Hi 제품",
+      "aliases": ["4Hi", "4HI", "4hi"],
+      "condition": {"TSV_DIE_TYP": "4Hi"}
+    },
+    "stack_8hi": {
+      "display_name": "8Hi 제품",
+      "aliases": ["8Hi", "8HI", "8hi"],
+      "condition": {"TSV_DIE_TYP": "8Hi"}
+    },
+    "flexible_product": {
+      "display_name": "유연제품",
+      "aliases": ["유연제품", "유연생산 제품", "유연생산제품", "유연작업제품", "유연 작업 제품"],
+      "comparison_keys": ["FAB", "DEVICE", "OWNER", "GRADE"],
+      "description": "FAB, DEVICE, OWNER, GRADE가 동일한 제품이며 해당 제품끼리는 연속 작업이 가능하다."
+    },
+    "product_entity": {
+      "display_name": "제품/PRODUCT/DEVICE/자재",
+      "aliases": ["제품", "PRODUCT", "Product", "product", "DEVICE", "Device", "device", "자재"],
+      "grain_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+      "description": "제품, PRODUCT, DEVICE, 자재는 같은 의미의 분석 대상 표현이다."
     }
   },
   "quantity_terms": {
@@ -77,6 +184,14 @@
       "quantity_column": "PRODUCTION",
       "aggregation": "sum"
     },
+    "input_production": {
+      "aliases": ["투입량", "INPUT", "input", "input 실적", "INPUT공정 실적", "PKG INPUT공정 실적", "PKG INPUT 생산실적"],
+      "dataset_family": "production",
+      "quantity_column": "PRODUCTION",
+      "condition": {"OPER_DESC": "INPUT"},
+      "aggregation": "sum",
+      "output_column": "INPUT_QTY"
+    },
     "wip": {
       "aliases": ["재공", "재공수량", "WIP", "공정 물량"],
       "dataset_family": "wip",
@@ -84,7 +199,7 @@
       "aggregation": "sum"
     },
     "target": {
-      "aliases": ["목표값", "목표", "계획", "생산계획", "OUT계획", "INPUT계획"],
+      "aliases": ["목표값", "목표", "계획", "생산계획", "OUT계획", "INPUT계획", "스케쥴", "스케줄", "SCHD", "투입계획", "일별 투입계획", "생산계획(일별 투입계획)"],
       "dataset_family": "target",
       "quantity_column": ["INPUT_PLAN", "OUT_PLAN"],
       "aggregation": "sum",

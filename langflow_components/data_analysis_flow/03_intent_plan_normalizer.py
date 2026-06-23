@@ -2212,13 +2212,22 @@ def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any]) -
         if not field_name or not _metadata_has_filter(metadata, field_name):
             continue
         if isinstance(spec, dict):
+            if spec.get("empty") or spec.get("missing_or_empty"):
+                result.append({"field": field_name, "op": "empty"})
+                continue
             if spec.get("exists") and spec.get("not_in"):
                 result.append({"field": field_name, "op": "not_empty"})
             elif spec.get("exists"):
                 result.append({"field": field_name, "op": "not_empty"})
-            elif isinstance(spec.get("in"), list):
+            if isinstance(spec.get("starts_with"), str):
+                result.append({"field": field_name, "op": "starts_with", "value": spec.get("starts_with")})
+            if isinstance(spec.get("last_char_in"), list):
+                result.append({"field": field_name, "op": "last_char_in", "values": deepcopy(spec["last_char_in"])})
+            if isinstance(spec.get("in"), list):
                 result.append({"field": field_name, "op": "in", "values": deepcopy(spec["in"])})
-            elif "value" in spec:
+            if isinstance(spec.get("not_in"), list):
+                result.append({"field": field_name, "op": "not_in", "values": deepcopy(spec["not_in"])})
+            if "value" in spec:
                 result.append({"field": field_name, "op": "eq", "value": spec.get("value")})
         elif isinstance(spec, list):
             result.append({"field": field_name, "op": "in", "values": deepcopy(spec)})
@@ -2253,6 +2262,7 @@ def _drop_conflicting_product_alias_filters(
         return filters
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     product_fields = set(domain.get("product_key_columns") or [])
+    product_term_values = _product_term_alias_values(domain)
     inferred_fields = {str(item.get("field") or "") for item in inferred_filters if isinstance(item, dict)}
     inferred_keys = {json.dumps(item, ensure_ascii=False, sort_keys=True, default=str) for item in inferred_filters}
     result = []
@@ -2264,8 +2274,23 @@ def _drop_conflicting_product_alias_filters(
             continue
         if _filter_values([item]) & inferred_values:
             continue
+        if _filter_values([item]) & product_term_values:
+            continue
         result.append(item)
     return result
+
+
+def _product_term_alias_values(domain: dict[str, Any]) -> set[str]:
+    terms = domain.get("product_terms") if isinstance(domain.get("product_terms"), dict) else {}
+    values: set[str] = set()
+    for key, term in terms.items():
+        if not isinstance(term, dict):
+            continue
+        for value in [key, term.get("display_name"), *(term.get("aliases") if isinstance(term.get("aliases"), list) else [])]:
+            text = str(value or "").strip().upper()
+            if text:
+                values.add(text)
+    return values
 
 
 def _filter_values(filters: list[dict[str, Any]]) -> set[str]:
