@@ -1,6 +1,9 @@
 MongoDB 저장 전에 table catalog metadata를 검수하세요.
 반드시 하나의 엄격한 JSON object만 반환하세요. markdown으로 감싸지 마세요.
 실무적으로 판단하고 지나치게 엄격하게 막지 마세요. dataset을 조회할 수 없거나 필수 field가 없거나 중복 처리 선택이 필요한 경우에만 차단하세요.
+dataset_key/name은 작업자가 정하는 값입니다. 명시적으로 제공되지 않았다면 보강 요청하세요.
+table_name/query_template과 columns로 dataset을 식별할 수 있으면 db_key, default_detail_columns, primary_quantity_column이 없다는 이유만으로 막지 마세요.
+oracle/datalake draft catalog item은 query_template이 없더라도 table_name+columns가 있으면 저장 가능한 상태로 판단하세요.
 default_detail_columns는 선택 사항입니다. columns가 있으면 default_detail_columns가 없다는 이유만으로 저장을 막지 마세요.
 source_type이 goodocs이면 doc_id가 필수입니다. sheet_name, db_key, query_template은 필수가 아니며 sheet_name은 특정 sheet/tab을 알고 있을 때만 선택 사항입니다.
 required_params가 비어 있는데 DATE가 filter_mappings에 있으면 DATE를 누락된 필수 parameter가 아니라 optional filter로 판단하세요.

@@ -262,6 +262,7 @@ def _capacity_rows(work_date: str) -> list[dict[str, Any]]:
 def _physical_product_aliases(product: dict[str, Any]) -> dict[str, Any]:
     return {
         "Mode": product.get("MODE"),
+        "ORGANIZ_CD": _product_org(product),
         "DENSITY": product.get("DEN"),
         "PKG1": product.get("PKG_TYPE1"),
         "PKG2": product.get("PKG_TYPE2"),
@@ -343,6 +344,7 @@ def _product_keys(product: dict[str, Any]) -> dict[str, Any]:
         "TECH": product["TECH"],
         "DEN": product["DEN"],
         "MODE": product["MODE"],
+        "ORG": _product_org(product),
         "PKG_TYPE1": product["PKG_TYPE1"],
         "PKG_TYPE2": product["PKG_TYPE2"],
         "LEAD": product["LEAD"],
@@ -350,6 +352,10 @@ def _product_keys(product: dict[str, Any]) -> dict[str, Any]:
         "TSV_DIE_TYP": product.get("TSV_DIE_TYP", ""),
         "DEVICE": product.get("DEVICE", ""),
     }
+
+
+def _product_org(product: dict[str, Any]) -> str:
+    return str(product.get("ORG") or product.get("ORGANIZ_CD") or "ASSY")
 
 
 def _date_value(params: dict[str, Any]) -> str:

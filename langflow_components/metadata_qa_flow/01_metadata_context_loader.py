@@ -18,6 +18,7 @@ from lfx.schema.data import Data
 CORE_DOMAIN_SECTIONS = {
     "process_groups",
     "product_terms",
+    "product_attribute_resolvers",
     "quantity_terms",
     "metric_terms",
     "status_terms",
@@ -170,6 +171,7 @@ def _empty_metadata() -> dict[str, Any]:
         "domain_items": {
             "process_groups": {},
             "product_terms": {},
+            "product_attribute_resolvers": {},
             "quantity_terms": {},
             "metric_terms": {},
             "status_terms": {},
@@ -186,6 +188,7 @@ def _metadata_counts(metadata: dict[str, Any]) -> dict[str, int]:
     return {
         "process_groups": len(domain.get("process_groups", {})),
         "product_terms": len(domain.get("product_terms", {})),
+        "product_attribute_resolvers": len(domain.get("product_attribute_resolvers", {})),
         "quantity_terms": len(domain.get("quantity_terms", {})),
         "metric_terms": len(domain.get("metric_terms", {})),
         "status_terms": len(domain.get("status_terms", {})),

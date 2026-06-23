@@ -41,6 +41,7 @@ FAMILY_KEYWORDS = {
 DOMAIN_SECTION_LABELS = {
     "process_groups": "공정 그룹",
     "product_terms": "제품/조건 용어",
+    "product_attribute_resolvers": "제품 속성 pandas 매칭 규칙",
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",
@@ -50,6 +51,7 @@ DOMAIN_SECTION_LABELS = {
 DOMAIN_SECTION_ALIASES = {
     "process_groups": ["공정 그룹", "공정그룹", "공정군", "공정 분류", "process group", "process_groups"],
     "product_terms": ["제품 조건", "제품조건", "제품 용어", "제품 도메인", "product terms", "product_terms"],
+    "product_attribute_resolvers": ["제품 속성", "제품 속성 규칙", "제품 찾기", "product attribute", "product_attribute_resolvers"],
     "quantity_terms": ["수량 용어", "지표 용어", "수량 지표", "quantity terms", "quantity_terms"],
     "metric_terms": ["계산 지표", "계산식", "파생 지표", "metric terms", "metric_terms"],
     "analysis_recipes": ["분석 레시피", "분석 recipe", "분석 규칙", "분석 패턴", "analysis recipes", "analysis_recipes"],
@@ -834,7 +836,7 @@ def _examples_for_dataset(dataset_key: str, item: dict[str, Any], metadata: dict
         return [str(example) for example in configured[:6] if str(example or "").strip()]
 
     family = str(item.get("dataset_family") or "")
-    product = _first_product_alias(metadata) or "LPDDR5"
+    product = _first_product_alias(metadata) or "특정 제품"
     if family == "production":
         return [
             "오늘 DA공정 생산량을 제품별로 보여줘",
@@ -890,10 +892,6 @@ def _examples_for_dataset(dataset_key: str, item: dict[str, Any], metadata: dict
 def _first_product_alias(metadata: dict[str, Any]) -> str:
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     product_terms = domain.get("product_terms") if isinstance(domain.get("product_terms"), dict) else {}
-    preferred = product_terms.get("lpddr5") if isinstance(product_terms.get("lpddr5"), dict) else {}
-    aliases = preferred.get("aliases") if isinstance(preferred.get("aliases"), list) else []
-    if aliases:
-        return str(aliases[0])
     for item in product_terms.values():
         if isinstance(item, dict) and isinstance(item.get("aliases"), list) and item["aliases"]:
             return str(item["aliases"][0])

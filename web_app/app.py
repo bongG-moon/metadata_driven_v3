@@ -16,14 +16,28 @@ try:
     from .data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from .langflow_client import LangflowApiClient, LangflowSettings
     from .metadata_store import collection_name_for, load_metadata_items
-    from .ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, json_text, safe_markdown_text
+    from .ui_helpers import (
+        chat_dataframe_height,
+        compact_json_html,
+        display_table_frame,
+        json_text,
+        safe_markdown_text,
+        separate_data_lines_from_explanation,
+    )
 except ImportError:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     from web_app.data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from web_app.langflow_client import LangflowApiClient, LangflowSettings
     from web_app.metadata_store import collection_name_for, load_metadata_items
-    from web_app.ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, json_text, safe_markdown_text
+    from web_app.ui_helpers import (
+        chat_dataframe_height,
+        compact_json_html,
+        display_table_frame,
+        json_text,
+        safe_markdown_text,
+        separate_data_lines_from_explanation,
+    )
 
 
 APP_TITLE = "PTMORE PKG"
@@ -447,7 +461,8 @@ def render_langflow_chat(settings: dict[str, Any]) -> None:
 
 def render_assistant_chat_message(message: dict[str, Any], message_index: int, settings: dict[str, Any]) -> None:
     result = message.get("result") if isinstance(message.get("result"), dict) else {}
-    st.markdown(safe_markdown_text(result.get("answer_message") or message.get("content") or "응답 메시지가 없습니다."))
+    answer_text = result.get("answer_message") or message.get("content") or "응답 메시지가 없습니다."
+    st.markdown(safe_markdown_text(separate_data_lines_from_explanation(answer_text)))
     if result.get("message_only"):
         if settings.get("developer_mode"):
             render_chat_developer_details(result, message_index, settings)

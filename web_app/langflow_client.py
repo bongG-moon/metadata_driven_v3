@@ -192,7 +192,13 @@ class LangflowApiClient:
         }
         return result
 
-    def run_authoring(self, metadata_type: str, raw_text: str, duplicate_action: str, session_id: str) -> dict[str, Any]:
+    def run_authoring(
+        self,
+        metadata_type: str,
+        raw_text: str,
+        duplicate_action: str | None = None,
+        session_id: str = "web-session",
+    ) -> dict[str, Any]:
         kind = normalize_metadata_type(metadata_type)
         api_url = self.settings.authoring_url(kind)
         if not api_url:
@@ -283,30 +289,21 @@ def build_split_flow_node_input_settings(
     return None
 
 
-def build_authoring_node_input_settings(metadata_type: str, duplicate_action: str) -> dict[str, Any]:
+def build_authoring_node_input_settings(metadata_type: str, duplicate_action: str | None = None) -> dict[str, Any]:
     kind = normalize_metadata_type(metadata_type)
-    action = normalize_duplicate_action(duplicate_action)
     collection_name = _collection_name(kind)
     labels = {
         "domain": {
-            "duplicate": ["00 Domain Authoring Request Loader", "05 Domain Similarity Checker"],
             "collection": ["00 Domain Authoring Request Loader", "07 Domain Review Writer"],
         },
         "table_catalog": {
-            "duplicate": ["00 Table Catalog Authoring Request Loader", "05 Table Catalog Similarity Checker"],
             "collection": ["00 Table Catalog Authoring Request Loader", "07 Table Catalog Review Writer"],
         },
         "main_flow_filter": {
-            "duplicate": [
-                "00 Main Flow Filter Authoring Request Loader",
-                "05 Main Flow Filter Similarity Checker",
-            ],
             "collection": ["00 Main Flow Filter Authoring Request Loader", "07 Main Flow Filter Review Writer"],
         },
     }[kind]
     settings: dict[str, Any] = {}
-    for label in labels["duplicate"]:
-        settings.setdefault(label, {})["duplicate_action"] = action
     for label in labels["collection"]:
         settings.setdefault(label, {})["collection_name"] = collection_name
     return settings

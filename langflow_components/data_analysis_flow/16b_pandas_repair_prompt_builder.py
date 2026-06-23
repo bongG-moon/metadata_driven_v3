@@ -42,6 +42,7 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
     context = repair.get("context") if isinstance(repair.get("context"), dict) else _pandas_repair_context(payload)
     context = deepcopy(context)
     context.setdefault("column_contract_summary", _column_contract_summary(payload))
+    context.setdefault("pandas_logic_hints", _pandas_logic_hints(payload))
     prompt = "\n".join(
         [
             "You repair failed pandas code for a Langflow manufacturing data agent.",
@@ -65,6 +66,13 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "- Do not assume both a mapped physical column and its standard column remain in sources after standardization.",
             "- Physical source column names are allowed only when they have no standard mapping and the source summary shows that column is available.",
             "- Use column_contract_summary below to decide which columns are standardized and which physical-only columns are still allowed.",
+            "- If pandas_logic_hints is provided in the context, follow it as repair guidance while still respecting the normalized plan and available source DataFrames.",
+            "- For product_attribute_resolver hints, rebuild product token filters in pandas from runtime source distinct values. Do not repair by inventing unrelated filters such as DEVICE_DESC for product-code tokens.",
+            "- For resolver prefix_match_columns, extract the metadata-pattern prefix segment from the user token and use Series.astype(str).str.upper().str.startswith(prefix); do not use the whole token when the pattern matches only a prefix segment.",
+            "- For resolver prefix extraction, do not import re or any module. Use plain string operations for scalar tokens, for example parts = token_text.split('-', 1); if len(parts) == 2 and len(parts[0]) == 1 and parts[0].isalpha() and len(parts[1]) >= 3 and parts[1][:3].isdigit(): prefix = parts[0] + '-' + parts[1][:3].",
+            "- Never place import statements inside repaired resolver code. The executor rejects every import statement, including import re.",
+            "- If step_plan contains operation='apply_product_attribute_resolver', repair must implement that explicit filtering step from step.tokens, step.attribute_columns, and step.prefix_match_columns before downstream aggregation/ranking.",
+            "- Do not repair product-attribute no-match cases by falling back to an unfiltered total; if no non-empty product tokens match runtime source distinct values, return an empty result with a clear reasoning step.",
             "",
             "Failed execution context:",
             json.dumps(context, ensure_ascii=False, indent=2),
@@ -100,6 +108,7 @@ def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
         "intent_plan": deepcopy(payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}),
         "payload_summary": _payload_summary(payload),
         "column_contract_summary": _column_contract_summary(payload),
+        "pandas_logic_hints": _pandas_logic_hints(payload),
         "runtime_source_summary": _runtime_source_summary(runtime_sources),
         "state_summary": _state_summary(state),
         "failed_pandas_code_json": deepcopy(
@@ -131,6 +140,12 @@ def _analysis_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if any(key in payload for key in analysis_keys):
         return payload
     return {}
+
+
+def _pandas_logic_hints(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    hints = plan.get("pandas_logic_hints") if isinstance(plan.get("pandas_logic_hints"), list) else []
+    return [deepcopy(item) for item in hints if isinstance(item, dict)]
 
 
 def _payload_summary(payload: dict[str, Any]) -> dict[str, Any]:
@@ -288,7 +303,9 @@ class PandasRepairPromptBuilder(Component):
 
     display_name = "16B Pandas Repair Prompt Builder"
     description = "실패 원인, 기존 코드, source 정보를 담아 pandas repair LLM 프롬프트를 만듭니다."
-    inputs = [DataInput(name="payload", display_name="Repair Payload", required=True)]
+    inputs = [
+        DataInput(name="payload", display_name="Repair Payload", required=True),
+    ]
     outputs = [
         Output(name="repair_prompt", display_name="Repair Prompt", method="build_prompt"),
     ]
@@ -297,7 +314,9 @@ class PandasRepairPromptBuilder(Component):
     # 처리 역할: 실패 원인, 기존 코드, source 정보를 담아 pandas repair LLM 프롬프트를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
-        prompt_payload = build_pandas_repair_prompt_payload(getattr(self, "payload", None))
+        prompt_payload = build_pandas_repair_prompt_payload(
+            getattr(self, "payload", None),
+        )
         self.status = {
 
             "prompt_type": prompt_payload.get("prompt_type", "pandas_code_repair"),

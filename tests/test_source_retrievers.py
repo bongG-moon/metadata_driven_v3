@@ -681,12 +681,8 @@ def _authoring_example_dataset_specs() -> dict[str, dict]:
             "LEAD": ["LEAD"],
             "MCP_NO": ["MCP_NO"],
             "TSV_DIE_TYP": ["TSV_DIE_TYP"],
-            "DEVICE": ["DEVICE"],
             "DEVICE_DESC": ["DEVICE_DESC"],
             "OPER_NUM": ["OPER"],
-            "OPER_SEQ": ["OPER_SEQ"],
-            "DIE_ATTACH_QTY": ["DIE_ATTACH_QTY"],
-            "NETDIE_300_CNT": ["NETDIE_300_CNT"],
             "OPER_NAME": ["OPER_NAME"],
         }
 

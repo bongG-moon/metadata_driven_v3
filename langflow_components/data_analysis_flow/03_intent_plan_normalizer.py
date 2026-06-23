@@ -126,6 +126,8 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             notes.append("step_plan이 없어 조회 alias를 기준으로 기본 분석 단계를 보완했습니다.")
     _normalize_step_plan_columns(plan, normalized_jobs, catalog)
     _augment_step_plan_defaults(plan, normalized_jobs, metadata, payload)
+    _attach_pandas_logic_hints(plan, metadata, question)
+    _attach_product_attribute_resolution_steps(plan, metadata, question, normalized_jobs, notes)
     _normalize_intent_type_for_analysis(plan, normalized_jobs)
     _mark_previous_result_restore_need(plan, payload, question, notes)
     normalized_jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else normalized_jobs
@@ -165,6 +167,8 @@ def _base_plan(llm_json: dict[str, Any], product_grain: list[str]) -> dict[str, 
     }
     for key in (
         "analysis_output_shape",
+        "filter_scopes",
+        "measure_scopes",
         "rank_groups",
         "scope_label",
         "state_product_keys",
@@ -1245,6 +1249,274 @@ def _augment_step_plan_defaults(
             step["output_columns"] = deepcopy(plan["analysis_output_columns"])
 
 
+def _attach_pandas_logic_hints(plan: dict[str, Any], metadata: dict[str, Any], question: str) -> None:
+    hints = _matched_product_attribute_resolver_hints(question, metadata)
+    if hints:
+        plan["pandas_logic_hints"] = hints
+
+
+def _attach_product_attribute_resolution_steps(
+    plan: dict[str, Any],
+    metadata: dict[str, Any],
+    question: str,
+    jobs: list[dict[str, Any]],
+    notes: list[str],
+) -> None:
+    hints = plan.get("pandas_logic_hints") if isinstance(plan.get("pandas_logic_hints"), list) else []
+    hints = [hint for hint in hints if isinstance(hint, dict) and hint.get("hint_type") == "product_attribute_resolver"]
+    if not hints or not jobs:
+        return
+    existing_resolutions = _existing_product_attribute_resolutions(plan)
+    resolved: list[dict[str, Any]] = []
+    for hint in hints:
+        tokens = _product_attribute_tokens(question, hint, metadata)
+        if not tokens:
+            continue
+        for job in jobs:
+            if not isinstance(job, dict):
+                continue
+            source_alias = str(job.get("source_alias") or job.get("dataset_key") or "").strip()
+            if not source_alias:
+                continue
+            resolution = _product_attribute_resolution_for_source(hint, source_alias, tokens, existing_resolutions)
+            if resolution:
+                resolved.append(resolution)
+    if not resolved:
+        return
+    plan["product_attribute_resolution"] = _dedupe_product_attribute_resolutions(resolved)
+    _prepend_product_attribute_resolution_steps(plan, plan["product_attribute_resolution"])
+    _append_once(notes, "product_attribute_resolvers를 pandas 실행 단계로 구조화했습니다.")
+
+
+def _existing_product_attribute_resolutions(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = plan.get("product_attribute_resolution")
+    if isinstance(raw, dict):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return []
+    return [deepcopy(item) for item in raw if isinstance(item, dict)]
+
+
+def _product_attribute_resolution_for_source(
+    hint: dict[str, Any],
+    source_alias: str,
+    tokens: list[str],
+    existing_resolutions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    resolver_key = str(hint.get("key") or "").strip()
+    existing = _matching_existing_product_resolution(existing_resolutions, resolver_key, source_alias)
+    resolution = deepcopy(existing) if existing else {}
+    resolution["resolver_key"] = resolver_key
+    resolution["source_alias"] = source_alias
+    resolution["tokens"] = _unique(_as_recipe_text_list(resolution.get("tokens")) + tokens)
+    columns = _as_recipe_text_list(
+        resolution.get("attribute_columns")
+        or hint.get("output_filter_columns")
+        or hint.get("attribute_columns")
+    )
+    if columns:
+        resolution["attribute_columns"] = columns
+        resolution.setdefault("output_filter_columns", columns)
+    prefix_columns = _resolver_prefix_match_columns(hint)
+    if prefix_columns:
+        resolution["prefix_match_columns"] = prefix_columns
+    resolution.setdefault("apply_stage", "after_retrieval_filters_before_aggregation")
+    resolution.setdefault("on_no_match", "return_empty_result_with_reason")
+    return resolution
+
+
+def _matching_existing_product_resolution(
+    existing_resolutions: list[dict[str, Any]],
+    resolver_key: str,
+    source_alias: str,
+) -> dict[str, Any]:
+    for item in existing_resolutions:
+        item_key = str(item.get("resolver_key") or item.get("key") or "").strip()
+        item_alias = str(item.get("source_alias") or "").strip()
+        if item_key == resolver_key and item_alias == source_alias:
+            return item
+    return {}
+
+
+def _resolver_prefix_match_columns(hint: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for section_key in ("pandas_generation_rule", "match_policy"):
+        section = hint.get(section_key) if isinstance(hint.get(section_key), dict) else {}
+        prefix_columns = section.get("prefix_match_columns") if isinstance(section.get("prefix_match_columns"), dict) else {}
+        for column, rule in prefix_columns.items():
+            column_text = str(column or "").strip()
+            if column_text and isinstance(rule, dict):
+                result[column_text] = deepcopy(rule)
+    return result
+
+
+def _prepend_product_attribute_resolution_steps(plan: dict[str, Any], resolutions: list[dict[str, Any]]) -> None:
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    existing_keys = {
+        (
+            str(step.get("operation") or ""),
+            str(step.get("resolver_key") or ""),
+            str(step.get("source_alias") or ""),
+        )
+        for step in steps
+        if isinstance(step, dict)
+    }
+    resolver_steps: list[dict[str, Any]] = []
+    for index, resolution in enumerate(resolutions):
+        resolver_key = str(resolution.get("resolver_key") or "").strip()
+        source_alias = str(resolution.get("source_alias") or "").strip()
+        step_key = ("apply_product_attribute_resolver", resolver_key, source_alias)
+        if not resolver_key or not source_alias or step_key in existing_keys:
+            continue
+        resolver_steps.append(
+            {
+                "step_id": f"resolve_product_attributes_{index + 1}",
+                "operation": "apply_product_attribute_resolver",
+                "source_alias": source_alias,
+                "resolver_key": resolver_key,
+                "tokens": deepcopy(resolution.get("tokens", [])),
+                "attribute_columns": deepcopy(resolution.get("attribute_columns", [])),
+                "prefix_match_columns": deepcopy(resolution.get("prefix_match_columns", {})),
+                "apply_stage": resolution.get("apply_stage", "after_retrieval_filters_before_aggregation"),
+                "on_no_match": resolution.get("on_no_match", "return_empty_result_with_reason"),
+            }
+        )
+    if resolver_steps:
+        plan["step_plan"] = [*resolver_steps, *steps]
+
+
+def _dedupe_product_attribute_resolutions(resolutions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+    for item in resolutions:
+        resolver_key = str(item.get("resolver_key") or "").strip()
+        source_alias = str(item.get("source_alias") or "").strip()
+        tokens = tuple(_as_recipe_text_list(item.get("tokens")))
+        key = (resolver_key, source_alias, tokens)
+        if not resolver_key or not source_alias or key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
+
+
+def _product_attribute_tokens(question: str, hint: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+    question_text = str(question or "")
+    raw_tokens = re.findall(r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*", question_text)
+    if not raw_tokens:
+        return []
+    excluded = _product_attribute_excluded_tokens(question_text, hint, metadata)
+    result: list[str] = []
+    for token in raw_tokens:
+        token_text = token.strip()
+        if len(token_text) <= 1:
+            continue
+        if token_text.upper() in excluded:
+            continue
+        if re.fullmatch(r"\d{8}", token_text):
+            continue
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", token_text):
+            continue
+        result.append(token_text.upper())
+    return _unique(result)
+
+
+def _product_attribute_excluded_tokens(question: str, hint: dict[str, Any], metadata: dict[str, Any]) -> set[str]:
+    excluded: set[str] = set()
+    static_terms = [
+        "today",
+        "current",
+        "yesterday",
+        "product",
+        "device",
+        "production",
+        "wip",
+        "target",
+        "plan",
+        "qty",
+        "quantity",
+        "process",
+        "operation",
+        "top",
+        "rank",
+    ]
+    for term in static_terms:
+        excluded.update(part.upper() for part in re.findall(r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*", term))
+    for value in [
+        hint.get("key"),
+        hint.get("display_name"),
+        *(_as_recipe_text_list(hint.get("aliases")) if isinstance(hint.get("aliases"), list) else []),
+        *(_as_recipe_text_list(hint.get("trigger_terms")) if isinstance(hint.get("trigger_terms"), list) else []),
+    ]:
+        excluded.update(part.upper() for part in re.findall(r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*", str(value or "")))
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    for section_key in ("process_groups", "product_terms", "quantity_terms", "metric_terms", "status_terms"):
+        section = domain.get(section_key) if isinstance(domain.get(section_key), dict) else {}
+        for key, item in section.items():
+            values = [key]
+            if isinstance(item, dict):
+                values.append(item.get("display_name"))
+                values.extend(item.get("aliases") if isinstance(item.get("aliases"), list) else [])
+                values.extend(item.get("processes") if isinstance(item.get("processes"), list) else [])
+            for value in values:
+                excluded.update(part.upper() for part in re.findall(r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*", str(value or "")))
+    main_filters = metadata.get("main_flow_filters") if isinstance(metadata.get("main_flow_filters"), dict) else {}
+    for key, item in main_filters.items():
+        values = [key]
+        if isinstance(item, dict):
+            values.extend(item.get("aliases") if isinstance(item.get("aliases"), list) else [])
+            values.extend(item.get("column_candidates") if isinstance(item.get("column_candidates"), list) else [])
+        for value in values:
+            excluded.update(part.upper() for part in re.findall(r"[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)*", str(value or "")))
+    return excluded
+
+
+def _matched_product_attribute_resolver_hints(question: str, metadata: dict[str, Any]) -> list[dict[str, Any]]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    resolvers = domain.get("product_attribute_resolvers") if isinstance(domain.get("product_attribute_resolvers"), dict) else {}
+    hints: list[dict[str, Any]] = []
+    for resolver_key, resolver in resolvers.items():
+        if not isinstance(resolver, dict):
+            continue
+        aliases = resolver.get("aliases") if isinstance(resolver.get("aliases"), list) else []
+        trigger_terms = resolver.get("trigger_terms") if isinstance(resolver.get("trigger_terms"), list) else []
+        match_values = [resolver_key, resolver.get("display_name"), *aliases, *trigger_terms]
+        if not _mentions_any(question, match_values):
+            continue
+        hints.append(_resolver_to_pandas_logic_hint(str(resolver_key), resolver))
+    return hints
+
+
+def _resolver_to_pandas_logic_hint(resolver_key: str, resolver: dict[str, Any]) -> dict[str, Any]:
+    keep_fields = [
+        "display_name",
+        "description",
+        "priority",
+        "trigger_terms",
+        "attribute_columns",
+        "attribute_source_columns",
+        "tokenization",
+        "match_policy",
+        "output_filter_columns",
+        "resolution_stage",
+        "source_policy",
+        "pandas_generation_rule",
+        "pandas_code_instructions",
+        "pandas_code_example",
+        "code_example",
+        "example",
+    ]
+    hint = {
+        "hint_type": "product_attribute_resolver",
+        "key": resolver_key,
+    }
+    for field in keep_fields:
+        value = resolver.get(field)
+        if value not in (None, "", [], {}):
+            hint[field] = deepcopy(value)
+    return hint
+
+
 def _map_logical_columns(columns: list[Any], catalog: dict[str, Any]) -> list[str]:
     catalog_columns = set(_unique(catalog.get("columns", [])))
     mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
@@ -1399,6 +1671,7 @@ def _augmented_filters_for_job(
     dataset_key = str(job.get("dataset_key") or "")
     dataset_catalog = datasets.get(dataset_key) if isinstance(datasets.get(dataset_key), dict) else {}
     raw_filters = job.get("filters") if isinstance(job.get("filters"), list) else []
+    scoped_filters = _scoped_filters_for_job(job, plan, dataset_catalog)
     plan_filters = plan.get("filters") if isinstance(plan.get("filters"), list) else []
     inferred_filters = _infer_filters(
         question,
@@ -1410,18 +1683,284 @@ def _augmented_filters_for_job(
         job=job,
         blocked_filter_fields=_blocked_filter_fields(plan),
     )
-    merged = [deepcopy(item) for item in raw_filters if isinstance(item, dict)]
-    merged.extend(deepcopy(item) for item in plan_filters if isinstance(item, dict))
+    local_filters = _dedupe_filters(
+        [
+            *[deepcopy(item) for item in raw_filters if isinstance(item, dict)],
+            *[deepcopy(item) for item in scoped_filters if isinstance(item, dict)],
+        ]
+    )
+    merged = [deepcopy(item) for item in local_filters]
+    blocked_fields = _blocked_filter_fields(plan)
+    blocked_fields = _unique([*blocked_fields, *_blocked_filter_fields_for_job(job, plan, dataset_catalog)])
+    for item in plan_filters:
+        if not isinstance(item, dict):
+            continue
+        if _filter_field_blocked(item, blocked_fields):
+            continue
+        if _filter_conflicts_with_existing(item, local_filters):
+            continue
+        merged.append(deepcopy(item))
     if any(str(item.get("field") or "").strip() == "DATE" for item in inferred_filters if isinstance(item, dict)):
         merged = [item for item in merged if str(item.get("field") or "").strip() != "DATE"]
-    merged.extend(deepcopy(item) for item in inferred_filters if isinstance(item, dict))
+    for item in inferred_filters:
+        if not isinstance(item, dict):
+            continue
+        if _filter_field_blocked(item, blocked_fields):
+            continue
+        if _filter_conflicts_with_existing(item, local_filters):
+            continue
+        merged.append(deepcopy(item))
     if plan.get("state_product_keys") and _supports_product_grain_filter(dataset_catalog, plan):
         merged.append({"field": "PRODUCT_GRAIN", "op": "from_state"})
-    blocked_fields = _blocked_filter_fields(plan)
     if blocked_fields:
         merged = _remove_filter_fields(merged, blocked_fields)
+    merged = _defer_product_attribute_filters_to_pandas(merged, metadata, question, dataset_key, dataset_catalog)
     merged = _drop_conflicting_product_alias_filters(merged, inferred_filters, metadata)
     return _filters_for_dataset(_dedupe_filters(merged), dataset_key, dataset_catalog)
+
+
+def _defer_product_attribute_filters_to_pandas(
+    filters: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    question: str,
+    dataset_key: str,
+    dataset_catalog: dict[str, Any],
+) -> list[dict[str, Any]]:
+    hints = _matched_product_attribute_resolver_hints(question, metadata)
+    if not hints:
+        return filters
+    explicit_fields = _explicit_filter_fields_in_question(question, metadata)
+    term_filter_signatures = {
+        _filter_signature(item)
+        for item in _metadata_term_filters(question, metadata, dataset_key, dataset_catalog)
+        if isinstance(item, dict)
+    }
+    resolver_fields = _resolver_attribute_filter_fields(hints)
+    prefix_patterns = _resolver_prefix_patterns(hints)
+    result: list[dict[str, Any]] = []
+    for item in filters:
+        if not isinstance(item, dict):
+            continue
+        field = str(item.get("field") or "").strip()
+        if not field or field in {"DATE", "OPER_NAME", "OPER_NUM", "PRODUCT_GRAIN"}:
+            result.append(item)
+            continue
+        if field in explicit_fields or _filter_signature(item) in term_filter_signatures:
+            result.append(item)
+            continue
+        if _should_defer_product_attribute_filter(item, question, resolver_fields, prefix_patterns, metadata):
+            continue
+        result.append(item)
+    return result
+
+
+def _resolver_attribute_filter_fields(hints: list[dict[str, Any]]) -> set[str]:
+    fields: set[str] = set()
+    for hint in hints:
+        for key in ("output_filter_columns", "attribute_columns"):
+            values = hint.get(key)
+            if isinstance(values, list):
+                fields.update(str(value or "").strip() for value in values if str(value or "").strip())
+        for key in ("attribute_source_columns",):
+            mapping = hint.get(key)
+            if isinstance(mapping, dict):
+                fields.update(str(field or "").strip() for field in mapping if str(field or "").strip())
+        for section_key in ("pandas_generation_rule", "match_policy"):
+            section = hint.get(section_key) if isinstance(hint.get(section_key), dict) else {}
+            prefix_columns = section.get("prefix_match_columns") if isinstance(section.get("prefix_match_columns"), dict) else {}
+            fields.update(str(field or "").strip() for field in prefix_columns if str(field or "").strip())
+    return fields
+
+
+def _resolver_prefix_patterns(hints: list[dict[str, Any]]) -> list[str]:
+    patterns: list[str] = []
+    for hint in hints:
+        for section_key in ("pandas_generation_rule", "match_policy"):
+            section = hint.get(section_key) if isinstance(hint.get(section_key), dict) else {}
+            prefix_columns = section.get("prefix_match_columns") if isinstance(section.get("prefix_match_columns"), dict) else {}
+            for rule in prefix_columns.values():
+                if not isinstance(rule, dict):
+                    continue
+                pattern = str(rule.get("pattern") or "").strip()
+                if pattern:
+                    patterns.append(pattern)
+    return _unique(patterns)
+
+
+def _explicit_filter_fields_in_question(question: str, metadata: dict[str, Any]) -> set[str]:
+    result: set[str] = set()
+    main_filters = metadata.get("main_flow_filters") if isinstance(metadata.get("main_flow_filters"), dict) else {}
+    for field, spec in main_filters.items():
+        field_text = str(field or "").strip()
+        if not field_text:
+            continue
+        candidates = []
+        if isinstance(spec, dict):
+            candidates.extend(spec.get("column_candidates") if isinstance(spec.get("column_candidates"), list) else [])
+            candidates.extend(spec.get("aliases") if isinstance(spec.get("aliases"), list) else [])
+        if _mentions_any(question, [field_text, *candidates]):
+            result.add(field_text)
+    return result
+
+
+def _should_defer_product_attribute_filter(
+    item: dict[str, Any],
+    question: str,
+    resolver_fields: set[str],
+    prefix_patterns: list[str],
+    metadata: dict[str, Any],
+) -> bool:
+    field = str(item.get("field") or "").strip()
+    values = _filter_values([item])
+    if not values:
+        return False
+    if field in resolver_fields and any(_value_appears_in_question(value, question) for value in values):
+        return True
+    if any(_value_matches_resolver_prefix(value, question, prefix_patterns) for value in values):
+        return True
+    return _is_device_like_filter_field(field, metadata) and any(_value_appears_in_question(value, question) for value in values)
+
+
+def _value_appears_in_question(value: str, question: str) -> bool:
+    value_text = str(value or "").strip()
+    if not value_text:
+        return False
+    return value_text.upper() in str(question or "").upper()
+
+
+def _value_matches_resolver_prefix(value: str, question: str, prefix_patterns: list[str]) -> bool:
+    value_text = str(value or "").strip().upper()
+    question_text = str(question or "").upper()
+    if not value_text or not question_text or not prefix_patterns:
+        return False
+    for pattern in prefix_patterns:
+        try:
+            value_match = re.search(pattern, value_text)
+        except re.error:
+            continue
+        if not value_match:
+            continue
+        prefix = value_match.group(0).upper()
+        if prefix and prefix in question_text:
+            return True
+    return False
+
+
+def _is_device_like_filter_field(field: str, metadata: dict[str, Any]) -> bool:
+    main_filters = metadata.get("main_flow_filters") if isinstance(metadata.get("main_flow_filters"), dict) else {}
+    spec = main_filters.get(field) if isinstance(main_filters.get(field), dict) else {}
+    text_parts = [field, spec.get("display_name"), spec.get("description")]
+    text_parts.extend(spec.get("column_candidates") if isinstance(spec.get("column_candidates"), list) else [])
+    text_parts.extend(spec.get("aliases") if isinstance(spec.get("aliases"), list) else [])
+    combined = " ".join(str(part or "") for part in text_parts).upper()
+    return "DEVICE" in combined or "제품" in combined or "자재" in combined
+
+
+def _scoped_filters_for_job(job: dict[str, Any], plan: dict[str, Any], dataset_catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    filters: list[dict[str, Any]] = []
+    scopes = plan.get("filter_scopes") if isinstance(plan.get("filter_scopes"), list) else []
+    for scope in scopes:
+        if not isinstance(scope, dict) or not _scope_applies_to_job(scope, job, dataset_catalog):
+            continue
+        scope_filters = scope.get("filters") if isinstance(scope.get("filters"), list) else []
+        filters.extend(deepcopy(item) for item in scope_filters if isinstance(item, dict))
+    return _dedupe_filters(filters)
+
+
+def _scope_applies_to_job(scope: dict[str, Any], job: dict[str, Any], dataset_catalog: dict[str, Any]) -> bool:
+    alias = str(job.get("source_alias") or job.get("dataset_key") or "").strip()
+    dataset_key = str(job.get("dataset_key") or "").strip()
+    family = str(dataset_catalog.get("dataset_family") or "").strip()
+    job_scope_key = str(job.get("filter_scope_key") or job.get("scope_key") or "").strip()
+    scope_key = str(scope.get("scope_key") or "").strip()
+
+    aliases = _as_recipe_text_list(scope.get("source_aliases"))
+    if aliases and alias in aliases:
+        return True
+    single_alias = str(scope.get("source_alias") or "").strip()
+    if single_alias and alias == single_alias:
+        return True
+    dataset_keys = _as_recipe_text_list(scope.get("dataset_keys"))
+    if dataset_keys and dataset_key in dataset_keys:
+        return True
+    families = _as_recipe_text_list(scope.get("dataset_families"))
+    if families and family in families:
+        return True
+    if scope_key and job_scope_key and scope_key == job_scope_key:
+        return True
+    return not any([aliases, single_alias, dataset_keys, families, scope_key])
+
+
+def _blocked_filter_fields_for_job(job: dict[str, Any], plan: dict[str, Any], dataset_catalog: dict[str, Any]) -> list[str]:
+    blocked: list[str] = []
+    policy = job.get("filter_policy") if isinstance(job.get("filter_policy"), dict) else {}
+    blocked.extend(_as_recipe_text_list(policy.get("blocked_filter_fields")))
+    scopes = plan.get("filter_scopes") if isinstance(plan.get("filter_scopes"), list) else []
+    for scope in scopes:
+        if isinstance(scope, dict) and _scope_applies_to_job(scope, job, dataset_catalog):
+            blocked.extend(_as_recipe_text_list(scope.get("blocked_filter_fields")))
+    return _unique(blocked)
+
+
+def _filter_field_blocked(filter_item: dict[str, Any], blocked_fields: list[str]) -> bool:
+    field = str(filter_item.get("field") or "").strip()
+    return bool(field and field in {str(item or "").strip() for item in blocked_fields})
+
+
+def _filter_conflicts_with_existing(candidate: dict[str, Any], existing_filters: list[dict[str, Any]]) -> bool:
+    field = str(candidate.get("field") or "").strip()
+    if not field or field in {"DATE", "PRODUCT_GRAIN"}:
+        return False
+    for existing in existing_filters:
+        if not isinstance(existing, dict) or str(existing.get("field") or "").strip() != field:
+            continue
+        if _filter_conditions_conflict(existing, candidate):
+            return True
+    return False
+
+
+def _filter_conditions_conflict(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_op = str(left.get("op") or "eq").strip().lower()
+    right_op = str(right.get("op") or "eq").strip().lower()
+    if _filter_signature(left) == _filter_signature(right):
+        return False
+    if {left_op, right_op} == {"empty", "not_empty"} or {left_op, right_op} == {"empty", "exists"}:
+        return True
+    left_values = _comparable_filter_values(left)
+    right_values = _comparable_filter_values(right)
+    if left_values and right_values:
+        if left_op in {"eq", "in"} and right_op in {"eq", "in"}:
+            return not bool(left_values & right_values)
+        if left_op == "starts_with" and right_op in {"eq", "in"}:
+            return not any(value.startswith(next(iter(left_values))) for value in right_values)
+        if right_op == "starts_with" and left_op in {"eq", "in"}:
+            return not any(value.startswith(next(iter(right_values))) for value in left_values)
+        if left_op == "last_char_in" and right_op in {"eq", "in"}:
+            return not any(value[-1:] in left_values for value in right_values if value)
+        if right_op == "last_char_in" and left_op in {"eq", "in"}:
+            return not any(value[-1:] in right_values for value in left_values if value)
+    return False
+
+
+def _filter_signature(item: dict[str, Any]) -> str:
+    clean = {
+        "field": item.get("field"),
+        "op": str(item.get("op") or "eq").strip().lower(),
+        "value": item.get("value"),
+        "values": item.get("values"),
+    }
+    return json.dumps(clean, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _comparable_filter_values(item: dict[str, Any]) -> set[str]:
+    op = str(item.get("op") or "eq").strip().lower()
+    values: set[str] = set()
+    if op in {"eq", "starts_with"} and "value" in item:
+        values.add(str(item.get("value") or "").strip().upper())
+    raw_values = item.get("values")
+    if op in {"in", "last_char_in"} and isinstance(raw_values, list):
+        values.update(str(value or "").strip().upper() for value in raw_values)
+    return {value for value in values if value}
 
 
 def _filters_for_dataset(filters: list[Any], dataset_key: str, catalog: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2079,7 +2618,19 @@ def _metadata_term_filters(
             if not _mentions_any(question, match_values):
                 continue
             condition = _condition_for_dataset(term, dataset_key, dataset_catalog or {})
-            result.extend(_condition_to_filters(condition, metadata))
+            result.extend(_condition_to_filters(condition, metadata, dataset_catalog or {}))
+    quantity_terms = domain.get("quantity_terms") if isinstance(domain.get("quantity_terms"), dict) else {}
+    for term_key, term in quantity_terms.items():
+        if not isinstance(term, dict):
+            continue
+        aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+        match_values = [term_key, term.get("display_name"), *aliases, term.get("output_column")]
+        if not _mentions_any(question, match_values):
+            continue
+        if not _term_applies_to_dataset(term, dataset_key, dataset_catalog or {}):
+            continue
+        condition = _condition_for_dataset(term, dataset_key, dataset_catalog or {})
+        result.extend(_condition_to_filters(condition, metadata, dataset_catalog or {}))
     return result
 
 
@@ -2117,6 +2668,7 @@ def _attach_result_scope_columns(
     question: str,
 ) -> None:
     scope_columns: list[dict[str, Any]] = []
+    product_condition_fields = _matched_product_condition_fields(question, metadata)
     for job in jobs:
         if not isinstance(job, dict):
             continue
@@ -2126,6 +2678,8 @@ def _attach_result_scope_columns(
                 continue
             field = str(condition.get("field") or "").strip()
             if not field or field in {"DATE", "PRODUCT_GRAIN"}:
+                continue
+            if field in product_condition_fields:
                 continue
             values = _scope_condition_values(condition)
             if field == "OPER_NAME":
@@ -2137,8 +2691,62 @@ def _attach_result_scope_columns(
                     continue
             if values:
                 _append_scope_column(scope_columns, field, _scope_display_value(values), field)
+    _append_product_term_scope_columns(scope_columns, question, metadata)
     if scope_columns:
         plan["result_scope_columns"] = scope_columns
+
+
+def _matched_product_condition_fields(question: str, metadata: dict[str, Any]) -> set[str]:
+    fields: set[str] = set()
+    for _term_key, term in _matched_product_terms(question, metadata):
+        condition = term.get("condition") if isinstance(term.get("condition"), dict) else {}
+        condition_by_dataset = term.get("condition_by_dataset") if isinstance(term.get("condition_by_dataset"), dict) else {}
+        condition_by_family = term.get("condition_by_family") if isinstance(term.get("condition_by_family"), dict) else {}
+        for item in [condition, *condition_by_dataset.values(), *condition_by_family.values()]:
+            if isinstance(item, dict):
+                fields.update(str(field or "").strip() for field in item if str(field or "").strip())
+    return fields
+
+
+def _append_product_term_scope_columns(scope_columns: list[dict[str, Any]], question: str, metadata: dict[str, Any]) -> None:
+    for term_key, term in _matched_product_terms(question, metadata):
+        column = str(
+            term.get("result_label_column")
+            or term.get("scope_column")
+            or term.get("output_scope_column")
+            or "PRODUCT_GROUP"
+        ).strip()
+        value = _product_term_label_value(term_key, term)
+        if column and value:
+            _append_scope_column(scope_columns, column, value, "product_terms")
+
+
+def _matched_product_terms(question: str, metadata: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    terms = domain.get("product_terms") if isinstance(domain.get("product_terms"), dict) else {}
+    matched: list[tuple[str, dict[str, Any]]] = []
+    for term_key, term in terms.items():
+        if not isinstance(term, dict):
+            continue
+        aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+        match_values = [term_key, term.get("display_name"), *aliases]
+        if _mentions_any(question, match_values):
+            matched.append((str(term_key), term))
+    return matched
+
+
+def _product_term_label_value(term_key: str, term: dict[str, Any]) -> str:
+    for key in ("result_label_value", "scope_value", "output_scope_value", "label_value"):
+        value = str(term.get(key) or "").strip()
+        if value:
+            return value
+    aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+    for alias in aliases:
+        text = str(alias or "").strip()
+        if text:
+            return text
+    display_name = str(term.get("display_name") or "").strip()
+    return display_name or str(term_key or "").strip()
 
 
 def _scope_condition_values(condition: dict[str, Any]) -> list[str]:
@@ -2205,11 +2813,26 @@ def _condition_for_dataset(term: dict[str, Any], dataset_key: str, dataset_catal
     return term.get("condition") if isinstance(term.get("condition"), dict) else {}
 
 
-def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any]) -> list[dict[str, Any]]:
+def _term_applies_to_dataset(term: dict[str, Any], dataset_key: str, dataset_catalog: dict[str, Any]) -> bool:
+    term_dataset_key = str(term.get("dataset_key") or "").strip()
+    if term_dataset_key and dataset_key and term_dataset_key != dataset_key:
+        return False
+    term_family = str(term.get("dataset_family") or "").strip()
+    catalog_family = str(dataset_catalog.get("dataset_family") or "").strip()
+    if term_family and catalog_family and term_family != catalog_family:
+        return False
+    families = _as_recipe_text_list(term.get("required_dataset_families"))
+    if families and catalog_family and catalog_family not in families:
+        return False
+    return True
+
+
+def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any], dataset_catalog: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    catalog = dataset_catalog or {}
     for field, spec in condition.items():
         field_name = str(field or "").strip()
-        if not field_name or not _metadata_has_filter(metadata, field_name):
+        if not field_name or not (_metadata_has_filter(metadata, field_name) or _catalog_has_filter(catalog, field_name)):
             continue
         if isinstance(spec, dict):
             if spec.get("empty") or spec.get("missing_or_empty"):

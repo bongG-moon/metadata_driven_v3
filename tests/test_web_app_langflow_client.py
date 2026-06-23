@@ -494,6 +494,7 @@ def test_authoring_settings_do_not_send_duplicate_action_to_writers(monkeypatch)
     for metadata_type, (request_loader, similarity_checker, writer, collection_name) in expected.items():
         settings = build_authoring_node_input_settings(metadata_type, "merge")
 
-        assert settings[request_loader]["duplicate_action"] == "merge"
-        assert settings[similarity_checker]["duplicate_action"] == "merge"
+        assert "duplicate_action" not in settings.get(request_loader, {})
+        assert similarity_checker not in settings
+        assert settings[request_loader]["collection_name"] == collection_name
         assert settings[writer] == {"collection_name": collection_name}

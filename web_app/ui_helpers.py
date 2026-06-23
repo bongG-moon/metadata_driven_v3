@@ -50,6 +50,38 @@ def safe_markdown_text(value: Any) -> str:
     return re.sub(r"(?<!\\)~", r"\\~", text)
 
 
+def separate_data_lines_from_explanation(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    rendered_lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line
+        split_line = False
+        for marker in ("위 결과는", "이 결과는", "해당 결과는", "참고:", "참고로"):
+            index = line.find(marker)
+            if index <= 0:
+                continue
+            leading_text = line[:index].rstrip()
+            trailing_text = line[index:].lstrip()
+            if _looks_like_inline_result_line(leading_text):
+                rendered_lines.append(leading_text)
+                rendered_lines.append("")
+                rendered_lines.append(trailing_text)
+                split_line = True
+                break
+        if not split_line:
+            rendered_lines.append(line)
+    return "\n".join(rendered_lines)
+
+
+def _looks_like_inline_result_line(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return bool(re.search(r"[:|]\s*[-+]?\d[\d,]*(?:\.\d+)?(?:\s*[A-Za-z가-힣%]*)?\s*$", text))
+
+
 def chat_table_visible_rows(max_height: int = TABLE_MAX_HEIGHT) -> int:
     usable_height = max_height - TABLE_HEADER_HEIGHT - TABLE_VERTICAL_PADDING
     return max(1, usable_height // TABLE_ROW_HEIGHT)

@@ -16,6 +16,7 @@ from lfx.schema.message import Message
 DOMAIN_SECTION_LABELS = {
     "process_groups": "공정 그룹",
     "product_terms": "제품/조건 용어",
+    "product_attribute_resolvers": "제품 속성 pandas 매칭 규칙",
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",

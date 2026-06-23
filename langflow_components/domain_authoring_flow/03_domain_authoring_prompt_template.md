@@ -1,6 +1,15 @@
 You convert a refined manufacturing domain description into MongoDB-storable domain metadata.
 Return one strict JSON object only. Do not wrap it in markdown.
 Use only information present in the refined text. Put missing essentials in missing_information.
+Workers may describe business logic loosely. Infer reusable metadata when the source table/dataset, source column, aggregation word, or calculation intent is clear.
+Do not block only because output_column is omitted; generate a stable uppercase output column from the business term when it is unambiguous.
+For phrases such as "중복 제거 값 수", "distinct count", "unique count", or "중복 없이 센다", use aggregation='nunique'. Use the named source column as quantity_column.
+When the text says a count is calculated from a named table such as assign table, preserve the table/dataset name as dataset_key when it is explicitly stated.
+For equipment count examples like "장비 대수는 assign테이블에서 eqp_id컬럼 중복 제거 값 수", create or update quantity_terms/equipment_count with dataset_family='equipment', quantity_column from the stated column, aggregation='nunique', and output_column='EQP_COUNT'.
+Existing item summaries in authoring_context are duplicate-awareness references only. Never convert those existing summaries into new items unless the refined text explicitly asks to update that item.
+When the refined text only clarifies aliases, dataset family, source column, or target-exclusion rules for an existing business quantity, create one quantity_terms item for that quantity and prefer the existing key from the summary.
+For INPUT result aliases such as INPUT실적, INPUT생산량, or 투입 실적, use quantity_terms key input_production with dataset_family='production', quantity_column='PRODUCTION', aggregation='sum'. Do not create product_key_columns, process_groups, or metric_terms for that clarification unless the refined text explicitly defines them.
+If the text says target/계획/스케쥴 should not be used unless those words appear, preserve that as excluded_terms or selection_rule on the quantity term instead of creating a target metric.
 Prefer structured JSON conditions, for example {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}.
 Do not store executable filters as prose. Use condition objects for column predicates and filters objects for exact value matches.
 For descriptor-style input, convert it to executable form: {{"column": "TSV_DIE_TYP", "condition": "not null and not empty"}} becomes {{"condition": {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}}}.
@@ -20,6 +29,12 @@ Use aggregation='nunique' for distinct LOT_ID counts. Do not use count_distinct.
 Use aggregation='nunique' for equipment count questions such as 장비 대수 or 설비 대수 over EQPID, with output_column EQP_COUNT.
 Distinguish equipment detail and count intents: 장비 현황 or 설비 현황 should be detail rows with result_mode='detail_rows', while 장비 대수 or 설비 대수 should calculate EQP_COUNT.
 
+Use product_attribute_resolvers when the text describes reusable pandas matching rules for product words or partial product attribute combinations. These rules must describe how generated pandas code filters the already retrieved source DataFrames; they must not require an extra lookup/master dataset. Specific named product groups such as POP or MOBILE should remain product_terms and be checked before general product attribute matching rules.
+For product_attribute_resolvers, use `attribute_columns` and `output_filter_columns`; do not use `standard_attribute_columns`.
+For product_attribute_resolvers, use the columns, trigger words, source policy, matching policy, and prefix rules described by the worker or existing authoring context; do not invent additional business columns or product-code rules.
+When the worker describes prefix matching for a column, store it in `pandas_generation_rule.prefix_match_columns`; otherwise leave prefix rules empty or omit them.
+When the worker says the rule should use already retrieved data only, store that in `source_policy`; otherwise do not add a separate lookup/master dataset unless the worker explicitly asks for one.
+
 Authoring context:
 {authoring_context}
 
@@ -27,7 +42,7 @@ Required JSON schema:
 {{
   "items": [
     {{
-      "section": "process_groups | product_terms | quantity_terms | metric_terms | status_terms | analysis_recipes | product_key_columns",
+      "section": "process_groups | product_terms | product_attribute_resolvers | quantity_terms | metric_terms | status_terms | analysis_recipes | product_key_columns",
       "key": "stable_key",
       "payload": {{
         "display_name": "business display name",
@@ -59,7 +74,15 @@ Required JSON schema:
         "top_n_policy": "optional, e.g. question_or_default",
         "result_mode": "optional, e.g. detail_rows",
         "output_columns": ["optional standard output columns"],
-        "output_column": "optional standard output column"
+        "output_column": "optional standard output column",
+        "trigger_terms": ["for product_attribute_resolvers, words that activate the resolver"],
+        "attribute_columns": ["for product_attribute_resolvers, standard columns used for runtime matching"],
+        "attribute_source_columns": {{"standard_column": ["optional physical/source aliases"]}},
+        "output_filter_columns": ["for product_attribute_resolvers, standard columns to filter in pandas"],
+        "resolution_stage": "optional stage, e.g. pandas_code_generation when the worker describes pandas code generation",
+        "source_policy": {{"use_existing_runtime_sources_only": "optional boolean from worker text", "do_not_add_retrieval_job": "optional boolean from worker text"}},
+        "pandas_generation_rule": {{"prefix_match_columns": {{"column_from_worker_text": {{"pattern": "pattern_from_worker_text", "match": "starts_with"}}}}}},
+        "pandas_code_example": "optional short code-shaped guide"
       }},
       "columns": ["only for product_key_columns"],
       "confidence": "high | medium | low"

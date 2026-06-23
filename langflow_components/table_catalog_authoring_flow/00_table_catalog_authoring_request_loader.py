@@ -16,7 +16,9 @@ from lfx.schema.data import Data
 
 
 DEFAULT_COLLECTION_NAME = "agent_v3_table_catalog_items"
+DEFAULT_MAIN_FLOW_FILTER_COLLECTION_NAME = "agent_v3_main_flow_filters"
 COLLECTION_ENV_KEY = "MONGODB_TABLE_CATALOG_COLLECTION"
+MAIN_FLOW_FILTER_COLLECTION_ENV_KEY = "MONGODB_MAIN_FLOW_FILTER_COLLECTION"
 LEGACY_COLLECTION_SUFFIX = "table_catalog_items"
 DUPLICATE_ACTION_OPTIONS = ["ask", "merge", "replace", "skip", "create_new"]
 LOAD_EXISTING_OPTIONS = ["true", "false"]
@@ -31,23 +33,39 @@ def build_table_catalog_authoring_request(
     mongo_database: str = "",
     collection_prefix: str = "",
     collection_name: str = "",
+    main_flow_filter_collection_name: str = "",
     duplicate_action: str = "ask",
     load_existing: str = "true",
     load_limit: str = "200",
 ) -> dict[str, Any]:
     database = _clean(mongo_database or os.getenv("MONGODB_DATABASE") or "metadata_driven_agent_v3")
     collection = _resolve_collection_name(collection_name, collection_prefix)
+    filter_collection = _clean(
+        main_flow_filter_collection_name
+        or os.getenv(MAIN_FLOW_FILTER_COLLECTION_ENV_KEY)
+        or DEFAULT_MAIN_FLOW_FILTER_COLLECTION_NAME
+    )
     uri = _clean(mongo_uri or os.getenv("MONGODB_URI"))
     existing_items = []
+    main_flow_filters = {}
     load_errors: list[str] = []
     if _as_bool(load_existing, True):
         existing_items, load_errors = _load_existing_table_items(uri, database, collection, _safe_int(load_limit, 200))
+        if uri:
+            main_flow_filters, filter_load_errors = _load_existing_main_flow_filters(
+                uri,
+                database,
+                filter_collection,
+                _safe_int(load_limit, 200),
+            )
+            load_errors.extend(f"main_flow_filter_load: {item}" for item in filter_load_errors)
     return {
         "metadata_type": "table_catalog",
         "raw_text": _clean(raw_text),
         "refined_text": "",
         "items": [],
         "existing_items": existing_items,
+        "main_flow_filters": main_flow_filters,
         "existing_matches": [],
         "conflict_warnings": [],
         "duplicate_decision": {"action": _action(duplicate_action), "requires_user_choice": False},
@@ -56,6 +74,7 @@ def build_table_catalog_authoring_request(
         "mongo_config": {
             "database": database,
             "collection": collection,
+            "main_flow_filter_collection": filter_collection,
             "has_mongo_uri": bool(uri),
         },
         "errors": [f"existing_load: {item}" for item in load_errors],
@@ -85,6 +104,33 @@ def _load_existing_table_items(
             client.close()
 
 
+def _load_existing_main_flow_filters(
+    mongo_uri: str,
+    database: str,
+    collection: str,
+    limit: int,
+) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    client = None
+    try:
+        mongo_client_cls = getattr(import_module("pymongo"), "MongoClient")
+        client = mongo_client_cls(mongo_uri, serverSelectionTimeoutMS=5000)
+        docs = list(client[database][collection].find({}).limit(limit))
+        filters: dict[str, dict[str, Any]] = {}
+        for doc in docs:
+            if not _is_active(doc):
+                continue
+            compact = _compact_main_flow_filter_doc(_json_ready(doc))
+            filter_key = _clean(compact.get("filter_key")).upper()
+            if filter_key:
+                filters[filter_key] = compact
+        return filters, []
+    except Exception as exc:
+        return {}, [str(exc)]
+    finally:
+        if client is not None:
+            client.close()
+
+
 def _compact_table_doc(doc: dict[str, Any]) -> dict[str, Any]:
     payload = deepcopy(doc.get("payload")) if isinstance(doc.get("payload"), dict) else {}
     dataset_key = _clean(doc.get("dataset_key") or doc.get("key"))
@@ -99,6 +145,20 @@ def _compact_table_doc(doc: dict[str, Any]) -> dict[str, Any]:
         "filter_fields": sorted((payload.get("filter_mappings") or {}).keys()) if isinstance(payload.get("filter_mappings"), dict) else [],
         "columns": _as_list(payload.get("columns")),
         "primary_quantity_column": payload.get("primary_quantity_column"),
+    }
+
+
+def _compact_main_flow_filter_doc(doc: dict[str, Any]) -> dict[str, Any]:
+    payload = deepcopy(doc.get("payload")) if isinstance(doc.get("payload"), dict) else {}
+    filter_key = _clean(doc.get("filter_key") or doc.get("key") or payload.get("filter_key") or payload.get("key"))
+    return {
+        "id": _clean(doc.get("_id") or f"main_flow_filter:{filter_key}"),
+        "filter_key": filter_key,
+        "display_name": _clean(payload.get("display_name")),
+        "semantic_role": _clean(payload.get("semantic_role")),
+        "aliases": _as_list(payload.get("aliases")),
+        "column_candidates": _as_list(payload.get("column_candidates")),
+        "runtime_hints": payload.get("runtime_hints", {}),
     }
 
 
@@ -174,6 +234,7 @@ class TableCatalogAuthoringRequestLoader(Component):
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value=""),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value="metadata_driven_agent_v3"),
         MessageTextInput(name="collection_name", display_name="Collection Name", value=DEFAULT_COLLECTION_NAME),
+        MessageTextInput(name="main_flow_filter_collection_name", display_name="Main Flow Filter Collection Name", value=DEFAULT_MAIN_FLOW_FILTER_COLLECTION_NAME, advanced=True),
         DropdownInput(name="duplicate_action", display_name="Duplicate Action", options=DUPLICATE_ACTION_OPTIONS, value="ask", advanced=True),
         DropdownInput(name="load_existing", display_name="Load Existing Items", options=LOAD_EXISTING_OPTIONS, value="true", advanced=True),
         MessageTextInput(name="load_limit", display_name="Load Limit", value="200", advanced=True),
@@ -191,6 +252,7 @@ class TableCatalogAuthoringRequestLoader(Component):
             mongo_database=getattr(self, "mongo_database", ""),
             collection_prefix="",
             collection_name=getattr(self, "collection_name", DEFAULT_COLLECTION_NAME),
+            main_flow_filter_collection_name=getattr(self, "main_flow_filter_collection_name", DEFAULT_MAIN_FLOW_FILTER_COLLECTION_NAME),
             duplicate_action=getattr(self, "duplicate_action", "ask"),
             load_existing=getattr(self, "load_existing", "true"),
             load_limit=getattr(self, "load_limit", "200"),

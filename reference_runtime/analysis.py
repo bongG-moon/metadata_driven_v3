@@ -182,8 +182,8 @@ def _equipment_count_for_previous_products(
 
 def _aggregate_join(plan: dict[str, Any], runtime_sources: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     product_keys = plan["product_grain"]
-    prod_rows = _rows_for_dataset(plan, runtime_sources, "production_today", ("lpddr5_wb_production_today",))
-    wip_rows = _rows_for_dataset(plan, runtime_sources, "wip_today", ("lpddr5_wb_wip_today",))
+    prod_rows = _rows_for_dataset(plan, runtime_sources, "production_today")
+    wip_rows = _rows_for_dataset(plan, runtime_sources, "wip_today")
     prod = _sum_by(pd.DataFrame(prod_rows), product_keys, "PRODUCTION")
     wip = _sum_by(pd.DataFrame(wip_rows), product_keys, "WIP")
     final = prod.merge(wip, on=product_keys, how="outer").fillna({"PRODUCTION": 0, "WIP": 0})

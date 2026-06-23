@@ -26,6 +26,7 @@ ALLOWED_ACTIONS = [
 DOMAIN_SECTION_LABELS = {
     "process_groups": "공정 그룹",
     "product_terms": "제품/조건 용어",
+    "product_attribute_resolvers": "제품 속성 pandas 매칭 규칙",
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",
@@ -72,6 +73,7 @@ def build_metadata_qa_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "- metadata.table_catalog.datasets[dataset_key] is the registered table/source catalog. Use it for dataset lists, source type, date_scope, required_params, date_format, columns, filter_mappings, standard_column_aliases, and source_config/query_template questions.",
             "- metadata.domain_items.process_groups[GROUP_KEY] defines process group names such as DA/WB. aliases are natural-language names, and processes are the detailed OPER_NAME values included in that group.",
             "- metadata.domain_items.product_terms[TERM_KEY] defines product or business product conditions. aliases are user-facing names, condition/condition_by_family describes how to filter each dataset family.",
+            "- metadata.domain_items.product_attribute_resolvers[RESOLVER_KEY] defines pandas matching rules for partial product attribute words after named product_terms are checked. These rules guide generated pandas filters over already retrieved source DataFrames; they do not require a lookup/master dataset.",
             "- metadata.domain_items.quantity_terms[TERM_KEY] maps business quantities such as 생산량, 재공, 목표, 장비 대수 to dataset_family or dataset_key, quantity_column, aggregation, and output_column.",
             "- metadata.domain_items.metric_terms[TERM_KEY] defines calculated metrics such as 달성률. formula, required_quantity_terms, and output_column explain how the metric is derived.",
             "- metadata.domain_items.analysis_recipes[RECIPE_KEY] defines reusable analysis patterns. aliases/question_cues indicate when the recipe applies, required_dataset_families says which data families are needed, and grain_policy explains aggregation grain.",

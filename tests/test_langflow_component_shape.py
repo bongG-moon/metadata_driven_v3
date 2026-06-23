@@ -118,7 +118,10 @@ def test_mongodb_metadata_components_expose_full_collection_names() -> None:
         },
         "domain_authoring_flow/00_domain_authoring_request_loader.py": {"collection_name"},
         "domain_authoring_flow/07_domain_review_writer.py": {"collection_name"},
-        "table_catalog_authoring_flow/00_table_catalog_authoring_request_loader.py": {"collection_name"},
+        "table_catalog_authoring_flow/00_table_catalog_authoring_request_loader.py": {
+            "collection_name",
+            "main_flow_filter_collection_name",
+        },
         "table_catalog_authoring_flow/07_table_catalog_review_writer.py": {"collection_name"},
         "main_flow_filters_authoring_flow/00_main_flow_filter_authoring_request_loader.py": {"collection_name"},
         "main_flow_filters_authoring_flow/07_main_flow_filter_review_writer.py": {"collection_name"},

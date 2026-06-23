@@ -94,7 +94,10 @@ def test_lpddr5_da_production_and_wip_join():
     assert {"production_today", "wip_today"}.issubset(set(payload["applied_scope"]["datasets"]))
     assert {"PRODUCTION", "WIP"}.issubset(set(payload["data"]["columns"]))
     assert payload["data"]["rows"][0]["MODE"] == "LPDDR5"
-    production_filters = payload["applied_scope"]["filters_by_source"]["lpddr5_da_production_today"]
+    production_source = next(
+        source for source in payload["applied_scope"]["filters_by_source"] if source.endswith("_production_today")
+    )
+    production_filters = payload["applied_scope"]["filters_by_source"][production_source]
     assert any(item["field"] == "OPER_NAME" and "D/A1" in item.get("values", []) for item in production_filters)
 
 

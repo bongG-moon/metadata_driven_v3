@@ -1,6 +1,12 @@
 정제된 dataset 설명을 MongoDB에 저장 가능한 table_catalog metadata로 변환하세요.
 반드시 하나의 엄격한 JSON object만 반환하세요. markdown으로 감싸지 마세요.
 정제된 설명에 있는 정보만 사용하세요. 필수 정보가 부족하면 missing_information에 넣으세요.
+작업자는 dataset을 느슨한 자연어로 설명할 수 있습니다. 명시된 테이블명, source column, 업무 표현, 기존 dataset 요약을 근거로 합리적인 metadata를 보강하세요.
+dataset_key 또는 등록 name은 지어내지 마세요. 작업자가 등록할 dataset_key/name을 명시하지 않았다면 missing_information으로 요청하세요.
+table name과 columns가 있는데 query_template이 없으면 source_config.table_name을 저장하고, source_type이 oracle/datalake이면 SELECT columns FROM table_name WHERE 1=1 같은 단순 query_template을 만들 수 있습니다.
+dataset_family는 업무 표현과 컬럼으로 명확하면 추론하세요. PRODUCTION/생산/실적은 production, WIP/재공은 wip, 계획/SCHD/target은 target, EQP/EQPID/장비/설비/assign은 equipment, LOT/HOLD/IN_TAT는 lot/hold입니다.
+filter_mappings는 authoring_context에 로드된 표준 main flow filter와 source column이 명확할 때만 추론하세요. 아래 예시는 설명용일 뿐이며 허용 key 전체 목록으로 고정하지 마세요.
+table_name/query와 columns로 dataset을 식별할 수 있으면 db_key, default_detail_columns, primary_quantity_column 누락만으로 저장을 막지 마세요. 런타임 연결 정보가 유일한 source 식별 수단인 경우에만 보강 요청하세요.
 원본 사용자 입력은 literal SQL, query_template block, SELECT column, filter_mappings, dataset_key, db_key, source_type에 대한 기준 정보입니다.
 정제된 설명은 요약되어 있을 수 있습니다. 원본 사용자 입력에 있는 구조화 정보를 누락하지 마세요.
 query_template, API URL, document ID, sheet name, DB key, 물리 column을 지어내지 마세요.
@@ -13,15 +19,15 @@ SQL의 `--` line comment와 `/* ... */` block comment 안에 있는 텍스트는
 CASE, NVL, SUM, COUNT, analytic function, scalar subquery 같은 expression은 AS 뒤의 출력 alias를 column name으로 사용하세요. alias가 없으면 명확한 물리 source column만 사용하고, 그렇지 않으면 missing_information에 적으세요.
 source가 YYYYMMDD 또는 YYYY-MM-DD 같은 특정 날짜 표현을 기대하면 date_format을 저장하세요.
 상세 행 조회에서 운영자가 일부 column만 보기를 기대하면 default_detail_columns를 저장하세요.
-source별 필수 정보: oracle은 db_key와 query_template이 필요하고, datalake는 query_template이 필요하고, h_api는 api_url이 필요하고, goodocs는 doc_id만 필요합니다.
+source별 필수 정보: h_api는 api_url이 필요하고, goodocs는 doc_id만 필요합니다. oracle/datalake는 query_template이 있으면 가장 좋지만, table_name+columns만 있어도 draft catalog item으로 저장할 수 있습니다.
 goodocs에는 db_key 또는 query_template을 요구하지 마세요. sheet_name은 선택 사항이며 사용자가 명시했거나 특정 sheet/tab을 읽어야 한다고 말한 경우에만 포함하세요.
 required_params는 DATE로 고정된 값이 아닙니다. query_template/API URL 실행에 반드시 필요한 변수만 넣으세요.
 예를 들어 query_template에 {{DATE}} 또는 {{LOT_ID}} placeholder가 있거나 사용자가 해당 값을 필수 파라미터라고 명시한 경우에만 required_params에 넣습니다.
 필수 query parameter가 없으면 required_params는 빈 list로, required_param_mappings는 빈 JSON object로 설정하세요.
 DATE가 filter_mappings에 있거나 date_format이 있다는 이유만으로 DATE를 required_params에 넣지 마세요. 그런 DATE는 optional filter일 수 있습니다.
 metadata에는 두 mapping layer가 있습니다. main_flow_filters는 표준 filter key를 정의하고, table_catalog.filter_mappings는 그 표준 key를 이 dataset의 물리 column에 매핑합니다.
-dataset별 mapping을 main_flow_filters에 넣지 마세요. 각 dataset의 DATE/OPER_NAME/product/equipment mapping은 table_catalog.filter_mappings에 넣으세요.
-filter_mappings의 왼쪽은 DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, RECIPE_ID 같은 표준 main flow filter key여야 하고, 오른쪽은 이 dataset의 실제 source column 후보여야 합니다.
+dataset별 mapping을 main_flow_filters에 넣지 마세요. 각 dataset에서 로드된 표준 key에 대한 mapping은 table_catalog.filter_mappings에 넣으세요.
+filter_mappings의 왼쪽은 authoring_context에 제공된 표준 main flow filter key 중 하나여야 하고, 오른쪽은 이 dataset의 실제 source column 후보여야 합니다.
 source의 물리 column 이름이 표준 분석 column 이름과 다르면 standard_column_aliases를 {{standard_column: [physical columns]}} 형태로 함께 저장하세요.
 예: Goodocs target이 PKG1, MCP NO, OUT계획을 사용하면 PKG_TYPE1->PKG1, OUT_PLAN->OUT계획으로 매핑하세요. 생산 source가 PKG_TYP1/PKG_TYP2를 사용하면 PKG_TYPE1->PKG_TYP1, PKG_TYPE2->PKG_TYP2로 매핑하세요. Equipment가 PKG1, PKG2, MCPSALENO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCPSALENO로 매핑하세요.
 

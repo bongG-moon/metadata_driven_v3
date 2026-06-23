@@ -54,6 +54,7 @@ FAMILY_KEYWORDS = {
 DOMAIN_SECTION_LABELS = {
     "process_groups": "공정 그룹",
     "product_terms": "제품/조건 용어",
+    "product_attribute_resolvers": "제품 속성 pandas 매칭 규칙",
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",
@@ -63,6 +64,7 @@ DOMAIN_SECTION_LABELS = {
 DOMAIN_SECTION_ALIASES = {
     "process_groups": ["공정 그룹", "공정그룹", "공정군", "공정 분류", "process group", "process_groups"],
     "product_terms": ["제품 조건", "제품조건", "제품 용어", "제품 도메인", "product terms", "product_terms"],
+    "product_attribute_resolvers": ["제품 속성", "제품 속성 규칙", "제품 찾기", "product attribute", "product_attribute_resolvers"],
     "quantity_terms": ["수량 용어", "지표 용어", "수량 지표", "quantity terms", "quantity_terms"],
     "metric_terms": ["계산 지표", "계산식", "파생 지표", "metric terms", "metric_terms"],
     "analysis_recipes": ["분석 레시피", "분석 recipe", "분석 규칙", "분석 패턴", "analysis recipes", "analysis_recipes"],

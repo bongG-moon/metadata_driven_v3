@@ -435,11 +435,18 @@ def _plan_process_production_wip(
 ) -> dict[str, Any]:
     process_key = _process_group_key(question) or "WB"
     processes = _process_values(metadata, process_key, question)
-    is_lpddr5 = "LPDDR5" in question.upper()
-    source_prefix = f"lpddr5_{process_key.lower()}" if is_lpddr5 else f"{process_key.lower()}_product"
     common_filters = [{"field": "OPER_NAME", "op": "in", "values": processes}]
-    if is_lpddr5:
-        common_filters.insert(0, {"field": "MODE", "op": "eq", "value": "LPDDR5"})
+    source_prefix = f"{process_key.lower()}_product"
+    common_filters.extend(
+        _explicit_standard_field_filters(
+            question,
+            metadata,
+            [
+                _dataset_catalog(metadata, "production_today"),
+                _dataset_catalog(metadata, "wip_today"),
+            ],
+        )
+    )
     plan = _base_plan(question, "multi_source_analysis", "aggregate_join")
     plan.update(
         {
@@ -959,6 +966,63 @@ def _filters_for_recipe_dataset(catalog: dict[str, Any], metadata: dict[str, Any
     if process_key and "OPER_NAME" in mappings:
         return [{"field": "OPER_NAME", "op": "in", "values": _process_values(metadata, process_key, question)}]
     return []
+
+
+def _explicit_standard_field_filters(
+    question: str,
+    metadata: dict[str, Any],
+    catalogs: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    filters = metadata.get("main_flow_filters") if isinstance(metadata.get("main_flow_filters"), dict) else {}
+    product_fields = set(get_product_key_columns(metadata))
+    result: list[dict[str, Any]] = []
+    for field, item in filters.items():
+        field_name = str(field or "").strip()
+        if field_name not in product_fields:
+            continue
+        if catalogs and not all(field_name in (catalog.get("filter_mappings") or {}) for catalog in catalogs):
+            continue
+        candidates = [field_name]
+        if isinstance(item, dict) and isinstance(item.get("column_candidates"), list):
+            candidates.extend(str(value or "").strip() for value in item["column_candidates"])
+        for candidate in _unique_texts(candidates):
+            value = _explicit_filter_value(question, candidate)
+            if value:
+                result.append({"field": field_name, "op": "eq", "value": value})
+                break
+    return _dedupe_conditions(result)
+
+
+def _unique_texts(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _explicit_filter_value(question: str, field_name: str) -> str:
+    escaped = re.escape(str(field_name or "").strip())
+    if not escaped:
+        return ""
+    pattern = rf"(?i)(?:\b{escaped}\b)\s*(?:값)?\s*(?:이|가|은|는|=|:)\s*[\"']?([A-Za-z0-9_.\-\/]+)"
+    match = re.search(pattern, question)
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip("\"' ")
+
+
+def _dedupe_conditions(filters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in filters:
+        key = repr(sorted(item.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
 
 def _default_required_columns(catalog: dict[str, Any]) -> list[str]:

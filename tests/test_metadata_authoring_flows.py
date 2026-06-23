@@ -19,6 +19,24 @@ def load_module(relative_path: str):
     return module
 
 
+def main_flow_filter_metadata(*keys: str) -> dict[str, dict[str, list[str]]]:
+    candidates = {
+        "DATE": ["DATE", "WORK_DATE", "WORK_DT"],
+        "MODE": ["MODE", "Mode"],
+        "DEN": ["DEN", "DENSITY"],
+        "TECH": ["TECH"],
+        "ORG": ["ORG", "ORGANIZ_CD"],
+        "PKG_TYPE1": ["PKG_TYPE1", "PKG1", "PKG_TYP1"],
+        "PKG_TYPE2": ["PKG_TYPE2", "PKG2", "PKG_TYP2"],
+        "LEAD": ["LEAD"],
+        "MCP_NO": ["MCP_NO", "MCP NO", "MCPSALENO"],
+        "EQP_ID": ["EQP_ID", "EQPID"],
+        "LOT_ID": ["LOT_ID"],
+        "RECIPE_ID": ["RECIPE_ID"],
+    }
+    return {key: {"column_candidates": candidates[key]} for key in keys}
+
+
 def test_domain_authoring_normalizes_lot_count_and_blocks_pending_duplicate() -> None:
     normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
     similarity = load_module("langflow_components/domain_authoring_flow/05_domain_similarity_checker.py")
@@ -254,6 +272,243 @@ def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
     assert any("mongo_uri" in error for error in result["write_result"]["errors"])
 
 
+def test_domain_authoring_accepts_worker_wafer_metric_with_llm_artifacts() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    raw_text = (
+        "Wafer기준 실적, Wafer기반 실적, Wafer Out 수량 등을 물어보면 아래 로직으로 계산해줘\n"
+        "WAFER기준 실적을 생산량 조회 테이블에서 PRODUCTION/NETDIE_300_CNT으로 계산해줘\n"
+        "단 NETDIE_300_CNT 값이 0보다 큰 경우에만 나누고, NETDIE_300_CNT컬럼 값이 0으로 되어있어서 "
+        "나눌 수 없는 경우는 FAIL_UNIT_QTY라는 컬럼을 따로 만들어서 해당 PRODUCTION값을 옆에 같이 보여줘"
+    )
+    payload = {"metadata_type": "domain", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {"section": "product_terms", "key": "wafer", "payload": {"display_name": "Wafer", "aliases": ["Wafer"]}},
+            {
+                "section": "quantity_terms",
+                "key": "fail_unit_qty",
+                "payload": {"display_name": "FAIL_UNIT_QTY", "aliases": ["FAIL_UNIT_QTY"], "quantity_column": "FAIL_UNIT_QTY"},
+            },
+            {
+                "section": "metric_terms",
+                "key": "wafer_based_performance",
+                "payload": {
+                    "display_name": "Wafer 기준 실적",
+                    "aliases": ["Wafer 기준 실적", "Wafer기반 실적", "Wafer Out 수량"],
+                    "required_quantity_terms": ["production"],
+                    "formula": (
+                        "WAFER_OUT_QTY = PRODUCTION / NETDIE_300_CNT when NETDIE_300_CNT > 0; "
+                        "FAIL_UNIT_QTY = PRODUCTION when NETDIE_300_CNT is 0"
+                    ),
+                },
+            },
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    assert [(item["section"], item["key"]) for item in normalized["items"]] == [
+        ("metric_terms", "wafer_based_performance")
+    ]
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload["dataset_family"] == "production"
+    assert item_payload["required_quantity_terms"] == ["production"]
+    assert item_payload["output_columns"] == ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {
+                "field": "required_quantity_terms",
+                "reason": 'metric_terms의 required_quantity_terms에 "production"이 명시되어 있으나 현재 입력에 해당 quantity term이 없습니다.',
+            },
+            {
+                "field": "alias_overlap",
+                "reason": 'metric_terms "wafer_based_performance"의 alias 중 "wafer 기준 실적"이 기존 metric_terms와 중복됩니다.',
+            },
+        ],
+    }
+    result = writer.review_and_write_domain_payload(
+        {**normalized, "duplicate_decision": {"action": "replace", "requires_user_choice": False}},
+        json.dumps(review_json, ensure_ascii=False),
+        mongo_uri="",
+    )
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+
+
+def test_domain_authoring_keeps_input_production_update_and_ignores_context_hallucinations() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    similarity = load_module("langflow_components/domain_authoring_flow/05_domain_similarity_checker.py")
+    raw_text = (
+        "INPUT실적/INPUT생산량/ 투입 실적 등을 묻는 부분은 production테이블의 PRODUCTION컬럼을 사용한다.\n"
+        "계획/스케쥴 문자가 포함되지 않으면 target테이블을 사용하지 않는다."
+    )
+    payload = {
+        "metadata_type": "domain",
+        "raw_text": raw_text,
+        "refined_text": raw_text,
+        "errors": [],
+        "warnings": [],
+        "existing_items": [
+            {
+                "section": "quantity_terms",
+                "key": "input_production",
+                "aliases": ["투입량", "INPUT"],
+            }
+        ],
+    }
+    llm_json = {
+        "items": [
+            {
+                "section": "quantity_terms",
+                "key": "production",
+                "payload": {
+                    "display_name": "INPUT 실적",
+                    "aliases": ["INPUT실적", "INPUT생산량", "투입 실적"],
+                    "dataset_family": "production",
+                    "quantity_column": "PRODUCTION",
+                    "aggregation": "sum",
+                },
+            },
+            {"section": "product_key_columns", "key": "default", "payload": {}, "columns": []},
+            {"section": "process_groups", "key": "wafer", "payload": {"aliases": ["wafer"], "processes": []}},
+            {
+                "section": "metric_terms",
+                "key": "zero_denominator_handling",
+                "payload": {
+                    "output_columns": ["FAIL_UNIT_QTY"],
+                    "formula": "FAIL_UNIT_QTY = PRODUCTION when denominator is zero",
+                },
+            },
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    assert [item["key"] for item in normalized["items"]] == ["input_production"]
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload["dataset_family"] == "production"
+    assert item_payload["quantity_column"] == "PRODUCTION"
+    assert item_payload["aggregation"] == "sum"
+    assert item_payload["condition"] == {"OPER_DESC": "INPUT"}
+    assert {"INPUT실적", "INPUT생산량", "투입 실적"}.issubset(set(item_payload["aliases"]))
+    assert "계획" in item_payload["excluded_terms"]
+    assert "target family를 사용하지 않는다" in item_payload["selection_rule"]
+    assert len(normalized["authoring"]["warnings"]) == 3
+
+    checked = similarity.check_domain_similarity(normalized, "merge")
+    assert checked["existing_matches"]
+    assert checked["duplicate_decision"]["action"] == "merge"
+    assert checked["duplicate_decision"]["requires_user_choice"] is False
+
+
+def test_domain_authoring_accepts_natural_distinct_equipment_count_rule() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    raw_text = "장비 대수는 assign테이블에서 eqp_id컬럼에 있는 중복 제거 값 수로 계산한다."
+    payload = {"metadata_type": "domain", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "section": "quantity_terms",
+                "key": "equipment_count",
+                "payload": {
+                    "display_name": "장비 대수",
+                    "aliases": ["장비 대수"],
+                    "description": raw_text,
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    item = normalized["items"][0]
+    item_payload = item["payload"]
+    assert item["key"] == "equipment_count"
+    assert item_payload["dataset_key"] == "assign"
+    assert item_payload["dataset_family"] == "equipment"
+    assert item_payload["quantity_column"] == "EQP_ID"
+    assert item_payload["aggregation"] == "nunique"
+    assert item_payload["output_column"] == "EQP_COUNT"
+
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {"field": "dataset_key", "reason": "dataset key가 필요합니다."},
+            {"field": "output_column", "reason": "출력 컬럼명이 필요합니다."},
+        ],
+    }
+    result = writer.review_and_write_domain_payload(
+        {**normalized, "duplicate_decision": {"action": "replace", "requires_user_choice": False}},
+        json.dumps(review_json, ensure_ascii=False),
+        mongo_uri="",
+    )
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+
+
+def test_domain_authoring_converts_metric_equipment_unique_count_to_quantity_term() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    raw_text = "장비 대수의 경우 장비 ASSIGN테이블에서 EQP_ID의 UNIQUE COUNT를 말한다."
+    payload = {"metadata_type": "domain", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "section": "metric_terms",
+                "key": "equipment_count",
+                "payload": {
+                    "display_name": "장비 대수",
+                    "aliases": ["장비 대수"],
+                    "description": raw_text,
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    item = normalized["items"][0]
+    item_payload = item["payload"]
+    assert item["section"] == "quantity_terms"
+    assert item["key"] == "equipment_count"
+    assert item_payload["dataset_key"] == "ASSIGN"
+    assert item_payload["dataset_family"] == "equipment"
+    assert item_payload["quantity_column"] == "EQP_ID"
+    assert item_payload["aggregation"] == "nunique"
+    assert item_payload["output_column"] == "EQP_COUNT"
+
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [{"field": "dataset_family", "reason": "데이터셋 패밀리가 지정되지 않음"}],
+    }
+    result = writer.review_and_write_domain_payload(
+        {**normalized, "duplicate_decision": {"action": "replace", "requires_user_choice": False}},
+        json.dumps(review_json, ensure_ascii=False),
+        mongo_uri="",
+    )
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+
+
 def test_table_catalog_authoring_requires_source_config_and_detects_same_dataset_key() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     similarity = load_module("langflow_components/table_catalog_authoring_flow/05_table_catalog_similarity_checker.py")
@@ -372,6 +627,66 @@ def test_table_catalog_authoring_repairs_filter_mappings_from_standard_aliases()
     assert item_payload["filter_mappings"]["PKG_TYPE2"] == ["PKG2"]
 
 
+def test_table_catalog_authoring_accepts_natural_table_description_with_columns() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = """dataset_key=assign
+assign table stores equipment assignment rows.
+columns: EQPID, EQP_MODEL, MODE, DEN, PKG1, PKG2, LEAD, MCPSALENO, LOT_ID, RECIPE_ID
+장비 대수는 EQPID column distinct count로 계산해."""
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": raw_text,
+        "main_flow_filters": main_flow_filter_metadata("EQP_ID", "PKG_TYPE1", "MCP_NO"),
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "assign",
+                "payload": {
+                    "display_name": "Assign",
+                    "source_config": {},
+                    "columns": [],
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload["source_type"] == "oracle"
+    assert item_payload["dataset_family"] == "equipment"
+    assert item_payload["source_config"]["table_name"] == "assign"
+    assert item_payload["source_config"]["query_template"] == (
+        "SELECT EQPID, EQP_MODEL, MODE, DEN, PKG1, PKG2, LEAD, MCPSALENO, LOT_ID, RECIPE_ID FROM assign WHERE 1=1"
+    )
+    assert item_payload["primary_quantity_column"] == "EQPID"
+    assert item_payload["filter_mappings"]["EQP_ID"] == ["EQPID"]
+    assert item_payload["filter_mappings"]["PKG_TYPE1"] == ["PKG1"]
+    assert item_payload["filter_mappings"]["MCP_NO"] == ["MCPSALENO"]
+
+
+def test_table_catalog_authoring_still_requires_user_dataset_key() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = "assign table stores equipment assignment rows. columns: EQPID, MODE"
+    payload = {"metadata_type": "table_catalog", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [{"payload": {"display_name": "Assign", "columns": ["EQPID", "MODE"]}}],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert any("dataset_key" in error for error in normalized["errors"])
+
+
 def test_table_catalog_authoring_backfills_goodocs_doc_id_without_sheet_or_query() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     raw_text = """목표2 계획 데이터는 target으로 등록해줘.
@@ -392,6 +707,17 @@ filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, PKG_TYP
         "metadata_type": "table_catalog",
         "raw_text": raw_text,
         "refined_text": "Goodocs 목표2 문서에서 일자와 제품 속성별 계획 정보를 가져오는 target 데이터입니다.",
+        "main_flow_filters": main_flow_filter_metadata(
+            "DATE",
+            "MODE",
+            "DEN",
+            "TECH",
+            "ORG",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+        ),
         "errors": [],
         "warnings": [],
     }
@@ -968,6 +1294,40 @@ def test_table_catalog_writer_allows_false_review_without_actionable_blockers() 
     assert result["review"]["item_reviews"][0]["decision"] == "pass"
     assert result["write_result"]["status"] == "error"
     assert any("mongo_uri" in item for item in result["write_result"]["errors"])
+
+
+def test_table_catalog_writer_does_not_block_optional_db_key_when_table_shape_exists() -> None:
+    writer = load_module("langflow_components/table_catalog_authoring_flow/07_table_catalog_review_writer.py")
+    payload = {
+        "metadata_type": "table_catalog",
+        "items": [
+            {
+                "dataset_key": "assign",
+                "payload": {
+                    "display_name": "Assign",
+                    "source_type": "oracle",
+                    "source_config": {"source_type": "oracle", "table_name": "assign"},
+                    "columns": ["EQPID", "MODE"],
+                },
+            }
+        ],
+        "duplicate_decision": {"action": "replace", "requires_user_choice": False},
+        "errors": [],
+    }
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {"field": "source_config.db_key", "reason": "Oracle 연결 db_key가 필요합니다."},
+            {"field": "source_config.query_template", "reason": "조회 SQL이 필요합니다."},
+        ],
+        "item_reviews": [{"dataset_key": "assign", "decision": "needs_fix", "reason": "runtime config missing"}],
+    }
+
+    result = writer.review_and_write_table_catalog_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+    assert result["review"]["item_reviews"][0]["decision"] == "pass"
 
 
 def test_table_catalog_writer_ignores_resolved_mapping_mismatch_when_replace_selected() -> None:

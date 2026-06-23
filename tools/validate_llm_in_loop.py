@@ -320,7 +320,7 @@ def build_intent_prompt(question: str, metadata: dict[str, Any], state: dict[str
             "- If a question asks 목표값 대비/계획 대비/INPUT계획대비 and low/저조 production, set analysis_kind=low_output_vs_target.",
             "- For INPUT계획대비, set target_column=INPUT_PLAN but keep analysis_kind=low_output_vs_target.",
             "- If a question asks lot count plus wafer count plus die quantity for DA/WB or another process group, use lot_status with process filters and set analysis_kind=lot_quantity_summary, not aggregate_join.",
-            "- If a question asks LPDDR5 or another product condition plus DA/WB production and WIP together, use production_today and wip_today with process filters and set analysis_kind=aggregate_join.",
+            "- If a question asks a product condition resolved from metadata plus DA/WB production and WIP together, use production_today and wip_today with process filters and set analysis_kind=aggregate_join.",
             "- If a question asks only total/overall/current WIP or 재공 수량, set analysis_kind=aggregate_wip_total and use only wip_today.",
             "- If a question asks today's total production/wip/target values without product or process group-by, set analysis_kind=overall_production_wip_target.",
             "- Use overall_production_wip_target only when production, WIP, and target/plan are all requested together.",

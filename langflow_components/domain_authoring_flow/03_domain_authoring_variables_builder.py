@@ -34,6 +34,7 @@ def build_domain_authoring_prompt_variables(payload_value: Any) -> dict[str, Any
         "authoring_context": "\n".join(
             [
                 "Existing domain item summary for duplicate awareness:",
+                "Use this summary only to choose an existing key or detect duplicates. Do not create items from this summary unless the refined text explicitly asks for them.",
                 json.dumps(existing_summary, ensure_ascii=False, indent=2),
                 "",
                 "Refined text:",

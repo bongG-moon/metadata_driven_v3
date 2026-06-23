@@ -21,7 +21,7 @@ This audit maps the requested end state to current evidence. It is intentionally
 | Keep Langflow custom components standalone because local helper imports are not available | Proven | `tests/test_component_contracts.py::test_numbered_components_are_standalone_imports`; direct search found no sibling helper imports or local file read/write in `langflow_components/*.py`. |
 | Validate the prior question set end to end through intent, retrieval scope, analysis kind, data columns, and result rows | Proven locally | `python tools\validate_regression.py` passed `23/23`; latest report is `validation_runs/20260620_142530/REPORT.md`. |
 | Verify code health | Proven locally | `python -m pytest tests -q -p no:cacheprovider` passed `166`; AST parse over 119 Python files passed. |
-| Verify metadata upload shape | Proven locally | `python tools\upload_json_to_mongodb.py --dry-run` reports `agent_v3_domain_items: 38`, `agent_v3_table_catalog_items: 9`, `agent_v3_main_flow_filters: 18`. |
+| Verify metadata upload shape | Proven locally | `python tools\upload_json_to_mongodb.py --dry-run` reports `agent_v3_domain_items: 59`, `agent_v3_table_catalog_items: 9`, `agent_v3_main_flow_filters: 16`. |
 
 ## One-Command Readiness Gate
 

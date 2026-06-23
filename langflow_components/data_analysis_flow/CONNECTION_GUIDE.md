@@ -93,6 +93,9 @@ Intent LLM.Output
 
 ## Pandas Analysis And Repair
 
+Pandas 코드 작성 규칙은 별도 수동 노드로 입력하지 않습니다.
+도메인 메타데이터의 `product_attribute_resolvers`, `metric_terms.pandas_code_instructions` 같은 항목이 `03 Intent Plan Normalizer`에서 `intent_plan.pandas_logic_hints`로 정리되고, `14/16B`가 이 값을 prompt context로 사용합니다.
+
 ```text
 12 Source Retrieval Merger.Retrieval Payload
   -> 13 Retrieval Payload Adapter.Retrieval Payload

@@ -13,6 +13,7 @@ production result table은 production family로, "FAIL_UNIT_QTY를 보여줘"는
 [
   "process_groups",
   "product_terms",
+  "product_attribute_resolvers",
   "quantity_terms",
   "metric_terms",
   "status_terms",

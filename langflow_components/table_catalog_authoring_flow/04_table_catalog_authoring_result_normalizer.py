@@ -14,28 +14,8 @@ from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 
 
-STANDARD_ALIAS_KEYS = {
-    "DATE",
-    "OPER_NAME",
-    "OPER_NUM",
-    "MODE",
-    "TECH",
-    "DEN",
-    "PKG_TYPE1",
-    "PKG_TYPE2",
-    "LEAD",
-    "MCP_NO",
-    "DEVICE_DESC",
-    "TSV_DIE_TYP",
-    "EQP_ID",
-    "EQP_MODEL",
-    "RECIPE_ID",
-}
-
 SOURCE_REQUIRED_FIELDS = {
-    "oracle": ["db_key", "query_template"],
     "h_api": ["api_url"],
-    "datalake": ["query_template"],
     "goodocs": ["doc_id"],
 }
 
@@ -71,8 +51,9 @@ def normalize_table_catalog_authoring_result(payload_value: Any, llm_response_va
     raw_items = parsed.get("items") if isinstance(parsed.get("items"), list) else []
     source_text = _source_text(payload)
     raw_item_count = len(raw_items)
+    main_flow_filter_candidates = _main_flow_filter_candidate_map(payload.get("main_flow_filters"))
     for index, raw_item in enumerate(raw_items):
-        item, item_errors = _normalize_item(raw_item, index, source_text, raw_item_count)
+        item, item_errors = _normalize_item(raw_item, index, source_text, raw_item_count, main_flow_filter_candidates)
         if item:
             items.append(item)
         errors.extend(item_errors)
@@ -89,7 +70,13 @@ def normalize_table_catalog_authoring_result(payload_value: Any, llm_response_va
     return next_payload
 
 
-def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_count: int = 0) -> tuple[dict[str, Any] | None, list[str]]:
+def _normalize_item(
+    raw_item: Any,
+    index: int,
+    source_text: str = "",
+    raw_item_count: int = 0,
+    main_flow_filter_candidates: dict[str, list[str]] | None = None,
+) -> tuple[dict[str, Any] | None, list[str]]:
     errors = []
     if not isinstance(raw_item, dict):
         return None, [f"items[{index}]가 object가 아닙니다."]
@@ -98,7 +85,8 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
     dataset_key = _backfill_dataset_key(dataset_key, source_text, raw_item_count)
     if not dataset_key:
         errors.append(f"items[{index}] dataset_key가 없습니다.")
-    source_type = _clean(payload.get("source_type") or (payload.get("source_config") or {}).get("source_type") or _source_type_from_text(source_text) or "dummy").lower()
+    inferred_source_type = _source_type_from_text(source_text) or _source_type_from_table_text(source_text)
+    source_type = _clean(payload.get("source_type") or (payload.get("source_config") or {}).get("source_type") or inferred_source_type or "dummy").lower()
     payload["source_type"] = source_type
     source_config = deepcopy(payload.get("source_config")) if isinstance(payload.get("source_config"), dict) else {}
     source_config.setdefault("source_type", source_type)
@@ -107,9 +95,8 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
     if raw_item_count == 1:
         _backfill_structured_fields(payload, source_text)
     _normalize_source_config_query(payload["source_config"])
-    for field in SOURCE_REQUIRED_FIELDS.get(source_type, []):
-        if not _clean(payload["source_config"].get(field)):
-            errors.append(f"{dataset_key} source_type={source_type}에는 source_config.{field}가 필요합니다.")
+    _backfill_lenient_catalog_fields(payload, source_text, dataset_key, main_flow_filter_candidates or {})
+    errors.extend(_source_config_errors(dataset_key, payload, source_text))
     query_template = _clean(payload["source_config"].get("query_template"))
     if _query_template_looks_truncated(query_template):
         errors.append(f"{dataset_key} source_config.query_template이 축약되어 저장할 수 없습니다. 실제 실행 SQL 전체를 입력해 주세요.")
@@ -223,6 +210,57 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
         payload["required_param_mappings"] = {}
 
 
+def _backfill_lenient_catalog_fields(
+    payload: dict[str, Any],
+    source_text: str,
+    dataset_key: str,
+    main_flow_filter_candidates: dict[str, list[str]],
+) -> None:
+    source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
+    columns = _as_text_list(payload.get("columns"))
+    table_name = _table_name_from_text(source_text, dataset_key)
+    if table_name and not _clean(source_config.get("table_name")):
+        source_config["table_name"] = table_name
+    if table_name and not _clean(payload.get("source_type")):
+        payload["source_type"] = "oracle"
+        source_config.setdefault("source_type", "oracle")
+    if not _clean(payload.get("dataset_family")):
+        family = _dataset_family_from_text_or_columns(source_text, dataset_key, columns)
+        if family:
+            payload["dataset_family"] = family
+    inferred_mappings = _filter_mappings_from_columns(columns, main_flow_filter_candidates)
+    if inferred_mappings:
+        payload["filter_mappings"] = _merge_missing_mapping(payload.get("filter_mappings"), inferred_mappings)
+        payload["standard_column_aliases"] = _merge_mapping(
+            payload.get("standard_column_aliases"),
+            _standard_column_aliases_from_filter_mappings(inferred_mappings),
+        )
+    if not _clean(payload.get("primary_quantity_column")):
+        quantity_column = _primary_quantity_from_family_and_columns(payload.get("dataset_family"), columns, source_text)
+        if quantity_column:
+            payload["primary_quantity_column"] = quantity_column
+    query_template = _clean(source_config.get("query_template"))
+    if not query_template and table_name and columns and _clean(payload.get("source_type")).lower() in {"oracle", "datalake", ""}:
+        source_config["query_template"] = _simple_select_query(table_name, columns)
+    payload["source_config"] = source_config
+
+
+def _source_config_errors(dataset_key: str, payload: dict[str, Any], source_text: str) -> list[str]:
+    source_type = _clean(payload.get("source_type") or (payload.get("source_config") or {}).get("source_type") or "dummy").lower()
+    source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
+    columns = _as_text_list(payload.get("columns"))
+    errors: list[str] = []
+    for field in SOURCE_REQUIRED_FIELDS.get(source_type, []):
+        if not _clean(source_config.get(field)):
+            errors.append(f"{dataset_key} source_type={source_type}에는 source_config.{field}가 필요합니다.")
+    if source_type in {"oracle", "datalake"}:
+        has_query = bool(_clean(source_config.get("query_template")))
+        has_table_shape = bool(_clean(source_config.get("table_name")) and columns)
+        if not has_query and not has_table_shape:
+            errors.append(f"{dataset_key} source_type={source_type}에는 query_template 또는 table_name+columns 정보가 필요합니다.")
+    return errors
+
+
 def _normalize_required_param_fields(payload: dict[str, Any], source_text: str) -> None:
     source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
     placeholders = _unique_text(
@@ -284,6 +322,12 @@ def _source_type_from_text(text: str) -> str:
     for source_type in ("oracle", "datalake", "h_api", "goodocs", "dummy"):
         if re.search(rf"\b{re.escape(source_type)}\b", lowered):
             return source_type
+    return ""
+
+
+def _source_type_from_table_text(text: str) -> str:
+    if re.search(r"(?:\btable\b|테이블)", text, flags=re.IGNORECASE):
+        return "oracle"
     return ""
 
 
@@ -720,8 +764,6 @@ def _standard_column_aliases_from_filter_mappings(mappings: dict[str, list[str]]
     result: dict[str, list[str]] = {}
     for key, values in mappings.items():
         standard_key = _clean(key).upper()
-        if standard_key not in STANDARD_ALIAS_KEYS:
-            continue
         physical_values = [value for value in values if _clean(value) != _clean(key)]
         if physical_values:
             result[standard_key] = _unique_text(physical_values)
@@ -786,6 +828,70 @@ def _quantity_column_from_text(text: str) -> Any:
     return ""
 
 
+def _table_name_from_text(text: str, dataset_key: str = "") -> str:
+    patterns = [
+        r"\btable_name\s*(?:[:=]|는|은)\s*([A-Za-z][A-Za-z0-9_.$-]*)",
+        r"\bfrom\s+([A-Za-z][A-Za-z0-9_.$-]*)",
+        r"([A-Za-z][A-Za-z0-9_.$-]*)\s*(?:테이블|table)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return _clean(match.group(1)).strip("\"'`[]")
+    return _clean(dataset_key)
+
+
+def _dataset_family_from_text_or_columns(text: str, dataset_key: str, columns: list[str]) -> str:
+    compact = _compact_text(" ".join([text, dataset_key, *columns]))
+    if any(token in compact for token in ("wip", "재공")):
+        return "wip"
+    if any(token in compact for token in ("target", "plan", "schd", "계획", "스케줄", "스케쥴")):
+        return "target"
+    if any(token in compact for token in ("equipment", "eqpid", "eqp_id", "eqp", "장비", "설비", "assign", "할당")):
+        return "equipment"
+    if any(token in compact for token in ("hold", "lot_status", "lot상태", "홀드")):
+        return "hold"
+    if any(token in compact for token in ("lot", "in_tat")):
+        return "lot"
+    if any(token in compact for token in ("production", "생산", "실적")):
+        return "production"
+    return ""
+
+
+def _filter_mappings_from_columns(columns: list[str], main_flow_filter_candidates: dict[str, list[str]]) -> dict[str, list[str]]:
+    available = {_clean(column).upper(): column for column in columns}
+    result: dict[str, list[str]] = {}
+    for standard_key, candidates in main_flow_filter_candidates.items():
+        matched = [available[candidate.upper()] for candidate in candidates if candidate.upper() in available]
+        if matched:
+            result[standard_key] = _unique_text(matched)
+    return result
+
+
+def _primary_quantity_from_family_and_columns(dataset_family: Any, columns: list[str], source_text: str) -> Any:
+    quantity_from_text = _quantity_column_from_text(source_text)
+    if quantity_from_text:
+        return quantity_from_text
+    available = {_clean(column).upper(): column for column in columns}
+    family = _clean(dataset_family).lower()
+    family_candidates = {
+        "production": ["PRODUCTION"],
+        "wip": ["WIP"],
+        "target": ["OUT_PLAN", "OUT계획", "TARGET", "INPUT_PLAN", "INPUT계획"],
+        "equipment": ["EQPID", "EQP_ID"],
+        "lot": ["LOT_ID"],
+        "hold": ["LOT_ID"],
+    }
+    for candidate in family_candidates.get(family, []):
+        if candidate.upper() in available:
+            return available[candidate.upper()]
+    return ""
+
+
+def _simple_select_query(table_name: str, columns: list[str]) -> str:
+    return f"SELECT {', '.join(columns)} FROM {table_name} WHERE 1=1"
+
+
 def _columns_from_text_list(text: str) -> list[str]:
     patterns = [
         r"(?:문서|데이터|테이블)[^\n]*?에는\s*([^\n]+?)\s*(?:항목|컬럼)",
@@ -830,6 +936,14 @@ def _merge_mapping(base: Any, incoming: dict[str, list[str]]) -> dict[str, list[
     return merged
 
 
+def _merge_missing_mapping(base: Any, incoming: dict[str, list[str]]) -> dict[str, list[str]]:
+    merged = _normalize_mapping(base)
+    for key, values in incoming.items():
+        if not merged.get(key):
+            merged[key] = _unique_text(values)
+    return merged
+
+
 def _repair_filter_mappings_from_standard_aliases(payload: dict[str, Any]) -> None:
     columns = {_clean(column).lower() for column in _as_text_list(payload.get("columns"))}
     if not columns:
@@ -854,6 +968,36 @@ def _mapping_values_for_key(mapping: dict[str, Any], target_key: str) -> list[st
         if _clean(key).upper() == target:
             values.extend(_as_text_list(raw_values))
     return _unique_text(values)
+
+
+def _main_flow_filter_candidate_map(value: Any) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    if isinstance(value, dict):
+        iterable = value.items()
+    elif isinstance(value, list):
+        iterable = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("filter_key") or item.get("key") or item.get("field_key")
+            iterable.append((key, item))
+    else:
+        return result
+
+    for key, raw_item in iterable:
+        filter_key = _clean(key).upper()
+        if not filter_key:
+            continue
+        payload = raw_item.get("payload") if isinstance(raw_item, dict) and isinstance(raw_item.get("payload"), dict) else raw_item
+        payload = payload if isinstance(payload, dict) else {}
+        candidates = _as_text_list(
+            payload.get("column_candidates")
+            or payload.get("columns")
+            or payload.get("source_columns")
+            or payload.get("aliases")
+        )
+        result[filter_key] = _unique_text([filter_key, *candidates])
+    return result
 
 
 def _unique_text(values: Any) -> list[str]:
@@ -939,6 +1083,10 @@ def _payload(value: Any) -> dict[str, Any]:
 
 def _clean(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _compact_text(value: Any) -> str:
+    return re.sub(r"[\s_\-()/.,:;]+", "", str(value or "").lower())
 
 
 # 컴포넌트 설명: 04 Table Catalog Authoring Result Normalizer

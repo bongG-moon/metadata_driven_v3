@@ -17,6 +17,7 @@ from lfx.schema.message import Message
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_table_catalog_authoring_prompt_variables(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
+    main_flow_filter_summary = _main_flow_filter_summary(payload.get("main_flow_filters"))
     existing_summary = [
         {
             "dataset_key": item.get("dataset_key"),
@@ -37,6 +38,9 @@ def build_table_catalog_authoring_prompt_variables(payload_value: Any) -> dict[s
                 "Existing dataset summary for duplicate awareness:",
                 json.dumps(existing_summary, ensure_ascii=False, indent=2),
                 "",
+                "Available standard main flow filters loaded from metadata:",
+                json.dumps(main_flow_filter_summary, ensure_ascii=False, indent=2),
+                "",
                 "Original user text:",
                 str(payload.get("raw_text") or ""),
                 "",
@@ -45,6 +49,49 @@ def build_table_catalog_authoring_prompt_variables(payload_value: Any) -> dict[s
             ]
         ),
     }
+
+
+def _main_flow_filter_summary(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        iterable = value.items()
+    elif isinstance(value, list):
+        iterable = []
+        for item in value:
+            if isinstance(item, dict):
+                iterable.append((item.get("filter_key") or item.get("key") or item.get("field_key"), item))
+    else:
+        return []
+
+    result: list[dict[str, Any]] = []
+    for key, raw_item in iterable:
+        filter_key = str(key or "").strip().upper()
+        if not filter_key:
+            continue
+        payload = raw_item.get("payload") if isinstance(raw_item, dict) and isinstance(raw_item.get("payload"), dict) else raw_item
+        payload = payload if isinstance(payload, dict) else {}
+        result.append(
+            {
+                "filter_key": filter_key,
+                "display_name": payload.get("display_name", ""),
+                "semantic_role": payload.get("semantic_role", ""),
+                "aliases": _as_text_list(payload.get("aliases"))[:12],
+                "column_candidates": _as_text_list(payload.get("column_candidates"))[:16],
+            }
+        )
+    return result
+
+
+def _as_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        value = [value]
+    result: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
 
 
 def _payload(value: Any) -> dict[str, Any]:

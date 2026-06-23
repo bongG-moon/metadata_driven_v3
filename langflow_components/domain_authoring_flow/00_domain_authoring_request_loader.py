@@ -18,6 +18,7 @@ from lfx.schema.data import Data
 DOMAIN_SECTIONS = {
     "process_groups",
     "product_terms",
+    "product_attribute_resolvers",
     "quantity_terms",
     "metric_terms",
     "status_terms",

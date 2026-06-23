@@ -35,6 +35,7 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
     runtime_sources = payload.get("runtime_sources") if isinstance(payload.get("runtime_sources"), dict) else {}
     source_summary = _source_summary(runtime_sources, plan)
     source_filters = _filters_by_source(plan)
+    pandas_logic_hints = _pandas_logic_hints(plan)
 
     prompt = "\n".join(
         [
@@ -71,6 +72,11 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "- Preserve intermediate DataFrames for ranked/filtering steps, then use them in later filtering, aggregation, and join steps.",
             "- If a step ranks top_n rows, perform that ranking before downstream metrics that depend on the ranked scope.",
             "- Treat step_plan operations as reusable primitives: aggregate_sum/aggregate_by_group groups by step.group_by and aggregates step.metric or step.metrics; rank_top_n groups/sorts by step fields; equipment_count_by_product counts step.count_column.nunique by group_by; hold_lot_in_tat_by_process calculates metrics from step fields; left_join joins named previous steps by join_key/join_keys.",
+            "- Treat operation='apply_product_attribute_resolver' as an explicit filtering step: use step.tokens, step.attribute_columns, and step.prefix_match_columns from the normalized plan, build valid_values from the current source DataFrame after prior retrieval filters, apply matched token filters, and store the filtered DataFrame in step_outputs[step_id].",
+            "- For apply_product_attribute_resolver, never decide no match from preview rows. Build valid_values from the full runtime source DataFrame available in sources[source_alias] at execution time.",
+            "- For apply_product_attribute_resolver with non-empty tokens, if no token matches any resolver column or prefix rule, do not continue with the unfiltered source total. Return an empty result_df with the planned output columns when possible and explain the no-match condition in reasoning_steps.",
+            "- For apply_product_attribute_resolver prefix rules, do not import re or any module. Extract scalar token prefixes with plain string operations only. Example for an A-123 style prefix: parts = token_text.split('-', 1); if len(parts) == 2 and len(parts[0]) == 1 and parts[0].isalpha() and len(parts[1]) >= 3 and parts[1][:3].isdigit(): prefix = parts[0] + '-' + parts[1][:3]. Then apply Series.astype(str).str.upper().str.startswith(prefix).",
+            "- For apply_product_attribute_resolver, never place import statements inside branches, helper blocks, comments-as-code, or retry code. The executor rejects every import statement, including import re.",
             "- For any rank step, aggregate the rank metric at the intended grain before sorting. Use step.group_by when present; if group_by is absent and step.grain is product, use plan['product_grain']; if the intent is total rank, use no group_by.",
             "- Do not add retrieval filter fields to group_by just because those columns exist in the source. Filter fields are grouping columns only when the user explicitly asked for that raw breakdown axis.",
             "- For rank_groups/per-group ranking, build the group label from step.rank_groups, aggregate by that group label plus the target entity grain, rank separately within each group label, and keep only the planned user-facing label/output columns in result_df.",
@@ -78,6 +84,11 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "- Apply step.rename_columns when present before a later step references those renamed columns.",
             "- If the question or plan asks for multiple metrics, compute all of them and include every plan['analysis_output_columns'] column in result_df when source data exists.",
             "- If plan.matched_metric_terms or plan.metric_definitions contains formula/pandas_code_instructions, compute the derived row-level output columns first, then aggregate those output columns by step.group_by or total according to the aggregate step.",
+            "- If plan.pandas_logic_hints contains domain-provided pandas guidance, follow it while still respecting the normalized plan and available source DataFrames.",
+            "- For product_attribute_resolver hints, treat the hint as pandas-stage matching guidance, not as a source retrieval job. After applying non-product retrieval filters such as DATE and process filters, build distinct valid_values from the current source DataFrame columns listed in hint.output_filter_columns or hint.attribute_columns.",
+            "- Tokenize the user question according to the resolver hint, compare tokens against those runtime distinct values, and apply matched token filters with pandas boolean masks before aggregation/ranking.",
+            "- For resolver prefix_match_columns, use the metadata pattern to extract the matching prefix segment from the token, then apply Series.astype(str).str.upper().str.startswith(prefix). If the token has extra suffix characters beyond the matched prefix, do not use the whole token as the prefix.",
+            "- Ignore unknown product-attribute tokens instead of inventing filters on unrelated columns. If a token is ambiguous across multiple resolver columns, keep the result conservative and mention the ambiguity in reasoning_steps.",
             "- For aggregate steps with empty group_by, return one total row. For aggregate steps with group_by, return one row per requested group. Do not return row-level details for aggregate plans.",
             "- If plan.result_scope_columns exists, add each listed constant scope column to result_df unless result_df already has that column. These columns make aggregate rows self-describing, for example process group or product filter scope.",
             "- Do not include raw source/filter condition columns in result_df when they are only used to build rank_groups or filters. Use plan.rank_group_output_column/RANK_GROUP and result_scope columns as the user-facing group labels instead.",
@@ -94,6 +105,9 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "",
             "Source filters to apply in pandas before analysis:",
             json.dumps(source_filters, ensure_ascii=False, indent=2),
+            "",
+            "Domain pandas logic hints from metadata:",
+            _guide_text(pandas_logic_hints),
             "",
             "Previous state summary:",
             json.dumps(_state_summary(state), ensure_ascii=False, indent=2),
@@ -113,7 +127,25 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             ),
         ]
     )
-    return {"prompt": prompt, "payload": payload, "prompt_type": "pandas_code", "source_summary": source_summary, "source_filters": source_filters}
+    return {
+        "prompt": prompt,
+        "payload": payload,
+        "prompt_type": "pandas_code",
+        "source_summary": source_summary,
+        "source_filters": source_filters,
+        "pandas_logic_hints": pandas_logic_hints,
+    }
+
+
+def _pandas_logic_hints(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    hints = plan.get("pandas_logic_hints") if isinstance(plan.get("pandas_logic_hints"), list) else []
+    return [deepcopy(item) for item in hints if isinstance(item, dict)]
+
+
+def _guide_text(hints: list[dict[str, Any]]) -> str:
+    if not hints:
+        return "No domain pandas logic hints were matched."
+    return json.dumps(hints, ensure_ascii=False, indent=2)
 
 
 def _analysis_instruction(plan: dict[str, Any]) -> str:
@@ -446,7 +478,9 @@ class PandasPromptBuilder(Component):
 
     display_name = "14 Pandas Prompt Builder"
     description = "의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다."
-    inputs = [DataInput(name="payload", display_name="Payload", required=True)]
+    inputs = [
+        DataInput(name="payload", display_name="Payload", required=True),
+    ]
     outputs = [
         Output(name="pandas_prompt", display_name="Pandas Prompt", method="build_prompt"),
         Output(name="prompt_payload", display_name="Prompt Payload", method="build_prompt_payload"),
@@ -456,7 +490,9 @@ class PandasPromptBuilder(Component):
     # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
-        prompt_payload = build_pandas_prompt_payload(getattr(self, "payload", None))
+        prompt_payload = build_pandas_prompt_payload(
+            getattr(self, "payload", None),
+        )
 
         self.status = {
             "prompt_type": prompt_payload.get("prompt_type", "pandas_code"),
@@ -469,4 +505,8 @@ class PandasPromptBuilder(Component):
     # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt_payload(self) -> Data:
-        return Data(data=build_pandas_prompt_payload(getattr(self, "payload", None)))
+        return Data(
+            data=build_pandas_prompt_payload(
+                getattr(self, "payload", None),
+            )
+        )

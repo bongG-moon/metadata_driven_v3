@@ -254,7 +254,15 @@ def print_upload_plan(batches: dict[str, list[dict[str, Any]]], database: str) -
 def _domain_item_docs(path: Path) -> list[dict[str, Any]]:
     data = _read_json(path)
     docs: list[dict[str, Any]] = []
-    for section in ["process_groups", "product_terms", "quantity_terms", "metric_terms", "analysis_recipes", "status_terms"]:
+    for section in [
+        "process_groups",
+        "product_terms",
+        "product_attribute_resolvers",
+        "quantity_terms",
+        "metric_terms",
+        "analysis_recipes",
+        "status_terms",
+    ]:
         for key, payload in data.get(section, {}).items():
             docs.append(_doc(f"domain:{section}:{key}", path, {"section": section, "key": key, "payload": payload}))
     docs.append(

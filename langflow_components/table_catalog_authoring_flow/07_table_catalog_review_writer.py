@@ -76,6 +76,8 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
             continue
         if _is_optional_goodocs_source_request(item, payload):
             continue
+        if _is_optional_runtime_source_request(item, payload):
+            continue
         if _is_resolved_filter_mapping_request(item, payload):
             continue
         supplement.append(item)
@@ -391,6 +393,32 @@ def _single_goodocs_item_has_doc_id(payload: dict[str, Any]) -> bool:
     source_type = _clean(table_payload.get("source_type") or source_config.get("source_type")).lower()
     doc_id = _clean(source_config.get("doc_id") or source_config.get("document_id"))
     return source_type in {"goodocs", "goodoc"} and bool(doc_id)
+
+
+def _is_optional_runtime_source_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item).lower()
+    if field not in {
+        "db_key",
+        "source_config.db_key",
+        "query_template",
+        "source_config.query_template",
+        "source_config",
+    }:
+        return False
+    for table_item in _as_list(payload.get("items")):
+        if not isinstance(table_item, dict):
+            continue
+        table_payload = table_item.get("payload") if isinstance(table_item.get("payload"), dict) else {}
+        source_config = table_payload.get("source_config") if isinstance(table_payload.get("source_config"), dict) else {}
+        source_type = _clean(table_payload.get("source_type") or source_config.get("source_type")).lower()
+        if source_type in {"h_api", "goodocs"}:
+            continue
+        columns = _as_text_list(table_payload.get("columns"))
+        has_query = bool(_clean(source_config.get("query_template")))
+        has_table_shape = bool(_clean(source_config.get("table_name")) and columns)
+        if has_query or has_table_shape:
+            return True
+    return False
 
 
 def _normalize_item_reviews(item_reviews: list[Any], ready_to_save: bool) -> list[Any]:

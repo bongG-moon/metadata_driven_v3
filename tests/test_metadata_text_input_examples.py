@@ -118,7 +118,15 @@ def read_json(relative_path: str) -> Any:
 def domain_items_from_current_metadata() -> list[dict[str, Any]]:
     data = read_json("metadata/domain_items.json")
     items: list[dict[str, Any]] = []
-    for section in ["process_groups", "product_terms", "quantity_terms", "metric_terms", "analysis_recipes", "status_terms"]:
+    for section in [
+        "process_groups",
+        "product_terms",
+        "product_attribute_resolvers",
+        "quantity_terms",
+        "metric_terms",
+        "analysis_recipes",
+        "status_terms",
+    ]:
         for key, payload in data[section].items():
             items.append({"section": section, "key": key, "payload": payload, "confidence": "high"})
     items.append(
@@ -147,24 +155,15 @@ FILTER_AUTHORING_HINTS: dict[str, dict[str, Any]] = {
     "TECH": {"aliases": ["제품 기술", "TECH"], "semantic_role": "product_attribute"},
     "DEN": {"aliases": ["제품 용량", "DEN"], "semantic_role": "product_attribute"},
     "MODE": {"aliases": ["제품 모드", "MODE"], "semantic_role": "product_attribute"},
+    "ORG": {"aliases": ["조직", "ORG", "organization"], "semantic_role": "product_attribute"},
     "PKG_TYPE1": {"aliases": ["패키지 타입1", "PKG_TYPE1"], "semantic_role": "package_attribute"},
     "PKG_TYPE2": {"aliases": ["패키지 타입2", "PKG_TYPE2"], "semantic_role": "package_attribute"},
     "LEAD": {"aliases": ["Lead", "LEAD"], "semantic_role": "product_attribute"},
     "MCP_NO": {"aliases": ["제품 코드", "MCP 번호", "MCP NO"], "semantic_role": "product_code"},
-    "DEVICE": {"aliases": ["디바이스", "DEVICE", "제품 코드"], "semantic_role": "device"},
     "DEVICE_DESC": {"aliases": ["device", "device code", "DEVICE_DESC"], "semantic_role": "device"},
     "TSV_DIE_TYP": {"aliases": ["HBM 판별", "3DS 판별", "TSV 판별"], "semantic_role": "product_condition"},
     "OPER_NUM": {"aliases": ["공정 번호", "OPER_NUM"], "semantic_role": "process_number"},
-    "OPER_DESC": {"aliases": ["공정 설명", "OPER_DESC", "INPUT 공정"], "semantic_role": "process_description"},
-    "OPER_SEQ": {"aliases": ["공정 순서", "OPER_SEQ"], "semantic_role": "process_sequence"},
-    "FAB": {"aliases": ["FAB"], "semantic_role": "product_attribute"},
-    "OWNER": {"aliases": ["OWNER", "OWER"], "semantic_role": "product_attribute"},
-    "GRADE": {"aliases": ["GRADE"], "semantic_role": "product_attribute"},
-    "DIE_ATTACH_QTY": {"aliases": ["Die attach 수량", "DIE_ATTACH_QTY"], "semantic_role": "quantity"},
-    "NETDIE_300_CNT": {"aliases": ["Net die 수량", "NETDIE_300_CNT"], "semantic_role": "quantity"},
     "LOT_ID": {"aliases": ["Lot ID", "LOT 번호"], "semantic_role": "lot_id"},
-    "LOT_STAT_CD": {"aliases": ["Lot 작업 상태", "LOT 상태"], "semantic_role": "lot_status"},
-    "LOT_HOLD_STAT_CD": {"aliases": ["Lot hold 상태", "Hold 상태"], "semantic_role": "hold_status"},
     "EQP_ID": {"aliases": ["장비 ID", "장비 번호"], "semantic_role": "equipment_id"},
     "EQP_MODEL": {"aliases": ["장비 모델", "EQP_MODEL"], "semantic_role": "equipment_model"},
     "RECIPE_ID": {"aliases": ["Recipe ID", "레시피"], "semantic_role": "recipe_id"},
@@ -217,6 +216,73 @@ def run_domain_authoring_flow(raw_text: str, items: list[dict[str, Any]], monkey
         mongo_uri="mongodb://fake",
     )
     return written, store
+
+
+def test_domain_product_attribute_resolver_normalizer_only_converts_schema_aliases() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    raw_text = "부분 제품 속성 조합으로 제품을 찾는 pandas 코드 생성 규칙을 등록해줘."
+    llm_items = [
+        {
+            "section": "product_attribute_resolvers",
+            "key": "product_attribute_resolver",
+            "payload": {
+                "display_name": "부분 제품 속성 매처",
+                "aliases": ["부분 제품 속성 매칭", "제품 속성 필터링"],
+                "standard_attribute_columns": [
+                    "TECH",
+                    "DEN",
+                    "MODE",
+                    "ORG",
+                    "PKG_TYPE1",
+                    "PKG_TYPE2",
+                    "LEAD",
+                    "MCP_NO",
+                    "DEVICE_DESC",
+                ],
+                "pandas_code_instructions": ["이미 조회된 source DataFrame의 distinct 값과 질문 토큰을 비교합니다."],
+            },
+            "confidence": "high",
+        }
+    ]
+
+    result = normalizer.normalize_domain_authoring_result(
+        {"raw_text": raw_text},
+        json.dumps({"items": llm_items, "missing_information": [], "warnings": []}, ensure_ascii=False),
+    )
+
+    assert result["errors"] == []
+    resolver_payload = result["items"][0]["payload"]
+    assert "standard_attribute_columns" not in resolver_payload
+    assert resolver_payload["attribute_columns"] == [
+        "TECH",
+        "DEN",
+        "MODE",
+        "ORG",
+        "PKG_TYPE1",
+        "PKG_TYPE2",
+        "LEAD",
+        "MCP_NO",
+        "DEVICE_DESC",
+    ]
+    assert resolver_payload["output_filter_columns"] == resolver_payload["attribute_columns"]
+    assert "trigger_terms" not in resolver_payload
+    assert "resolution_stage" not in resolver_payload
+    assert "source_policy" not in resolver_payload
+    assert "pandas_generation_rule" not in resolver_payload
+
+
+def test_product_attribute_resolver_input_examples_include_trigger_terms_without_device_desc_columns() -> None:
+    for marker in ("bulk_domain", "single_product_attribute_resolver"):
+        example_text = read_marked_example(DOMAIN_EXAMPLE_PATH, marker)
+        assert "제품, PRODUCT, 자재, DEVICE" in example_text
+        assert "DEVICE_DESC는 일반 제품 속성 매칭 규칙에는 사용하지 말고" in example_text
+        attribute_column_lines = [
+            line.strip()
+            for line in example_text.splitlines()
+            if line.strip().startswith("attribute_columns =")
+        ]
+        assert attribute_column_lines
+        assert all("DEVICE_DESC" not in line for line in attribute_column_lines)
 
 
 def run_table_authoring_flow(raw_text: str, items: list[dict[str, Any]], monkeypatch: Any) -> tuple[dict[str, Any], dict[Any, Any]]:
@@ -406,7 +472,7 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "domain:product_terms:pop",
         "domain:product_terms:mobile",
         "domain:product_terms:flexible_product",
-        "domain:product_terms:lpddr5",
+        "domain:product_attribute_resolvers:generic_product_attribute_resolver",
         "domain:quantity_terms:input_production",
         "domain:quantity_terms:lot_count",
         "domain:quantity_terms:hold_lot_count",
@@ -420,11 +486,23 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "domain:analysis_recipes:top_production_products_equipment_count",
     }
     assert docs["domain:process_groups:DP"]["payload"]["processes"] == ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
-    assert docs["domain:process_groups:DS"]["payload"]["condition"] == {"PKG_TYPE1": {"in": ["FCBGA"]}}
+    assert docs["domain:process_groups:DS"]["payload"] == {
+        "display_name": "D/S",
+        "aliases": ["D/S", "DS"],
+        "processes": ["D/S1"],
+    }
     assert docs["domain:product_terms:hbm"]["payload"]["condition"] == {"TSV_DIE_TYP": {"exists": True, "not_in": [None, ""]}}
     assert docs["domain:product_terms:pop"]["payload"]["condition"]["MODE"] == {"starts_with": "LP"}
     assert docs["domain:product_terms:mobile"]["payload"]["condition"]["MCP_NO"] == {"empty": True}
     assert docs["domain:product_terms:flexible_product"]["payload"]["comparison_keys"] == ["FAB", "DEVICE", "OWNER", "GRADE"]
+    resolver_payload = docs["domain:product_attribute_resolvers:generic_product_attribute_resolver"]["payload"]
+    assert resolver_payload["resolution_stage"] == "pandas_code_generation"
+    assert resolver_payload["source_policy"]["use_existing_runtime_sources_only"] is True
+    assert resolver_payload["pandas_generation_rule"]["prefix_match_columns"]["MCP_NO"] == {
+        "pattern": "^[A-Z]-\\d{3}",
+        "match": "starts_with",
+        "example": "A-587 matches A-587AA, A-587K1, and A-587",
+    }
     assert docs["domain:quantity_terms:input_production"]["payload"]["condition"] == {"OPER_DESC": "INPUT"}
     assert docs["domain:quantity_terms:lot_count"]["payload"]["aggregation"] == "nunique"
     assert docs["domain:quantity_terms:hold_lot_count"]["payload"]["output_column"] == "HOLD_LOT_COUNT"
@@ -539,9 +617,11 @@ def test_worker_bulk_filter_text_input_saves_all_current_filters(monkeypatch: An
 
     assert written["raw_text"] == FILTER_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 26
+    assert written["write_result"]["saved_count"] == 17
     docs = store[("metadata_driven_agent_v3", "agent_v3_main_flow_filters")]
-    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL", "main_flow_filter:OPER_DESC", "main_flow_filter:FAB", "main_flow_filter:OWNER", "main_flow_filter:GRADE"}
+    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:ORG", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL"}
+    assert "main_flow_filter:OPER_DESC" not in docs
+    assert "main_flow_filter:LOT_STAT_CD" not in docs
     assert docs["main_flow_filter:DATE"]["payload"]["semantic_role"] == "date"
 
 
@@ -560,4 +640,4 @@ def test_worker_single_filter_text_input_saves_eqp_model(monkeypatch: Any) -> No
     assert_lean_metadata_doc(doc)
     assert doc["filter_key"] == "EQP_MODEL"
     assert doc["key"] == "EQP_MODEL"
-    assert doc["payload"]["column_candidates"] == ["EQP_MODEL"]
+    assert doc["payload"]["column_candidates"] == ["EQP_MODEL", "EQP_MODEL_CD"]

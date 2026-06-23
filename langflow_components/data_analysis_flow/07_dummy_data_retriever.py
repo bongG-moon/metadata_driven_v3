@@ -193,7 +193,7 @@ def _base_process_product_row(
         "SHIFT": str(((process_index + product_index - 2) % 3) + 1),
         "FACTORY": "PKG",
         "FAB": "PKG",
-        "ORG": "ASSY",
+        "ORG": _product_org(product),
         **_product_keys(product),
         "FAMILY": product.get("FAMILY", ""),
         "DEVICE_DESC": product.get("DEVICE_DESC", ""),
@@ -217,7 +217,7 @@ def _target_rows(date_text: str) -> list[dict[str, Any]]:
         rows.append(
             {
                 "DATE": date_text,
-                "ORG": "ASSY",
+                "ORG": _product_org(product),
                 **_product_keys(product),
                 **_physical_product_aliases(product),
                 "INPUT_PLAN": input_plan,
@@ -314,7 +314,7 @@ def _hold_history_rows(params: dict[str, Any]) -> list[dict[str, Any]]:
                 "FAMILY_CD": lot.get("FAMILY_CD", ""),
                 "TECH_NM": lot.get("TECH_NM", ""),
                 "GEN_TYP": lot.get("PROD_TYP", ""),
-                "ORGANIZ_CD": "ASSY",
+                "ORGANIZ_CD": lot.get("ORGANIZ_CD", "ASSY"),
                 "PKG_TYP_2": lot.get("PKG_TYP_2", ""),
                 "PKG_SIZE_VAL": "12x12",
                 "PROD_GRP_ID": lot.get("PROD_GRP_ID", ""),
@@ -344,7 +344,7 @@ def _equipment_rows(work_date: str) -> list[dict[str, Any]]:
                     "EQP_ID": f"EQP{eqp_index}",
                     "EQP_MODEL": model,
                     "PRESS_CNT": [1, 2, 4, 8][(product_index + slot) % 4],
-                    "ORG": "ASSY",
+                    "ORG": _product_org(product),
                     "PKGSIZE": ["8x8", "10x10", "12x12", "14x14"][(product_index + slot) % 4],
                     "LOT_ID": "T1234567GEN1" if product.get("DEVICE") == "DEV-HBM3E-16HI" and slot <= 2 else f"LOT{work_date[-4:]}{eqp_index}",
                     "EQP_OPERATYN": "N" if slot == 4 and product.get("PKG_TYPE2") in {"AUTO", "AI"} else "Y",
@@ -390,6 +390,7 @@ def _product_keys(product: dict[str, Any]) -> dict[str, Any]:
         "TECH": product.get("TECH", ""),
         "DEN": product.get("DEN", ""),
         "MODE": product.get("MODE", ""),
+        "ORG": _product_org(product),
         "PKG_TYPE1": product.get("PKG_TYPE1", ""),
         "PKG_TYPE2": product.get("PKG_TYPE2", ""),
         "LEAD": product.get("LEAD", ""),
@@ -406,7 +407,7 @@ def _lot_product_fields(product: dict[str, Any]) -> dict[str, Any]:
         "PROD_TYP": product.get("MODE", ""),
         "DEN_TYP": product.get("DEN", ""),
         "TECH_NM": product.get("TECH", ""),
-        "ORGANIZ_CD": "ASSY",
+        "ORGANIZ_CD": _product_org(product),
         "PKG_TYP": product.get("PKG_TYPE1", ""),
         "PKG_TYP_2": product.get("PKG_TYPE2", ""),
         "PKG_TYP_3": "",
@@ -451,6 +452,7 @@ def _with_lot_defaults(row: dict[str, Any]) -> dict[str, Any]:
 def _physical_product_aliases(product: dict[str, Any]) -> dict[str, Any]:
     return {
         "Mode": product.get("MODE"),
+        "ORGANIZ_CD": _product_org(product),
         "DENSITY": product.get("DEN"),
         "PKG1": product.get("PKG_TYPE1"),
         "PKG2": product.get("PKG_TYPE2"),
@@ -467,6 +469,10 @@ def _physical_product_aliases(product: dict[str, Any]) -> dict[str, Any]:
         "PROD_GRP_ID": product.get("MCP_NO"),
         "MCP_SALE_CD": product.get("MCP_NO"),
     }
+
+
+def _product_org(product: dict[str, Any]) -> str:
+    return str(product.get("ORG") or product.get("ORGANIZ_CD") or "ASSY")
 
 
 def _production_qty(process_family: str, product: dict[str, Any], process_index: int, product_index: int) -> int:
