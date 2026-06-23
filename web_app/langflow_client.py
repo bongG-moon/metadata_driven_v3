@@ -17,6 +17,20 @@ DEFAULT_COLLECTIONS = {
     "main_flow_filter": "agent_v3_main_flow_filters",
 }
 _LANGFLOW_NODE_INPUT_SETTINGS_API_FIELD = "twe" + "aks"
+DEVELOPER_PAYLOAD_KEYS = (
+    "analysis_code",
+    "failed_analysis_code",
+    "data_preparation_code",
+    "prepared_dataframe",
+    "pandas_execution_status",
+    "analysis_status",
+    "analysis_plan",
+    "source_summaries",
+    "filter_notes",
+    "merge_notes",
+    "pandas_code_json",
+    "reasoning_steps",
+)
 
 
 @dataclass(frozen=True)
@@ -292,10 +306,11 @@ def normalize_query_response(api_response: Any) -> dict[str, Any]:
     payload = extract_main_payload(api_response)
     structured_payload = _looks_like_query(payload)
     data = _query_data(payload)
+    developer = _query_developer(api_response, payload)
     applied_scope = _as_dict(payload.get("applied_scope") or payload.get("scope"))
     intent_plan = _as_dict(payload.get("intent_plan"))
     intent = _as_dict(payload.get("intent"))
-    analysis = _query_analysis(payload, data)
+    analysis = _query_analysis(payload, data, developer)
     warnings = _unique_values([*_as_list(payload.get("warnings")), *_as_list(analysis.get("warnings"))])
     errors = _unique_values([*_as_list(payload.get("errors")), *_as_list(analysis.get("errors"))])
     answer = _first_text(payload, ["answer_message", "message", "response", "answer", "text", "content"])
@@ -325,8 +340,8 @@ def normalize_query_response(api_response: Any) -> dict[str, Any]:
         "state": _as_dict(payload.get("state")),
         "warnings": warnings,
         "errors": errors,
-        "data_refs": _collect_data_refs(payload, data),
-        "developer": _as_dict(payload.get("developer") or payload.get("debug")),
+        "data_refs": _collect_data_refs(payload, data, developer, api_response),
+        "developer": developer,
     }
     if result["developer"] and not result["analysis"].get("analysis_code"):
         code = result["developer"].get("analysis_code") or _as_dict(result["developer"].get("pandas_code_json")).get("code")
@@ -523,9 +538,9 @@ def _query_data(payload: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _query_analysis(payload: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+def _query_analysis(payload: dict[str, Any], data: dict[str, Any], developer: dict[str, Any] | None = None) -> dict[str, Any]:
     source = _as_dict(payload.get("analysis") or payload.get("analysis_result"))
-    developer = _as_dict(payload.get("developer") or payload.get("debug"))
+    developer = _as_dict(developer) or _as_dict(payload.get("developer") or payload.get("debug"))
     pandas_code_json = _as_dict(source.get("pandas_code_json")) or _as_dict(developer.get("pandas_code_json"))
     analysis_code = source.get("analysis_code") or developer.get("analysis_code") or pandas_code_json.get("code") or payload.get("analysis_code")
     result = {
@@ -544,12 +559,36 @@ def _query_analysis(payload: dict[str, Any], data: dict[str, Any]) -> dict[str, 
     return {key: value for key, value in result.items() if value not in (None, "", [], {})}
 
 
-def _collect_data_refs(payload: dict[str, Any], data: dict[str, Any]) -> list[dict[str, Any]]:
+def _query_developer(value: Any, preferred_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for source in (preferred_payload, value):
+        for item in _walk(source):
+            item = _parse_json_dict(item) if isinstance(item, str) else item
+            if not isinstance(item, dict):
+                continue
+            for container_name in ("developer", "debug"):
+                container = _as_dict(item.get(container_name))
+                for key, found in container.items():
+                    if _has_value(found) and not _has_value(result.get(key)):
+                        result[key] = found
+            for key in DEVELOPER_PAYLOAD_KEYS:
+                found = item.get(key)
+                if _has_value(found) and not _has_value(result.get(key)):
+                    result[key] = found
+    return result
+
+
+def _collect_data_refs(
+    payload: dict[str, Any],
+    data: dict[str, Any],
+    developer: dict[str, Any] | None = None,
+    source_payload: Any | None = None,
+) -> list[dict[str, Any]]:
     refs: list[dict[str, Any]] = []
     for ref in _as_list(payload.get("data_refs")):
         _append_data_ref(refs, ref)
     _append_data_ref(refs, data.get("data_ref"))
-    developer = _as_dict(payload.get("developer") or payload.get("debug"))
+    developer = _as_dict(developer) or _as_dict(payload.get("developer") or payload.get("debug"))
     for ref in _as_list(developer.get("data_refs")):
         _append_data_ref(refs, ref)
     state = _as_dict(payload.get("state"))
@@ -561,6 +600,17 @@ def _collect_data_refs(payload: dict[str, Any], data: dict[str, Any]) -> list[di
     runtime_source_refs = _as_dict(state.get("runtime_source_refs"))
     for ref in runtime_source_refs.values():
         _append_data_ref(refs, ref)
+    for item in _walk(source_payload):
+        item = _parse_json_dict(item) if isinstance(item, str) else item
+        if not isinstance(item, dict):
+            continue
+        _append_data_ref(refs, item.get("data_ref"))
+        for ref in _as_list(item.get("data_refs")):
+            _append_data_ref(refs, ref)
+        for container_name in ("developer", "debug"):
+            container = _as_dict(item.get(container_name))
+            for ref in _as_list(container.get("data_refs")):
+                _append_data_ref(refs, ref)
     return refs
 
 
@@ -866,6 +916,10 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple, set)) else []
+
+
+def _has_value(value: Any) -> bool:
+    return value not in (None, "", [], {})
 
 
 def _row_list(value: Any) -> list[dict[str, Any]]:

@@ -92,3 +92,6 @@
   }
 }
 ```
+
+`required_params`의 `DATE`는 위 예시 dataset의 query_template에 `{DATE}` 같은 실행 placeholder가 있을 때만 들어가는 값입니다.
+필수 실행 변수가 없는 dataset이면 `required_params`는 `[]`이고, DATE가 단순 optional filter이면 `filter_mappings`에만 남깁니다.

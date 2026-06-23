@@ -7,6 +7,7 @@ query_template SQL은 실행용 원문이므로 불투명한 텍스트처럼 다
 table/column spelling을 임의로 교정하지 마세요. 예를 들어 DATA_EXTINF_MAS를 DATA_EXT_INF_MAS로 바꾸거나 PKG_TYPE1, PKG_TYPE2를 PKG_TYPE1,, PKG_TYPE2처럼 바꾸면 안 됩니다.
 SQL에 WITH 절, CTE, inline view, nested subquery가 있으면 전체 SQL block과 줄바꿈을 보존하세요. 어떤 부분도 "...", "생략", 요약 표현으로 바꾸지 마세요.
 SQL에서 columns를 적을 때는 dataset output을 만드는 최종/top-level SELECT 목록을 기준으로 하세요. CTE 내부 SELECT나 scalar subquery 내부 SELECT는 제외하세요. 단, 최종 SELECT가 inline view에서 "*"만 선택하는 구조라면 해당 inline view의 출력 column을 사용하세요.
+SQL의 `--` line comment와 `/* ... */` block comment 안에 있는 텍스트는 columns에 넣지 마세요. 주석 처리된 column은 실제 dataset output이 아닙니다.
 SQL expression은 AS 뒤의 출력 alias를 column name으로 보존하세요. alias가 없으면 table alias를 제거한 실제 물리 column name을 사용하세요. WHERE, JOIN, GROUP BY, ORDER BY에만 등장하는 column은 columns에 추가하지 마세요.
 Goodocs source에서 document ID/doc_id는 조회 식별자입니다. sheet_name은 선택 사항이며, 사용자가 특정 sheet/tab이 필요하다고 말한 경우가 아니면 요구하지 마세요.
 사용자가 필수 query parameter가 없다고 말하면 그 내용을 그대로 보존하세요. DATE filter_mappings는 optional filter로 존재할 수 있습니다.

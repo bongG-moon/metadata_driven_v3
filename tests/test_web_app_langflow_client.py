@@ -79,6 +79,43 @@ def test_normalize_query_response_accepts_legacy_flat_api_response_shape() -> No
     assert result["analysis"]["analysis_code"] == "legacy_code()"
 
 
+def test_normalize_query_response_collects_router_side_developer_payload() -> None:
+    raw = {
+        "api_response": {
+            "status": "ok",
+            "answer_message": "analysis answer",
+            "data": {
+                "columns": ["PRODUCT", "WIP"],
+                "rows": [{"PRODUCT": "A", "WIP": 50}],
+                "row_count": 1,
+            },
+        },
+        "debug": {
+            "data_preparation_code": "sources = normalize_sources(raw_sources)",
+            "failed_analysis_code": "result_df = broken",
+            "analysis_code": "result_df = fixed",
+            "prepared_dataframe": {
+                "columns": ["PRODUCT", "WIP"],
+                "row_count": 1,
+                "preview_rows": [{"PRODUCT": "A", "WIP": 50}],
+            },
+            "pandas_execution_status": {"status": "ok"},
+            "source_summaries": [{"source_alias": "wip_data", "row_count": 10}],
+            "data_refs": [{"ref_id": "source-ref", "collection_name": "agent_v3_result_store"}],
+        },
+    }
+
+    result = normalize_query_response(raw)
+
+    assert result["answer_message"] == "analysis answer"
+    assert result["developer"]["data_preparation_code"] == "sources = normalize_sources(raw_sources)"
+    assert result["developer"]["failed_analysis_code"] == "result_df = broken"
+    assert result["developer"]["analysis_code"] == "result_df = fixed"
+    assert result["developer"]["prepared_dataframe"]["preview_rows"][0]["PRODUCT"] == "A"
+    assert result["analysis"]["analysis_code"] == "result_df = fixed"
+    assert result["data_refs"][0]["ref_id"] == "source-ref"
+
+
 def test_normalize_query_response_collects_state_followup_refs() -> None:
     result = normalize_query_response(
         {

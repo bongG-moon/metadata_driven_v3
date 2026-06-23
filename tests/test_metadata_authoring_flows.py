@@ -330,7 +330,8 @@ def test_table_catalog_authoring_normalizes_detail_columns_and_filter_mappings()
     assert normalized["errors"] == []
     item_payload = normalized["items"][0]["payload"]
     assert item_payload["filter_mappings"] == {"DATE": ["DATE"], "MODE": ["MODE"]}
-    assert item_payload["required_param_mappings"] == {"DATE": ["DATE"]}
+    assert item_payload["required_params"] == []
+    assert item_payload["required_param_mappings"] == {}
     assert item_payload["standard_column_aliases"] == {"OUT_PLAN": ["OUT계획"], "PKG_TYPE1": ["PKG1"]}
     assert item_payload["default_detail_columns"] == ["DATE"]
     assert item_payload["date_format"] == "YYYY-MM-DD"
@@ -437,6 +438,57 @@ filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, PKG_TYP
     assert item_payload["standard_column_aliases"]["MCP_NO"] == ["MCP NO"]
     assert item_payload["standard_column_aliases"]["INPUT_PLAN"] == ["INPUT계획"]
     assert item_payload["standard_column_aliases"]["OUT_PLAN"] == ["OUT계획", "TARGET"]
+
+
+def test_table_catalog_authoring_does_not_make_date_filter_required_without_placeholder_or_explicit_text() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = """dataset_key는 production_snapshot이고 생산 snapshot 데이터야.
+source는 oracle, db_key는 PNT_RPT야.
+query_template:
+SELECT WORK_DATE, OPER_NAME, PRODUCTION
+FROM PKG_PRODUCTION_SNAPSHOT
+
+filter_mappings는 DATE -> WORK_DATE, OPER_NAME -> OPER_NAME로 연결해줘.
+DATE 형식은 YYYYMMDD야."""
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": "production_snapshot oracle dataset with DATE filter mapping.",
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "production_snapshot",
+                "payload": {
+                    "display_name": "Production Snapshot",
+                    "dataset_family": "production",
+                    "date_scope": "snapshot",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT WORK_DATE, OPER_NAME, PRODUCTION\nFROM PKG_PRODUCTION_SNAPSHOT",
+                    },
+                    "columns": ["WORK_DATE", "OPER_NAME", "PRODUCTION"],
+                    "filter_mappings": {"DATE": ["WORK_DATE"], "OPER_NAME": ["OPER_NAME"]},
+                    "required_params": ["DATE"],
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload["filter_mappings"]["DATE"] == ["WORK_DATE"]
+    assert item_payload["date_format"] == "YYYYMMDD"
+    assert item_payload["required_params"] == []
+    assert item_payload["required_param_mappings"] == {}
 
 
 def test_table_catalog_authoring_backfills_structured_fields_from_raw_text() -> None:
@@ -712,6 +764,72 @@ FROM (
 """
 
     assert normalizer._columns_from_query(query) == ["LOT_ID", "HOLD_CODE", "IN_TAT"]
+
+
+def test_table_catalog_authoring_ignores_sql_comments_when_extracting_columns() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    query = """
+SELECT A.WORK_DATE,
+       A.OPER_NAME,
+       A.OPER_SEQ--, A.STACK_SEQ
+       , ROUND(SUM(A.WIP),1) AS WIP
+       /*, A.INTERNAL_COMMENTED_COLUMN */
+FROM WIP_TODAY A
+WHERE A.WORK_DATE = {DATE}
+GROUP BY A.WORK_DATE, A.OPER_NAME, A.OPER_SEQ
+"""
+
+    assert normalizer._columns_from_query(query) == ["WORK_DATE", "OPER_NAME", "OPER_SEQ", "WIP"]
+
+
+def test_table_catalog_authoring_repairs_columns_that_include_sql_comment_artifacts() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_query = "\n".join(
+        [
+            "SELECT A.WORK_DATE,",
+            "       A.OPER_NAME,",
+            "       A.OPER_SEQ--, A.STACK_SEQ",
+            "       , ROUND(SUM(A.WIP),1) AS WIP",
+            "FROM WIP_TODAY A",
+            "WHERE A.WORK_DATE = {DATE}",
+            "GROUP BY A.WORK_DATE, A.OPER_NAME, A.OPER_SEQ",
+        ]
+    )
+    raw_text = f"""dataset_key=wip_today
+source_type=oracle
+db_key=PNT_RPT
+dataset_family=wip
+
+query_template:
+{raw_query}
+
+filter_mappings: DATE -> WORK_DATE, OPER_NAME -> OPER_NAME"""
+    payload = {"metadata_type": "table_catalog", "raw_text": raw_text, "refined_text": raw_text, "errors": [], "warnings": []}
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "wip_today",
+                "payload": {
+                    "display_name": "WIP Today",
+                    "dataset_family": "wip",
+                    "source_type": "oracle",
+                    "source_config": {"source_type": "oracle", "db_key": "PNT_RPT", "query_template": raw_query},
+                    "required_params": ["DATE"],
+                    "required_param_mappings": {"DATE": ["WORK_DATE"]},
+                    "filter_mappings": {"DATE": ["WORK_DATE"], "OPER_NAME": ["OPER_NAME"]},
+                    "columns": ["WORK_DATE", "OPER_NAME", "OPER_SEQ--", "STACK_SEQ", "WIP"],
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload["source_config"]["query_template"] == raw_query
+    assert item_payload["columns"] == ["WORK_DATE", "OPER_NAME", "OPER_SEQ", "WIP"]
 
 
 def test_table_catalog_writer_does_not_block_missing_default_detail_columns() -> None:

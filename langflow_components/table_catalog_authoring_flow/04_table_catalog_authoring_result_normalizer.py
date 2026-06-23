@@ -125,6 +125,7 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
         payload["columns"] = _as_text_list(payload.get("columns"))
     payload["filter_mappings"] = _normalize_mapping(payload.get("filter_mappings"))
     payload["required_param_mappings"] = _normalize_mapping(payload.get("required_param_mappings"))
+    _normalize_required_param_fields(payload, source_text)
     payload["standard_column_aliases"] = _normalize_mapping(payload.get("standard_column_aliases"))
     _repair_filter_mappings_from_standard_aliases(payload)
     return {
@@ -188,9 +189,14 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
         source_config["doc_id"] = _clean(source_config.get("document_id"))
     payload["source_config"] = source_config
 
-    query_columns = _columns_from_query(_clean(source_config.get("query_template")))
+    query_template_text = _clean(source_config.get("query_template"))
+    query_columns = _columns_from_query(query_template_text)
     existing_columns = _as_text_list(payload.get("columns"))
-    if query_columns and len(existing_columns) < len(query_columns):
+    if query_columns and (
+        len(existing_columns) < len(query_columns)
+        or _has_sql_comment(query_template_text)
+        or _columns_have_comment_artifacts(existing_columns)
+    ):
         payload["columns"] = query_columns
     text_columns = _columns_from_text_list(source_text)
     if text_columns and len(_as_text_list(payload.get("columns"))) < len(text_columns):
@@ -199,11 +205,6 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     mappings_from_text = _filter_mappings_from_text(source_text)
     if mappings_from_text:
         payload["filter_mappings"] = _merge_mapping(payload.get("filter_mappings"), mappings_from_text)
-        if "DATE" in mappings_from_text and not _declares_no_required_params(source_text):
-            payload["required_param_mappings"] = _merge_mapping(payload.get("required_param_mappings"), {"DATE": mappings_from_text["DATE"]})
-            required_params = _as_text_list(payload.get("required_params"))
-            if "DATE" not in required_params:
-                payload["required_params"] = [*required_params, "DATE"]
     aliases_from_text = _standard_column_aliases_from_text(source_text)
     aliases_from_mappings = _standard_column_aliases_from_filter_mappings(mappings_from_text)
     if aliases_from_mappings:
@@ -220,6 +221,62 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     if _declares_no_required_params(source_text):
         payload["required_params"] = []
         payload["required_param_mappings"] = {}
+
+
+def _normalize_required_param_fields(payload: dict[str, Any], source_text: str) -> None:
+    source_config = payload.get("source_config") if isinstance(payload.get("source_config"), dict) else {}
+    placeholders = _unique_text(
+        [
+            *_query_placeholders(_clean(source_config.get("query_template"))),
+            *_query_placeholders(_clean(source_config.get("api_url"))),
+        ]
+    )
+    if _declares_no_required_params(source_text) and not placeholders:
+        payload["required_params"] = []
+        payload["required_param_mappings"] = {}
+        return
+
+    required_params = _normalize_required_param_names(payload.get("required_params"))
+    if placeholders:
+        required_params = _unique_text([*required_params, *placeholders])
+    elif not _mentions_required_params(source_text):
+        required_params = []
+
+    filter_mappings = {
+        _normalize_required_param_name(key): values
+        for key, values in _normalize_mapping(payload.get("filter_mappings")).items()
+    }
+    required_mappings = {
+        _normalize_required_param_name(key): values
+        for key, values in _normalize_mapping(payload.get("required_param_mappings")).items()
+    }
+    for param in required_params:
+        if param not in required_mappings and param in filter_mappings:
+            required_mappings[param] = list(filter_mappings[param])
+    required_set = set(required_params)
+    payload["required_params"] = required_params
+    payload["required_param_mappings"] = {
+        key: values
+        for key, values in required_mappings.items()
+        if key in required_set
+    }
+
+
+def _query_placeholders(text: str) -> list[str]:
+    if not text:
+        return []
+    return _unique_text(
+        _normalize_required_param_name(match)
+        for match in re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", text)
+    )
+
+
+def _normalize_required_param_names(value: Any) -> list[str]:
+    return _unique_text(_normalize_required_param_name(item) for item in _as_text_list(value))
+
+
+def _normalize_required_param_name(value: Any) -> str:
+    return _clean(value).upper()
 
 
 def _source_type_from_text(text: str) -> str:
@@ -371,7 +428,7 @@ def _query_template_checks(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _columns_from_query(query: str) -> list[str]:
-    sql = _strip_outer_parentheses(str(query or "").strip())
+    sql = _strip_outer_parentheses(_strip_sql_comments_for_parsing(str(query or "").strip()))
     select_bounds = _top_level_select_bounds(sql)
     if not select_bounds:
         return []
@@ -522,7 +579,33 @@ def _split_select_list(select_text: str) -> list[str]:
     parts: list[str] = []
     current: list[str] = []
     depth = 0
-    for char in select_text:
+    quote = ""
+    index = 0
+    while index < len(select_text):
+        char = select_text[index]
+        next_char = select_text[index + 1] if index + 1 < len(select_text) else ""
+        if quote:
+            current.append(char)
+            if quote == "]" and char == "]":
+                quote = ""
+            elif char == quote:
+                if quote == "'" and next_char == "'":
+                    current.append(next_char)
+                    index += 2
+                    continue
+                quote = ""
+            index += 1
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+            current.append(char)
+            index += 1
+            continue
+        if char == "[":
+            quote = "]"
+            current.append(char)
+            index += 1
+            continue
         if char == "(":
             depth += 1
         elif char == ")" and depth:
@@ -530,8 +613,10 @@ def _split_select_list(select_text: str) -> list[str]:
         if char == "," and depth == 0:
             parts.append("".join(current))
             current = []
+            index += 1
             continue
         current.append(char)
+        index += 1
     if current:
         parts.append("".join(current))
     return parts
@@ -539,6 +624,8 @@ def _split_select_list(select_text: str) -> list[str]:
 
 def _column_name_from_select_expr(expr: str) -> str:
     text = _clean(expr).strip('"`[]')
+    if not text or text.startswith("--") or text.startswith("/*"):
+        return ""
     text = re.sub(r"^\s*distinct\s+", "", text, flags=re.IGNORECASE)
     alias = re.search(r"\s+as\s+([A-Za-z0-9_\"`\[\] ]+)$", text, flags=re.IGNORECASE)
     if alias:
@@ -552,6 +639,73 @@ def _column_name_from_select_expr(expr: str) -> str:
 def _is_wildcard_column(column: str) -> bool:
     text = _clean(column)
     return text in {"*", ".*"} or text.endswith(".*")
+
+
+def _strip_sql_comments_for_parsing(sql: str) -> str:
+    result: list[str] = []
+    quote = ""
+    line_comment = False
+    block_comment = False
+    index = 0
+    while index < len(sql):
+        char = sql[index]
+        next_char = sql[index + 1] if index + 1 < len(sql) else ""
+        if line_comment:
+            if char in "\r\n":
+                line_comment = False
+                result.append(char)
+            index += 1
+            continue
+        if block_comment:
+            if char == "*" and next_char == "/":
+                block_comment = False
+                index += 2
+                continue
+            if char in "\r\n":
+                result.append(char)
+            else:
+                result.append(" ")
+            index += 1
+            continue
+        if quote:
+            result.append(char)
+            if quote == "]" and char == "]":
+                quote = ""
+            elif char == quote:
+                if quote == "'" and next_char == "'":
+                    result.append(next_char)
+                    index += 2
+                    continue
+                quote = ""
+            index += 1
+            continue
+        if char == "-" and next_char == "-":
+            line_comment = True
+            index += 2
+            continue
+        if char == "/" and next_char == "*":
+            block_comment = True
+            index += 2
+            continue
+        if char in {"'", '"', "`"}:
+            quote = char
+        elif char == "[":
+            quote = "]"
+        result.append(char)
+        index += 1
+    return "".join(result)
+
+
+def _has_sql_comment(sql: str) -> bool:
+    return _strip_sql_comments_for_parsing(sql) != str(sql or "")
+
+
+def _columns_have_comment_artifacts(columns: list[str]) -> bool:
+    for column in columns:
+        text = _clean(column)
+        if not text or text in {"-", "--"} or "--" in text or "/*" in text or "*/" in text:
+            return True
+    return False
 
 
 def _filter_mappings_from_text(text: str) -> dict[str, list[str]]:
@@ -658,6 +812,15 @@ def _declares_no_required_params(text: str) -> bool:
         "required_params없",
     ]
     return any(pattern.lower() in compact.lower() for pattern in patterns)
+
+
+def _mentions_required_params(text: str) -> bool:
+    if not text:
+        return False
+    return bool(
+        re.search(r"필수\s*(?:조회\s*)?(?:파라미터|parameter|param|변수|기준일)", text, flags=re.IGNORECASE)
+        or re.search(r"required[_\s-]*(?:params?|parameters?)", text, flags=re.IGNORECASE)
+    )
 
 
 def _merge_mapping(base: Any, incoming: dict[str, list[str]]) -> dict[str, list[str]]:

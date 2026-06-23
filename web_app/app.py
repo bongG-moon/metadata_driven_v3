@@ -448,8 +448,7 @@ def render_assistant_chat_message(message: dict[str, Any], message_index: int, s
     st.markdown(safe_markdown_text(result.get("answer_message") or message.get("content") or "응답 메시지가 없습니다."))
     if result.get("message_only"):
         if settings.get("developer_mode"):
-            with st.expander("Raw response", expanded=False):
-                render_compact_json(result, max_height=520)
+            render_chat_developer_details(result, message_index, settings)
         return
 
     data = result.get("data") if isinstance(result.get("data"), dict) else {}
@@ -471,7 +470,7 @@ def render_assistant_chat_message(message: dict[str, Any], message_index: int, s
 
     render_chat_metadata(result)
     if settings.get("developer_mode"):
-        render_chat_developer_details(result, message_index)
+        render_chat_developer_details(result, message_index, settings)
 
 
 def render_chat_metadata(result: dict[str, Any]) -> None:
@@ -494,17 +493,119 @@ def render_chat_metadata(result: dict[str, Any]) -> None:
                 render_compact_json(compact, max_height=320)
 
 
-def render_chat_developer_details(result: dict[str, Any], message_index: int) -> None:
-    with st.expander("Raw response", expanded=False):
-        render_compact_json(result.get("raw_response") or result, max_height=560)
-        st.download_button(
-            "Raw JSON 다운로드",
-            data=json_text(result.get("raw_response") or result),
-            file_name=f"langflow_response_{message_index}.json",
-            mime="application/json",
-            key=f"raw_download_{message_index}",
-            width="stretch",
-        )
+def render_chat_developer_details(result: dict[str, Any], message_index: int, settings: dict[str, Any] | None = None) -> None:
+    with st.expander("개발자 정보", expanded=False):
+        tabs = st.tabs(["MongoDB / data_ref", "Pandas 진단", "Raw response"])
+        with tabs[0]:
+            render_developer_data_refs(result, message_index)
+        with tabs[1]:
+            render_developer_pandas_info(result, settings)
+        with tabs[2]:
+            raw_payload = result.get("raw_response") or result
+            render_compact_json(raw_payload, max_height=560)
+            st.download_button(
+                "Raw JSON 다운로드",
+                data=json_text(raw_payload),
+                file_name=f"langflow_response_{message_index}.json",
+                mime="application/json",
+                key=f"raw_download_{message_index}",
+                width="stretch",
+            )
+
+
+def data_ref_download_name(ref: dict[str, Any], suffix: str) -> str:
+    ref_id = str(ref.get("ref_id") or "data_ref").strip() or "data_ref"
+    safe_ref_id = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in ref_id)
+    return f"{safe_ref_id}.{suffix}"
+
+
+def data_ref_display_label(ref: dict[str, Any], index: int) -> str:
+    source_label = str(ref.get("source_label") or "").strip()
+    dataset_key = str(ref.get("dataset_key") or ref.get("source_alias") or ref.get("job_key") or "").strip()
+    dataset_label = str(ref.get("dataset_label") or "").strip()
+    tool_name = str(ref.get("tool_name") or "").strip()
+    path = str(ref.get("path") or "").strip()
+    ref_id = str(ref.get("ref_id") or "").strip()
+    if source_label:
+        return source_label
+    label = dataset_label or dataset_key
+    if label and tool_name:
+        return f"{label} ({tool_name})"
+    if label:
+        return label
+    if path:
+        return path
+    return ref_id or f"data_ref_{index}"
+
+
+def render_developer_data_refs(result: dict[str, Any], message_index: int) -> None:
+    data_refs = result.get("data_refs") if isinstance(result.get("data_refs"), list) else []
+    if not data_refs:
+        render_inline_status("", "Langflow 응답에 MongoDB data_ref가 포함되어 있지 않습니다.")
+        return
+    for index, ref in enumerate(data_refs, start=1):
+        if not isinstance(ref, dict):
+            continue
+        label = data_ref_display_label(ref, index)
+        with st.expander(f"data_ref {index}: {label}", expanded=False):
+            render_compact_json(ref, max_height=320)
+            st.download_button(
+                "data_ref 메타데이터 다운로드",
+                data=json_text(ref),
+                file_name=data_ref_download_name(ref, "json"),
+                mime="application/json",
+                key=f"chat_{message_index}_ref_meta_{index}",
+                width="stretch",
+            )
+
+
+def render_developer_pandas_info(result: dict[str, Any], settings: dict[str, Any] | None = None) -> None:
+    developer = result.get("developer") if isinstance(result.get("developer"), dict) else {}
+    analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
+    if not developer and not analysis:
+        render_inline_status("", "개발자용 pandas 진단 정보가 응답에 포함되어 있지 않습니다.")
+        return
+
+    status = developer.get("pandas_execution_status") or developer.get("analysis_status") or analysis.get("status")
+    if status:
+        render_detail_title("Pandas 실행 상태")
+        render_compact_json(status, max_height=260)
+
+    for key, title in (
+        ("source_summaries", "Source 요약"),
+        ("filter_notes", "Filter notes"),
+        ("merge_notes", "Merge notes"),
+        ("analysis_plan", "Analysis plan"),
+        ("reasoning_steps", "Reasoning steps"),
+    ):
+        value = developer.get(key) or analysis.get(key)
+        if value not in (None, "", [], {}):
+            render_detail_title(title)
+            render_compact_json(value, max_height=300)
+
+    prepared = developer.get("prepared_dataframe") if isinstance(developer.get("prepared_dataframe"), dict) else {}
+    if prepared:
+        render_detail_title("준비된 DataFrame")
+        render_compact_json({key: value for key, value in prepared.items() if key != "preview_rows"}, max_height=260)
+        preview_rows = prepared.get("preview_rows") if isinstance(prepared.get("preview_rows"), list) else []
+        if preview_rows:
+            frame = pd.DataFrame(preview_rows)
+            st.dataframe(
+                display_table_frame(frame, (settings or {}).get("number_mode", "comma")),
+                hide_index=True,
+                height=chat_dataframe_height(len(frame), 260),
+                width="stretch",
+            )
+
+    for key, title in (
+        ("data_preparation_code", "Pandas 전처리 코드"),
+        ("failed_analysis_code", "오류가 발생한 LLM 분석 코드"),
+        ("analysis_code", "실행된 최종 분석 코드"),
+    ):
+        code = str(developer.get(key) or analysis.get(key) or "").strip()
+        if code:
+            render_detail_title(title)
+            st.code(code, language="python")
 
 
 def authoring_type_from_label(label: str) -> str:

@@ -7,6 +7,7 @@ Treat query_template SQL as opaque executable text. Do not add/remove commas, un
 Never "correct" table or column spelling. For example, do not change DATA_EXTINF_MAS to DATA_EXT_INF_MAS, and do not change PKG_TYPE1, PKG_TYPE2 into PKG_TYPE1,, PKG_TYPE2.
 If the SQL contains WITH clauses, CTEs, inline views, or nested subqueries, preserve the entire SQL block with line breaks. Do not replace any part with "...", "omitted", or a summary.
 When listing columns from SQL, use the final/top-level SELECT list that defines the dataset output. Ignore SELECT lists inside CTEs or scalar subqueries unless the final SELECT is only "*" from an inline view; in that case use the immediate subquery output columns.
+Do not put text inside SQL `--` line comments or `/* ... */` block comments into columns. A commented-out column is not part of the actual dataset output.
 For SQL expressions, preserve the output alias after AS as the column name. If there is no alias, use the physical column name without table alias. Do not add columns that appear only in WHERE, JOIN, GROUP BY, or ORDER BY.
 For Goodocs sources, document ID/doc_id is the retrieval identifier. sheet_name is optional and must not be requested unless the user says a specific sheet/tab is required.
 If the user says there are no required query parameters, preserve that exactly; DATE filter_mappings can still exist as optional filters.

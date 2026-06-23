@@ -8,13 +8,17 @@ Treat query_template SQL as opaque executable text. Copy it from the original in
 Never "correct" table or column spelling. For example, do not change DATA_EXTINF_MAS to DATA_EXT_INF_MAS, and do not change PKG_TYPE1, PKG_TYPE2 into PKG_TYPE1,, PKG_TYPE2.
 For SQL query_template values, preserve the full SQL exactly enough to execute, including WITH clauses, CTEs, inline views, nested subqueries, comments, placeholders, and line breaks. Never replace SQL with "...", "omitted", "truncated", or prose.
 For payload.columns derived from SQL, use the final/top-level SELECT list that defines the dataset output. Do not use CTE-internal SELECT columns, scalar subquery internals, WHERE-only columns, JOIN-only columns, GROUP BY-only columns, or ORDER BY-only columns.
+Do not put text inside SQL `--` line comments or `/* ... */` block comments into columns. Preserve comments in query_template, but a commented-out column is not part of the actual dataset output.
 If the final SELECT uses "*" or alias.* from an inline view/subquery, derive columns from that immediate subquery output when it is explicit. If it cannot be expanded safely, do not invent columns.
 For expressions such as CASE, NVL, SUM, COUNT, analytic functions, or scalar subqueries, use the output alias after AS as the column name. If there is no alias, use only a clear physical source column name and otherwise put the issue in missing_information.
 Capture date_format when a source expects dates in a specific representation such as YYYYMMDD or YYYY-MM-DD.
 Capture default_detail_columns when operators expect detail rows to show only a subset of columns.
 Source-specific essentials: oracle requires db_key and query_template; datalake requires query_template; h_api requires api_url; goodocs requires doc_id only.
 For goodocs, do not ask for db_key or query_template. sheet_name is optional; include it only when the user explicitly provides it or says a specific sheet/tab must be read.
-If the user says there are no required query parameters, set required_params=[] even when DATE appears in filter_mappings as an optional filter.
+required_params is not fixed to DATE. Include only variables that are mandatory to execute the query_template/API URL.
+For example, include DATE or LOT_ID only when the query_template has a {{DATE}}/{{LOT_ID}} placeholder or the user explicitly says that value is a required parameter.
+If there are no required query parameters, set required_params=[] and required_param_mappings={}.
+Do not put DATE in required_params just because DATE exists in filter_mappings or date_format exists. That DATE may be an optional filter.
 Metadata has two mapping layers: main_flow_filters define standard filter keys, while table_catalog.filter_mappings maps those standard keys to this dataset's physical columns.
 Do not put dataset-specific mappings inside main_flow_filters. For each dataset, put DATE/OPER_NAME/product/equipment mappings in table_catalog.filter_mappings.
 The left side of filter_mappings must be a standard main flow filter key such as DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, or RECIPE_ID; the right side must be actual source column candidates for this dataset.
@@ -42,8 +46,8 @@ Required JSON schema:
           "doc_id": "required for goodocs",
           "sheet_name": "optional for goodocs only when explicitly known"
         }},
-        "required_params": ["DATE"],
-        "required_param_mappings": {{"DATE": ["WORK_DT"]}},
+        "required_params": ["example: DATE or LOT_ID; include only actual mandatory execution variables, otherwise []"],
+        "required_param_mappings": {{"required execution variable": ["source column for that variable"]}},
         "date_format": "optional, e.g. YYYYMMDD or YYYY-MM-DD",
         "primary_quantity_column": "column or list",
         "filter_mappings": {{"DATE": ["WORK_DT"]}},
