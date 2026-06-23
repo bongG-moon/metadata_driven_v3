@@ -17,7 +17,7 @@ Source-specific essentials: oracle requires db_key and query_template; datalake 
 For goodocs, do not ask for db_key or query_template. sheet_name is optional; include it only when the user explicitly provides it or says a specific sheet/tab must be read.
 required_params is not fixed to DATE. Include only variables that are mandatory to execute the query_template/API URL.
 For example, include DATE or LOT_ID only when the query_template has a {{DATE}}/{{LOT_ID}} placeholder or the user explicitly says that value is a required parameter.
-If there are no required query parameters, set required_params=[] and required_param_mappings={}.
+If there are no required query parameters, set required_params to an empty list and required_param_mappings to an empty JSON object.
 Do not put DATE in required_params just because DATE exists in filter_mappings or date_format exists. That DATE may be an optional filter.
 Metadata has two mapping layers: main_flow_filters define standard filter keys, while table_catalog.filter_mappings maps those standard keys to this dataset's physical columns.
 Do not put dataset-specific mappings inside main_flow_filters. For each dataset, put DATE/OPER_NAME/product/equipment mappings in table_catalog.filter_mappings.

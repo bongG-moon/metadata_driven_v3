@@ -13,12 +13,14 @@ APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent
 
 try:
+    from .data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from .langflow_client import LangflowApiClient, LangflowSettings
     from .mock_api import MockApiClient
     from .ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, json_text, safe_markdown_text
 except ImportError:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
+    from web_app.data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from web_app.langflow_client import LangflowApiClient, LangflowSettings
     from web_app.mock_api import MockApiClient
     from web_app.ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, json_text, safe_markdown_text
@@ -69,6 +71,8 @@ AUTHORING_EXAMPLES = {
     "table_catalog": "wip_today는 Oracle PNT_RPT에서 SELECT WORK_DT, OPER_NAME, WIP FROM PKG_WIP_TODAY WHERE WORK_DT = {DATE}로 조회해. DATE는 WORK_DT에 매핑해.",
     "main_flow_filter": "날짜 조건은 DATE라는 기준 필터로 사용해줘. 오늘, 금일, 작업일은 WORK_DT 후보 컬럼과 연결해.",
 }
+CHAT_RESULT_TABLE_MAX_HEIGHT = 640
+DATA_REF_TABLE_MAX_HEIGHT = 620
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     inject_style()
@@ -455,18 +459,38 @@ def render_assistant_chat_message(message: dict[str, Any], message_index: int, s
     rows = data.get("rows") if isinstance(data.get("rows"), list) else []
     columns = data.get("columns") if isinstance(data.get("columns"), list) else []
     row_count = int_or_zero(data.get("row_count")) or len(rows)
+    loaded = load_result_rows_for_display(data, settings)
+    if loaded.get("ok") and loaded.get("rows"):
+        rows = loaded["rows"]
+        columns = loaded.get("columns") or columns
+        row_count = int_or_zero(loaded.get("row_count")) or len(rows)
     if rows:
         frame = pd.DataFrame(rows)
         if columns:
             ordered = [column for column in columns if column in frame.columns]
             frame = frame[ordered + [column for column in frame.columns if column not in ordered]]
-        st.caption(f"결과 {row_count:,}행 · {len(frame.columns):,}열")
+        caption = f"결과 {row_count:,}행 · {len(frame.columns):,}열"
+        if loaded.get("loaded_from_ref"):
+            caption += " · data_ref에서 전체 행을 불러왔습니다."
+        elif result_rows_are_preview(data):
+            caption += f" · 화면 표시 {len(frame):,}행"
+        st.caption(caption)
         st.dataframe(
             display_table_frame(frame, settings.get("number_mode", "comma")),
             hide_index=True,
             width="stretch",
-            height=chat_dataframe_height(row_count),
+            height=chat_dataframe_height(len(frame), CHAT_RESULT_TABLE_MAX_HEIGHT),
         )
+        st.download_button(
+            "결과 데이터 CSV 다운로드",
+            data=dataframe_csv_bytes(frame),
+            file_name=f"langflow_result_{message_index}.csv",
+            mime="text/csv",
+            key=f"chat_{message_index}_result_csv",
+            width="stretch",
+        )
+    elif loaded.get("message") and result_rows_are_preview(data):
+        render_inline_status("", f"전체 결과 data_ref를 불러오지 못했습니다: {loaded['message']}", tone="warning")
 
     render_chat_metadata(result)
     if settings.get("developer_mode"):
@@ -479,25 +503,32 @@ def render_chat_metadata(result: dict[str, Any]) -> None:
     analysis = result.get("analysis") if isinstance(result.get("analysis"), dict) else {}
     if scope:
         with st.expander("적용 조건 / 도메인 정보", expanded=False):
-            render_compact_json(scope, max_height=360)
+            render_summary_lines(applied_scope_summary_lines(scope))
+            with st.expander("원본 JSON 보기", expanded=False):
+                render_compact_json(scope, max_height=360)
     if intent:
         with st.expander("의도 분석 / 실행 계획", expanded=False):
-            render_compact_json(intent, max_height=420)
+            render_summary_lines(intent_plan_summary_lines(intent))
+            with st.expander("원본 JSON 보기", expanded=False):
+                render_compact_json(intent, max_height=420)
     code = analysis.get("analysis_code") or (analysis.get("pandas_code_json") or {}).get("code") if isinstance(analysis.get("pandas_code_json"), dict) else analysis.get("analysis_code")
     if code or analysis.get("errors"):
         with st.expander("Pandas 처리", expanded=False):
+            render_summary_lines(pandas_analysis_summary_lines(analysis))
             if code:
+                render_detail_title("실행 코드")
                 st.code(str(code), language="python")
             compact = {key: value for key, value in analysis.items() if key not in {"rows", "analysis_code", "pandas_code_json"}}
             if compact:
-                render_compact_json(compact, max_height=320)
+                with st.expander("원본 JSON 보기", expanded=False):
+                    render_compact_json(compact, max_height=320)
 
 
 def render_chat_developer_details(result: dict[str, Any], message_index: int, settings: dict[str, Any] | None = None) -> None:
     with st.expander("개발자 정보", expanded=False):
         tabs = st.tabs(["MongoDB / data_ref", "Pandas 진단", "Raw response"])
         with tabs[0]:
-            render_developer_data_refs(result, message_index)
+            render_developer_data_refs(result, message_index, settings or {})
         with tabs[1]:
             render_developer_pandas_info(result, settings)
         with tabs[2]:
@@ -538,7 +569,91 @@ def data_ref_display_label(ref: dict[str, Any], index: int) -> str:
     return ref_id or f"data_ref_{index}"
 
 
-def render_developer_data_refs(result: dict[str, Any], message_index: int) -> None:
+def dataframe_csv_bytes(frame: pd.DataFrame) -> bytes:
+    return frame.to_csv(index=False).encode("utf-8-sig")
+
+
+def dataframe_with_columns(rows: list[dict[str, Any]], columns: Any = None) -> pd.DataFrame:
+    frame = pd.DataFrame(rows)
+    ordered_columns = [str(column) for column in columns if str(column) in frame.columns] if isinstance(columns, list) else []
+    if ordered_columns:
+        frame = frame[ordered_columns + [column for column in frame.columns if column not in ordered_columns]]
+    return frame
+
+
+def result_rows_are_preview(data: dict[str, Any]) -> bool:
+    return bool(data.get("data_is_preview") or data.get("rows_are_preview") or data.get("data_is_reference"))
+
+
+def load_result_rows_for_display(data: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+    data_ref = data.get("data_ref") if isinstance(data.get("data_ref"), dict) else {}
+    rows = data.get("rows") if isinstance(data.get("rows"), list) else []
+    row_count = int_or_zero(data.get("row_count")) or len(rows)
+    if not data_ref or (rows and not result_rows_are_preview(data) and row_count <= len(rows)):
+        return {"ok": False, "rows": [], "message": ""}
+    loaded = load_web_data_ref_rows(data_ref, settings)
+    if loaded.get("ok") and loaded.get("rows"):
+        loaded["loaded_from_ref"] = True
+    return loaded
+
+
+def load_web_data_ref_rows(ref: dict[str, Any], settings: dict[str, Any], limit: int | None = None) -> dict[str, Any]:
+    if not isinstance(ref, dict) or not str(ref.get("ref_id") or "").strip():
+        return {"ok": False, "rows": [], "columns": [], "row_count": 0, "message": "data_ref 정보가 비어 있습니다."}
+
+    mock_rows = load_mock_data_ref_rows(ref)
+    if mock_rows:
+        return {
+            "ok": True,
+            "rows": mock_rows[:limit] if isinstance(limit, int) and limit >= 0 else mock_rows,
+            "columns": rows_columns(mock_rows),
+            "row_count": len(mock_rows),
+            "source": "python_mock",
+        }
+
+    api_settings = settings.get("api_settings")
+    mongo_uri = str(getattr(api_settings, "mongo_uri", "") or "").strip()
+    mongo_database = str(getattr(api_settings, "mongo_database", "") or "").strip() or "metadata_driven_agent_v3"
+    if not mongo_uri:
+        return {"ok": False, "rows": [], "columns": [], "row_count": 0, "message": "MONGODB_URI가 설정되어 있지 않습니다."}
+    try:
+        return load_data_ref_rows(
+            ref,
+            mongo_uri=mongo_uri,
+            default_database=mongo_database,
+            default_collection=DEFAULT_RESULT_COLLECTION,
+            limit=limit,
+        )
+    except Exception as exc:
+        return {"ok": False, "rows": [], "columns": [], "row_count": 0, "message": str(exc)}
+
+
+def load_mock_data_ref_rows(ref: dict[str, Any]) -> list[dict[str, Any]]:
+    try:
+        mock_api = st.session_state.get("mock_api")
+    except Exception:
+        return []
+    get_rows = getattr(mock_api, "get_rows", None)
+    if not callable(get_rows):
+        return []
+    try:
+        rows = get_rows(ref)
+    except Exception:
+        return []
+    return [dict(row) for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def rows_columns(rows: list[dict[str, Any]]) -> list[str]:
+    columns: list[str] = []
+    for row in rows:
+        for key in row:
+            text = str(key)
+            if text not in columns:
+                columns.append(text)
+    return columns
+
+
+def render_developer_data_refs(result: dict[str, Any], message_index: int, settings: dict[str, Any]) -> None:
     data_refs = result.get("data_refs") if isinstance(result.get("data_refs"), list) else []
     if not data_refs:
         render_inline_status("", "Langflow 응답에 MongoDB data_ref가 포함되어 있지 않습니다.")
@@ -548,13 +663,36 @@ def render_developer_data_refs(result: dict[str, Any], message_index: int) -> No
             continue
         label = data_ref_display_label(ref, index)
         with st.expander(f"data_ref {index}: {label}", expanded=False):
-            render_compact_json(ref, max_height=320)
+            render_summary_lines(data_ref_summary_lines(ref))
+            with st.expander("원본 JSON 보기", expanded=False):
+                render_compact_json(ref, max_height=320)
             st.download_button(
                 "data_ref 메타데이터 다운로드",
                 data=json_text(ref),
                 file_name=data_ref_download_name(ref, "json"),
                 mime="application/json",
                 key=f"chat_{message_index}_ref_meta_{index}",
+                width="stretch",
+            )
+            loaded = load_web_data_ref_rows(ref, settings)
+            rows = loaded.get("rows") if isinstance(loaded.get("rows"), list) else []
+            if not rows:
+                render_inline_status("", loaded.get("message") or "저장된 원본 row가 없습니다.", tone="warning" if loaded.get("message") else "info")
+                continue
+            frame = dataframe_with_columns(rows, loaded.get("columns"))
+            st.caption(f"원본 데이터 {int_or_zero(loaded.get('row_count')) or len(frame):,}행 · {len(frame.columns):,}열")
+            st.dataframe(
+                display_table_frame(frame, settings.get("number_mode", "comma")),
+                hide_index=True,
+                width="stretch",
+                height=chat_dataframe_height(len(frame), DATA_REF_TABLE_MAX_HEIGHT),
+            )
+            st.download_button(
+                "원본 데이터 CSV 다운로드",
+                data=dataframe_csv_bytes(frame),
+                file_name=data_ref_download_name(ref, "csv"),
+                mime="text/csv",
+                key=f"chat_{message_index}_ref_rows_{index}",
                 width="stretch",
             )
 
@@ -569,7 +707,9 @@ def render_developer_pandas_info(result: dict[str, Any], settings: dict[str, Any
     status = developer.get("pandas_execution_status") or developer.get("analysis_status") or analysis.get("status")
     if status:
         render_detail_title("Pandas 실행 상태")
-        render_compact_json(status, max_height=260)
+        render_summary_lines(status_summary_lines(status))
+        with st.expander("상태 원본 JSON 보기", expanded=False):
+            render_compact_json(status, max_height=260)
 
     for key, title in (
         ("source_summaries", "Source 요약"),
@@ -581,12 +721,16 @@ def render_developer_pandas_info(result: dict[str, Any], settings: dict[str, Any
         value = developer.get(key) or analysis.get(key)
         if value not in (None, "", [], {}):
             render_detail_title(title)
-            render_compact_json(value, max_height=300)
+            render_summary_lines(generic_summary_lines(value))
+            with st.expander(f"{title} 원본 JSON 보기", expanded=False):
+                render_compact_json(value, max_height=300)
 
     prepared = developer.get("prepared_dataframe") if isinstance(developer.get("prepared_dataframe"), dict) else {}
     if prepared:
         render_detail_title("준비된 DataFrame")
-        render_compact_json({key: value for key, value in prepared.items() if key != "preview_rows"}, max_height=260)
+        render_summary_lines(prepared_dataframe_summary_lines(prepared))
+        with st.expander("DataFrame 메타데이터 원본 JSON 보기", expanded=False):
+            render_compact_json({key: value for key, value in prepared.items() if key != "preview_rows"}, max_height=260)
         preview_rows = prepared.get("preview_rows") if isinstance(prepared.get("preview_rows"), list) else []
         if preview_rows:
             frame = pd.DataFrame(preview_rows)
@@ -606,6 +750,246 @@ def render_developer_pandas_info(result: dict[str, Any], settings: dict[str, Any
         if code:
             render_detail_title(title)
             st.code(code, language="python")
+
+
+def render_summary_lines(lines: list[str]) -> None:
+    clean_lines = [line for line in lines if str(line or "").strip()]
+    if clean_lines:
+        st.markdown(safe_markdown_text("\n".join(clean_lines)))
+
+
+def applied_scope_summary_lines(scope: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    intent_type = _clean_text(scope.get("intent_type"))
+    analysis_kind = _clean_text(scope.get("analysis_kind"))
+    if intent_type or analysis_kind:
+        lines.append(f"- 처리 의도는 `{intent_type or '-'}`이고 분석 유형은 `{analysis_kind or '-'}`입니다.")
+    datasets = _string_values(scope.get("datasets") or scope.get("source_dataset_keys"))
+    source_aliases = _string_values(scope.get("source_aliases"))
+    if datasets:
+        lines.append(f"- 사용 데이터셋은 {_inline_list(datasets)}입니다.")
+    if source_aliases:
+        lines.append(f"- flow 내부 source alias는 {_inline_list(source_aliases)}입니다.")
+    params_by_source = _as_dict(scope.get("params_by_source") or scope.get("applied_params"))
+    if params_by_source:
+        lines.append("- 조회 파라미터는 " + "; ".join(_source_mapping_sentence(source, params) for source, params in params_by_source.items()) + "입니다.")
+    filters_by_source = _as_dict(scope.get("filters_by_source") or scope.get("applied_filters"))
+    for source, filters in filters_by_source.items():
+        filter_lines = [_filter_sentence(item) for item in _as_list(filters)]
+        filter_lines = [line for line in filter_lines if line]
+        if filter_lines:
+            lines.append(f"- `{source}`에는 " + ", ".join(filter_lines) + " 조건이 적용됩니다.")
+    if not lines:
+        lines.append("- 적용 조건 정보가 포함되어 있지만 요약할 수 있는 표준 항목은 없습니다. 원본 JSON을 확인하세요.")
+    return lines
+
+
+def intent_plan_summary_lines(intent: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    route = _clean_text(intent.get("route"))
+    intent_type = _clean_text(intent.get("intent_type"))
+    analysis_kind = _clean_text(intent.get("analysis_kind"))
+    if route or intent_type or analysis_kind:
+        lines.append(f"- route는 `{route or '-'}`, 의도 유형은 `{intent_type or '-'}`, 분석 유형은 `{analysis_kind or '-'}`입니다.")
+    datasets = _string_values(intent.get("datasets"))
+    if datasets:
+        lines.append(f"- 계획에서 사용하는 데이터셋은 {_inline_list(datasets)}입니다.")
+    reasoning_steps = _string_values(intent.get("reasoning_steps"))
+    for step in reasoning_steps:
+        lines.append(f"- 판단 근거: {step}")
+    retrieval_jobs = [item for item in _as_list(intent.get("retrieval_jobs")) if isinstance(item, dict)]
+    for index, job in enumerate(retrieval_jobs, start=1):
+        dataset = _clean_text(job.get("dataset_key") or job.get("dataset"))
+        alias = _clean_text(job.get("source_alias"))
+        purpose = _clean_text(job.get("purpose") or job.get("retrieval_purpose"))
+        line = f"- 조회 작업 {index}: `{dataset or '-'}`"
+        if alias:
+            line += f"를 `{alias}` alias로 불러옵니다"
+        if purpose:
+            line += f". 목적은 {purpose}"
+        lines.append(line + ".")
+    step_plan = [item for item in _as_list(intent.get("step_plan")) if isinstance(item, dict)]
+    for index, step in enumerate(step_plan, start=1):
+        step_id = _clean_text(step.get("step_id") or step.get("id"))
+        operation = _clean_text(step.get("operation") or step.get("task"))
+        source = _clean_text(step.get("source_alias") or step.get("source"))
+        details = []
+        if step.get("group_by"):
+            details.append(f"그룹 기준 {_inline_list(_string_values(step.get('group_by')))}")
+        metric = _clean_text(step.get("metric") or step.get("aggregate_metric") or step.get("sort_by"))
+        if metric:
+            details.append(f"기준 지표 `{metric}`")
+        if step.get("top_n"):
+            details.append(f"상위 {step.get('top_n')}개")
+        suffix = f" ({', '.join(details)})" if details else ""
+        lines.append(f"- 분석 단계 {index}: `{step_id or '-'}`에서 `{operation or '-'}` 작업을 수행합니다. source는 `{source or '-'}`입니다{suffix}.")
+    if not lines:
+        lines.append("- 실행 계획 정보가 포함되어 있지만 요약할 수 있는 표준 항목은 없습니다. 원본 JSON을 확인하세요.")
+    return lines
+
+
+def pandas_analysis_summary_lines(analysis: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    status = _clean_text(analysis.get("status"))
+    if status:
+        lines.append(f"- Pandas 처리 상태는 `{status}`입니다.")
+    if analysis.get("safety_passed") not in (None, "", [], {}):
+        lines.append(f"- 안전성 검사는 `{analysis.get('safety_passed')}`입니다.")
+    if analysis.get("executed") not in (None, "", [], {}):
+        lines.append(f"- 코드 실행 여부는 `{analysis.get('executed')}`입니다.")
+    row_count = analysis.get("row_count")
+    if row_count not in (None, "", [], {}):
+        lines.append(f"- 결과 행 수는 `{row_count}`건입니다.")
+    columns = _string_values(analysis.get("columns"))
+    if columns:
+        lines.append(f"- 출력 컬럼은 {_inline_list(columns)}입니다.")
+    for step in _string_values(analysis.get("reasoning_steps")):
+        lines.append(f"- 처리 근거: {step}")
+    for warning in _string_values(analysis.get("warnings")):
+        lines.append(f"- 경고: {warning}")
+    for error in _string_values(analysis.get("errors")):
+        lines.append(f"- 오류: {error}")
+    if not lines:
+        lines.append("- Pandas 처리 정보가 포함되어 있지만 요약할 수 있는 표준 항목은 없습니다. 원본 JSON을 확인하세요.")
+    return lines
+
+
+def data_ref_summary_lines(ref: dict[str, Any]) -> list[str]:
+    lines = []
+    ref_id = _clean_text(ref.get("ref_id"))
+    if ref_id:
+        lines.append(f"- 참조 ID는 `{ref_id}`입니다.")
+    dataset = _clean_text(ref.get("dataset_key") or ref.get("dataset_label"))
+    alias = _clean_text(ref.get("source_alias"))
+    if dataset or alias:
+        lines.append(f"- 연결된 데이터셋은 `{dataset or '-'}`이고 source alias는 `{alias or '-'}`입니다.")
+    store = _clean_text(ref.get("store"))
+    collection = _clean_text(ref.get("collection_name"))
+    db_name = _clean_text(ref.get("db_name"))
+    if store or collection or db_name:
+        lines.append(f"- 저장 위치는 `{store or '-'}` / `{db_name or '-'}` / `{collection or '-'}`입니다.")
+    row_count = ref.get("row_count")
+    if row_count not in (None, "", [], {}):
+        lines.append(f"- 참조 데이터 행 수는 `{row_count}`건입니다.")
+    return lines or ["- data_ref 메타데이터가 포함되어 있습니다. 원본 JSON에서 세부 값을 확인하세요."]
+
+
+def status_summary_lines(status: Any) -> list[str]:
+    if not isinstance(status, dict):
+        return [f"- 상태 값은 `{_clean_text(status)}`입니다."]
+    lines = []
+    for key in ("status", "executed", "safety_passed", "used_fallback", "error"):
+        value = status.get(key)
+        if value not in (None, "", [], {}):
+            lines.append(f"- `{key}` 값은 `{value}`입니다.")
+    return lines or generic_summary_lines(status)
+
+
+def prepared_dataframe_summary_lines(prepared: dict[str, Any]) -> list[str]:
+    lines = []
+    row_count = prepared.get("row_count")
+    if row_count not in (None, "", [], {}):
+        lines.append(f"- 준비된 DataFrame 행 수는 `{row_count}`건입니다.")
+    columns = _string_values(prepared.get("columns"))
+    if columns:
+        lines.append(f"- 준비된 컬럼은 {_inline_list(columns)}입니다.")
+    preview_rows = _as_list(prepared.get("preview_rows"))
+    if preview_rows:
+        lines.append(f"- 화면에는 preview row `{len(preview_rows)}`건을 표시합니다.")
+    return lines or ["- 준비된 DataFrame 메타데이터가 포함되어 있습니다."]
+
+
+def generic_summary_lines(value: Any) -> list[str]:
+    if isinstance(value, list):
+        if all(not isinstance(item, (dict, list)) for item in value):
+            return [f"- {str(item)}" for item in value[:12]]
+        lines = []
+        for index, item in enumerate(value[:8], start=1):
+            if isinstance(item, dict):
+                lines.append(f"- 항목 {index}: {_dict_brief(item)}")
+            else:
+                lines.append(f"- 항목 {index}: {_clean_text(item)}")
+        return lines
+    if isinstance(value, dict):
+        return [f"- {_dict_brief(value)}"]
+    text = _clean_text(value)
+    return [f"- {text}"] if text else []
+
+
+def _source_mapping_sentence(source: Any, mapping: Any) -> str:
+    if isinstance(mapping, dict):
+        values = ", ".join(f"{key}={_brief_value(value)}" for key, value in mapping.items())
+    else:
+        values = _brief_value(mapping)
+    return f"`{source}`: {values}"
+
+
+def _filter_sentence(item: Any) -> str:
+    if not isinstance(item, dict):
+        return _clean_text(item)
+    field = _clean_text(item.get("field") or item.get("column") or item.get("filter_key"))
+    op = _clean_text(item.get("op") or item.get("operator") or "eq")
+    value = item.get("values") if item.get("values") not in (None, "", [], {}) else item.get("value")
+    op_label = {
+        "eq": "=",
+        "in": "포함",
+        "not_in": "제외",
+        "gt": ">",
+        "gte": ">=",
+        "lt": "<",
+        "lte": "<=",
+        "contains": "포함",
+    }.get(op, op)
+    if field:
+        return f"`{field}` {op_label} {_brief_value(value)}"
+    return _dict_brief(item)
+
+
+def _dict_brief(value: dict[str, Any]) -> str:
+    parts = []
+    for key, item in value.items():
+        if item in (None, "", [], {}):
+            continue
+        parts.append(f"`{key}`={_brief_value(item)}")
+        if len(parts) >= 6:
+            break
+    return ", ".join(parts) if parts else "세부 값 없음"
+
+
+def _brief_value(value: Any) -> str:
+    if isinstance(value, list):
+        return _inline_list(_string_values(value), limit=6) if value else "[]"
+    if isinstance(value, dict):
+        return "{" + _dict_brief(value) + "}"
+    return f"`{_clean_text(value)}`"
+
+
+def _inline_list(values: list[str], limit: int = 10) -> str:
+    shown = [f"`{value}`" for value in values[:limit]]
+    suffix = f" 외 {len(values) - limit}개" if len(values) > limit else ""
+    return ", ".join(shown) + suffix
+
+
+def _string_values(value: Any) -> list[str]:
+    if value in (None, "", [], {}):
+        return []
+    if isinstance(value, list):
+        return [_clean_text(item) for item in value if _clean_text(item)]
+    if isinstance(value, (tuple, set)):
+        return [_clean_text(item) for item in value if _clean_text(item)]
+    return [_clean_text(value)]
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return list(value) if isinstance(value, (list, tuple, set)) else []
+
+
+def _clean_text(value: Any) -> str:
+    return str(value or "").strip()
 
 
 def authoring_type_from_label(label: str) -> str:

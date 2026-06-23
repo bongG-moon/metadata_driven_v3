@@ -17,7 +17,7 @@ source별 필수 정보: oracle은 db_key와 query_template이 필요하고, dat
 goodocs에는 db_key 또는 query_template을 요구하지 마세요. sheet_name은 선택 사항이며 사용자가 명시했거나 특정 sheet/tab을 읽어야 한다고 말한 경우에만 포함하세요.
 required_params는 DATE로 고정된 값이 아닙니다. query_template/API URL 실행에 반드시 필요한 변수만 넣으세요.
 예를 들어 query_template에 {{DATE}} 또는 {{LOT_ID}} placeholder가 있거나 사용자가 해당 값을 필수 파라미터라고 명시한 경우에만 required_params에 넣습니다.
-필수 query parameter가 없으면 required_params=[]와 required_param_mappings={}로 설정하세요.
+필수 query parameter가 없으면 required_params는 빈 list로, required_param_mappings는 빈 JSON object로 설정하세요.
 DATE가 filter_mappings에 있거나 date_format이 있다는 이유만으로 DATE를 required_params에 넣지 마세요. 그런 DATE는 optional filter일 수 있습니다.
 metadata에는 두 mapping layer가 있습니다. main_flow_filters는 표준 filter key를 정의하고, table_catalog.filter_mappings는 그 표준 key를 이 dataset의 물리 column에 매핑합니다.
 dataset별 mapping을 main_flow_filters에 넣지 마세요. 각 dataset의 DATE/OPER_NAME/product/equipment mapping은 table_catalog.filter_mappings에 넣으세요.

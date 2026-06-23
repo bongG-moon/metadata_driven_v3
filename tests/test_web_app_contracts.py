@@ -56,3 +56,57 @@ def test_authoring_example_text_reads_flow_example_files() -> None:
 
     assert "query_template" in text
     assert "filter_mappings" in text
+
+
+def test_chat_metadata_summary_helpers_render_korean_descriptions() -> None:
+    scope_lines = app.applied_scope_summary_lines(
+        {
+            "intent_type": "multi_source_analysis",
+            "analysis_kind": "aggregate_join",
+            "datasets": ["production_today", "wip_today"],
+            "source_aliases": ["production_data", "wip_data"],
+            "params_by_source": {"production_data": {"DATE": "20260622"}},
+            "filters_by_source": {"production_data": [{"field": "OPER_NAME", "op": "in", "values": ["D/A1", "D/A2"]}]},
+        }
+    )
+    intent_lines = app.intent_plan_summary_lines(
+        {
+            "route": "data_analysis",
+            "intent_type": "multi_source_analysis",
+            "analysis_kind": "aggregate_join",
+            "reasoning_steps": ["생산량과 재공을 함께 조회합니다."],
+            "step_plan": [{"step_id": "join_result", "operation": "left_join", "source_alias": "production_data"}],
+        }
+    )
+    pandas_lines = app.pandas_analysis_summary_lines(
+        {
+            "status": "ok",
+            "executed": True,
+            "row_count": 3,
+            "columns": ["OPER_GROUP", "PRODUCTION", "WIP"],
+            "reasoning_steps": ["공정 그룹별로 집계했습니다."],
+        }
+    )
+
+    assert any("사용 데이터셋" in line for line in scope_lines)
+    assert any("조회 파라미터" in line for line in scope_lines)
+    assert any("판단 근거" in line for line in intent_lines)
+    assert any("분석 단계" in line for line in intent_lines)
+    assert any("Pandas 처리 상태" in line for line in pandas_lines)
+    assert any("출력 컬럼" in line for line in pandas_lines)
+
+
+def test_result_display_helpers_keep_full_rows_and_csv_bytes() -> None:
+    rows = [
+        {"B": 2, "A": "제품1"},
+        {"B": 3, "A": "제품2"},
+    ]
+
+    frame = app.dataframe_with_columns(rows, ["A", "B"])
+    csv_bytes = app.dataframe_csv_bytes(frame)
+
+    assert list(frame.columns) == ["A", "B"]
+    assert app.result_rows_are_preview({"data_is_preview": True}) is True
+    assert app.result_rows_are_preview({"rows": rows, "row_count": 2}) is False
+    assert csv_bytes.startswith(b"\xef\xbb\xbf")
+    assert "제품1" in csv_bytes.decode("utf-8-sig")

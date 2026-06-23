@@ -1079,6 +1079,8 @@ def test_authoring_prompt_templates_expose_only_expected_langflow_variables() ->
         template = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
         variables = set(re.findall(r"(?<!\{)\{([^{}]+)\}(?!\})", template))
 
+        assert "{}" not in template
+        assert "{{}}" not in template
         assert variables == expected_variables
 
 
