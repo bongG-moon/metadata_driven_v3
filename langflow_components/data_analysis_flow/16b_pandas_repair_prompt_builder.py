@@ -51,6 +51,7 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Use only source aliases that are actual keys in sources/source summaries, normally retrieval_jobs[*].source_alias. Do not invent generic aliases.",
             "plan and state are Python dicts. Use plan['key'], plan.get('key'), state.get('key'); never use plan.key or state.key.",
             "The code must assign the final pandas DataFrame to result_df.",
+            "Do not create or reference local variable names that start with an underscore, such as _prod_df or _filtered_df. Underscores inside names such as prod_df, wip_today_df, or WAFER_OUT_QTY are allowed.",
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, subprocess, numpy, np, or np.where.",
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
             "For date/date-format repairs, do not import datetime/date/timedelta. Use pandas only: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, or direct string comparison with DATE values already present in the plan.",

@@ -645,6 +645,8 @@ def test_pandas_prompt_tells_llm_to_handle_dates_without_datetime_imports() -> N
     assert "do not import datetime/date/timedelta" in prompt
     assert "pd.to_datetime(..., errors='coerce')" in prompt
     assert "prefer using that string value directly" in prompt
+    assert "Do not create or reference local variable names that start with an underscore" in prompt
+    assert "Underscores inside names such as prod_df" in prompt
 
 
 def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any) -> None:
@@ -2322,6 +2324,8 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     assert "For date/date-format repairs" in prompt_payload["prompt"]
     assert "do not import datetime/date/timedelta" in prompt_payload["prompt"]
     assert "pd.to_datetime(..., errors='coerce')" in prompt_payload["prompt"]
+    assert "Do not create or reference local variable names that start with an underscore" in prompt_payload["prompt"]
+    assert "Underscores inside names such as prod_df" in prompt_payload["prompt"]
 
     retry_exceeded = repair_payload_builder.build_pandas_repair_payload({**failed, "pandas_retry_attempt": 1})
     retry_exceeded_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(retry_exceeded)

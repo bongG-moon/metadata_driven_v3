@@ -52,6 +52,7 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Do not expect both a physical column and its standard alias to remain in sources; use standard names from product_grain, group_by, join_keys, and analysis_output_columns.",
             "Use physical source column names only when the source summary shows that column and the plan explicitly asks for a source-only measure/detail column with no standard alias.",
             "Do not translate measure columns to Korean labels, and do not keep temporary names such as PRODUCTION_sum, WIP_sum, OUT_PLAN_sum, or lowercase rank in result_df.",
+            "Do not create or reference local variable names that start with an underscore, such as _prod_df or _filtered_df. Underscores inside names such as prod_df, wip_today_df, or WAFER_OUT_QTY are allowed.",
             "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, or subprocess.",
             "Do not use numpy, np, or np.where. Use pandas Series operations such as div, fillna, where, mask, and boolean comparisons.",
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
