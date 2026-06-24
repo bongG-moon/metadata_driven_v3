@@ -46,7 +46,9 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
     if recipe:
         _apply_analysis_recipe(plan, recipe_key, recipe, metadata, question, request_date, notes)
     _repair_metric_grain_plan(plan, metadata, question, notes)
+    _repair_quantity_term_plan(plan, metadata, question, notes)
     _repair_product_production_wip_join_plan(plan, metadata, question, request_date, notes)
+    _repair_explicit_grain_plan(plan, metadata, question, notes)
     normalized_jobs = []
     raw_jobs = plan.get("retrieval_jobs", [])
     if not raw_jobs and plan.get("intent_type") != "finish":
@@ -368,6 +370,182 @@ def _repair_metric_grain_plan(
             ]
             plan["metric_grain_policy"] = "question_grain_or_total"
             _append_once(notes, "명시적 원본/상세 데이터 요청이 아니므로 metric detail_rows 계획을 요청 grain 기준 집계로 보정했습니다.")
+
+
+def _repair_quantity_term_plan(
+    plan: dict[str, Any],
+    metadata: dict[str, Any],
+    question: str,
+    notes: list[str],
+) -> None:
+    if plan.get("matched_analysis_recipe"):
+        return
+    matched_terms = _matched_quantity_terms(question, metadata, plan)
+    if not matched_terms:
+        return
+    plan["matched_quantity_terms"] = matched_terms
+    catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
+    for term in matched_terms:
+        aggregation = str(term.get("aggregation") or "").strip().lower()
+        source_column = str(term.get("quantity_column") or "").strip()
+        output_column = str(term.get("output_column") or source_column).strip()
+        if aggregation != "nunique" or not source_column or not output_column:
+            continue
+        if str(plan.get("analysis_kind") or "") in {"equipment_by_model"}:
+            continue
+        dataset_key = _quantity_term_dataset_key(term, catalog, question)
+        if not dataset_key:
+            continue
+        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
+        source_alias = _ensure_quantity_term_job(plan, dataset_key, dataset_catalog, catalog, source_column)
+        if not source_alias:
+            continue
+        group_by = _explicit_grain_from_question(question, metadata)
+        if group_by is None:
+            group_by = [] if _metric_question_defaults_to_total(question) else plan.get("product_grain", [])
+        group_by = _unique(group_by)
+        plan["analysis_kind"] = "unique_count_by_group"
+        if str(plan.get("intent_type") or "") not in {"finish", "followup_transform"}:
+            plan["intent_type"] = "single_retrieval_analysis"
+        plan["datasets"] = _unique([dataset_key, *(plan.get("datasets") if isinstance(plan.get("datasets"), list) else [])])
+        plan["analysis_output_columns"] = _unique([*group_by, output_column])
+        plan["step_plan"] = [
+            {
+                "step_id": f"count_{term.get('key') or output_column}",
+                "operation": "unique_count_by_group",
+                "source_alias": source_alias,
+                "group_by": group_by,
+                "count_column": source_column,
+                "output_column": output_column,
+                "output_columns": [*group_by, output_column],
+            }
+        ]
+        _append_once(notes, "quantity_terms metadata converted a distinct-count request into a unique_count_by_group plan.")
+        return
+
+
+def _matched_quantity_terms(question: str, metadata: dict[str, Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    quantity_terms = domain.get("quantity_terms") if isinstance(domain.get("quantity_terms"), dict) else {}
+    if not quantity_terms:
+        return []
+    plan_text_parts: list[str] = [
+        str(plan.get("metric") or ""),
+        str(plan.get("target_column") or ""),
+        " ".join(str(item) for item in plan.get("analysis_output_columns", []) if str(item or "").strip())
+        if isinstance(plan.get("analysis_output_columns"), list)
+        else "",
+    ]
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if not isinstance(step, dict):
+            continue
+        plan_text_parts.extend(
+            [
+                str(step.get("metric") or ""),
+                str(step.get("count_column") or ""),
+                str(step.get("output_column") or ""),
+                " ".join(str(item) for item in step.get("output_columns", []) if str(item or "").strip())
+                if isinstance(step.get("output_columns"), list)
+                else "",
+            ]
+        )
+    plan_text = " ".join(plan_text_parts)
+    matched: list[dict[str, Any]] = []
+    for quantity_key, term in quantity_terms.items():
+        if not isinstance(term, dict):
+            continue
+        aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+        output_column = str(term.get("output_column") or "").strip()
+        quantity_column = str(term.get("quantity_column") or "").strip()
+        match_values = [quantity_key, term.get("display_name"), *aliases, output_column]
+        if not (_mentions_any(question, match_values) or _mentions_any(plan_text, match_values)):
+            continue
+        matched.append(
+            {
+                "key": str(quantity_key),
+                "display_name": term.get("display_name", ""),
+                "aliases": deepcopy(aliases),
+                "dataset_key": term.get("dataset_key"),
+                "dataset_family": term.get("dataset_family"),
+                "quantity_column": quantity_column,
+                "aggregation": term.get("aggregation"),
+                "output_column": output_column,
+                "condition": deepcopy(term.get("condition", {})) if isinstance(term.get("condition"), dict) else {},
+            }
+        )
+    return matched
+
+
+def _quantity_term_dataset_key(term: dict[str, Any], catalog: dict[str, Any], question: str) -> str:
+    dataset_key = str(term.get("dataset_key") or "").strip()
+    if dataset_key and isinstance(catalog.get(dataset_key), dict):
+        return dataset_key
+    family = str(term.get("dataset_family") or "").strip()
+    if family:
+        return _dataset_for_family(family, catalog, question)
+    return ""
+
+
+def _ensure_quantity_term_job(
+    plan: dict[str, Any],
+    dataset_key: str,
+    dataset_catalog: dict[str, Any],
+    catalog: dict[str, Any],
+    source_column: str,
+) -> str:
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    family = str(dataset_catalog.get("dataset_family") or "")
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        job_key = str(job.get("dataset_key") or "").strip()
+        if job_key == dataset_key:
+            alias = str(job.get("source_alias") or dataset_key).strip()
+            job["source_alias"] = alias
+            required_columns = job.get("required_columns") if isinstance(job.get("required_columns"), list) else []
+            job["required_columns"] = _unique([*_source_required_columns(required_columns, dataset_catalog), source_column])
+            return alias
+        job_catalog = catalog.get(job_key) if isinstance(catalog.get(job_key), dict) else {}
+        job_family = str(job_catalog.get("dataset_family") or "")
+        if family and job_family == family:
+            # Keep an existing job for the same metadata family but align it to the matched term dataset.
+            job["dataset_key"] = dataset_key
+            alias = str(job.get("source_alias") or dataset_key).strip()
+            job["source_alias"] = alias
+            required_columns = job.get("required_columns") if isinstance(job.get("required_columns"), list) else []
+            job["required_columns"] = _unique([*_source_required_columns(required_columns, dataset_catalog), source_column])
+            return alias
+    alias = dataset_key
+    jobs.append(
+        {
+            "dataset_key": dataset_key,
+            "source_alias": alias,
+            "required_columns": [source_column],
+            "filters": [],
+            "params": {},
+            "purpose": "quantity_term_unique_count",
+        }
+    )
+    plan["retrieval_jobs"] = jobs
+    return alias
+
+
+def _source_required_columns(columns: list[Any], dataset_catalog: dict[str, Any]) -> list[str]:
+    catalog_columns = set(str(item) for item in _unique(dataset_catalog.get("columns", [])) if str(item or "").strip())
+    mapped_columns: set[str] = set()
+    for field in ("filter_mappings", "standard_column_aliases", "required_param_mappings"):
+        mapping = dataset_catalog.get(field) if isinstance(dataset_catalog.get(field), dict) else {}
+        for value in mapping.values():
+            candidates = value if isinstance(value, list) else [value]
+            mapped_columns.update(str(item) for item in candidates if str(item or "").strip())
+    result: list[str] = []
+    for column in columns:
+        text = str(column or "").strip()
+        if not text:
+            continue
+        if text in catalog_columns or text in mapped_columns:
+            result.append(text)
+    return _unique(result)
 
 
 def _repair_product_production_wip_join_plan(
@@ -790,6 +968,8 @@ def _explicit_grain_from_question(question: str, metadata: dict[str, Any]) -> li
     text = str(question or "")
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     product_grain = domain.get("product_key_columns", []) if isinstance(domain.get("product_key_columns"), list) else []
+    if _mentions_any(text, ["DEVICE", "device", "DEVICE by", "by DEVICE"]):
+        return ["DEVICE"]
     if _mentions_any(text, ["제품별", "제품 별", "제품 단위", "제품마다"]):
         return product_grain
     if _mentions_any(text, ["MODE별", "MODE 별", "모드별"]):
@@ -801,6 +981,41 @@ def _explicit_grain_from_question(question: str, metadata: dict[str, Any]) -> li
     if _mentions_any(text, ["공정별", "공정 별"]):
         return ["OPER_NAME"]
     return None
+
+
+def _repair_explicit_grain_plan(plan: dict[str, Any], metadata: dict[str, Any], question: str, notes: list[str]) -> None:
+    explicit_grain = _explicit_grain_from_question(question, metadata)
+    if explicit_grain is None:
+        return
+    if not explicit_grain:
+        return
+    current_grain = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
+    if current_grain == explicit_grain:
+        return
+    should_override = (
+        str(plan.get("analysis_kind") or "") in {"rank_top_n", "rank_bottom_n", "aggregate_join", "generic_aggregate_recipe", "aggregate_wip_total"}
+        or _mentions_any(question, ["top", "rank", "상위", "많은", "가장", "별로", "별"])
+    )
+    if not should_override:
+        return
+    plan["product_grain"] = deepcopy(explicit_grain)
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if not isinstance(step, dict):
+            continue
+        operation = str(step.get("operation") or "").strip()
+        if operation in {"rank_top_n", "rank_bottom_n", "aggregate_sum", "aggregate_by_group", "aggregate_total"}:
+            step["group_by"] = deepcopy(explicit_grain)
+            metric = str(step.get("metric") or plan.get("metric") or "").strip()
+            if metric and "output_columns" not in step:
+                step["output_columns"] = [*deepcopy(explicit_grain), metric]
+    if isinstance(plan.get("analysis_output_columns"), list):
+        metric_columns = [
+            str(column)
+            for column in plan["analysis_output_columns"]
+            if str(column or "").strip() and str(column) not in current_grain
+        ]
+        plan["analysis_output_columns"] = _unique([*deepcopy(explicit_grain), *metric_columns])
+    _append_once(notes, "질문에 명시된 집계/랭킹 축을 기준으로 group_by를 보정했습니다.")
 
 
 def _recipe_datasets(recipe: dict[str, Any], metadata: dict[str, Any], question: str) -> list[dict[str, Any]]:
@@ -1411,15 +1626,19 @@ def _augmented_filters_for_job(
         blocked_filter_fields=_blocked_filter_fields(plan),
     )
     merged = [deepcopy(item) for item in raw_filters if isinstance(item, dict)]
-    merged.extend(deepcopy(item) for item in plan_filters if isinstance(item, dict))
+    source_specific_fields = _filter_fields(merged)
+    merged.extend(deepcopy(item) for item in plan_filters if isinstance(item, dict) and str(item.get("field") or "").strip() not in source_specific_fields)
     if any(str(item.get("field") or "").strip() == "DATE" for item in inferred_filters if isinstance(item, dict)):
         merged = [item for item in merged if str(item.get("field") or "").strip() != "DATE"]
-    merged.extend(deepcopy(item) for item in inferred_filters if isinstance(item, dict))
+        source_specific_fields.discard("DATE")
+    merged.extend(deepcopy(item) for item in inferred_filters if isinstance(item, dict) and str(item.get("field") or "").strip() not in source_specific_fields)
     if plan.get("state_product_keys") and _supports_product_grain_filter(dataset_catalog, plan):
         merged.append({"field": "PRODUCT_GRAIN", "op": "from_state"})
     blocked_fields = _blocked_filter_fields(plan)
     if blocked_fields:
         merged = _remove_filter_fields(merged, blocked_fields)
+    if _all_process_scope_for_job(question, job, dataset_catalog):
+        merged = _remove_filter_fields(merged, ["OPER_NAME"])
     merged = _drop_conflicting_product_alias_filters(merged, inferred_filters, metadata)
     return _filters_for_dataset(_dedupe_filters(merged), dataset_key, dataset_catalog)
 
@@ -1439,6 +1658,21 @@ def _filters_for_dataset(filters: list[Any], dataset_key: str, catalog: dict[str
                 _normalize_date_filter(clean_item, dataset_key, catalog)
             result.append(clean_item)
     return _dedupe_filters(result)
+
+
+def _filter_fields(filters: list[Any]) -> set[str]:
+    return {str(item.get("field") or "").strip() for item in filters if isinstance(item, dict) and str(item.get("field") or "").strip()}
+
+
+def _all_process_scope_for_job(question: str, job: dict[str, Any], dataset_catalog: dict[str, Any]) -> bool:
+    if not _mentions_any(question, ["전 공정", "전공정", "전체 공정", "전체공정", "all process", "all processes", "all operation", "all operations"]):
+        return False
+    job_text = " ".join(
+        str(job.get(key) or "")
+        for key in ("source_alias", "purpose", "job_id", "dataset_key")
+    ).lower()
+    family = str(dataset_catalog.get("dataset_family") or "").lower()
+    return any(token in job_text for token in ("all", "current", "wip", "전체", "전공정")) or family in {"wip", "inventory"}
 
 
 def _infer_filters(
@@ -2116,7 +2350,12 @@ def _attach_result_scope_columns(
     metadata: dict[str, Any],
     question: str,
 ) -> None:
-    scope_columns: list[dict[str, Any]] = []
+    scope_columns: list[dict[str, Any]] = [
+        deepcopy(item)
+        for item in plan.get("result_scope_columns", [])
+        if isinstance(item, dict)
+    ] if isinstance(plan.get("result_scope_columns"), list) else []
+    product_scope_fields = _append_product_term_scope_columns(scope_columns, metadata, question)
     for job in jobs:
         if not isinstance(job, dict):
             continue
@@ -2126,6 +2365,8 @@ def _attach_result_scope_columns(
                 continue
             field = str(condition.get("field") or "").strip()
             if not field or field in {"DATE", "PRODUCT_GRAIN"}:
+                continue
+            if field in product_scope_fields:
                 continue
             values = _scope_condition_values(condition)
             if field == "OPER_NAME":
@@ -2139,6 +2380,50 @@ def _attach_result_scope_columns(
                 _append_scope_column(scope_columns, field, _scope_display_value(values), field)
     if scope_columns:
         plan["result_scope_columns"] = scope_columns
+
+
+def _append_product_term_scope_columns(scope_columns: list[dict[str, Any]], metadata: dict[str, Any], question: str) -> set[str]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    terms = domain.get("product_terms") if isinstance(domain.get("product_terms"), dict) else {}
+    raw_fields: set[str] = set()
+    for term_key, term in terms.items():
+        if not isinstance(term, dict):
+            continue
+        condition = term.get("condition") if isinstance(term.get("condition"), dict) else {}
+        if not condition:
+            continue
+        aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+        match_values = [term_key, term.get("display_name"), *aliases]
+        if not _mentions_any(question, match_values):
+            continue
+        label = _matched_term_label(question, str(term_key), term)
+        output_column = str(term.get("result_scope_column") or "PRODUCT_GROUP").strip()
+        source_field = next((str(field) for field in condition if str(field or "").strip()), output_column)
+        _append_scope_column(scope_columns, output_column, label, source_field)
+        raw_fields.update(str(field) for field in condition if str(field or "").strip())
+    return raw_fields
+
+
+def _matched_term_label(question: str, term_key: str, term: dict[str, Any]) -> str:
+    aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+    candidates = [*aliases, term.get("display_name"), term_key]
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text and _alias_in_text(question, text):
+            return _clean_scope_label(text)
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            return _clean_scope_label(text)
+    return term_key
+
+
+def _clean_scope_label(value: Any) -> str:
+    text = str(value or "").strip()
+    for suffix in (" 제품", "제품"):
+        if text.endswith(suffix) and len(text) > len(suffix):
+            text = text[: -len(suffix)].strip()
+    return text
 
 
 def _scope_condition_values(condition: dict[str, Any]) -> list[str]:
@@ -2217,6 +2502,7 @@ def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any]) -
                 continue
             if spec.get("exists") and spec.get("not_in"):
                 result.append({"field": field_name, "op": "not_empty"})
+                continue
             elif spec.get("exists"):
                 result.append({"field": field_name, "op": "not_empty"})
             if isinstance(spec.get("starts_with"), str):

@@ -620,6 +620,245 @@ def test_intent_prompt_tells_llm_to_use_group_label_not_raw_rank_field(monkeypat
     assert "For 차수별/공정 차수별 questions, group by OPER_NUM" in prompt
 
 
+def test_intent_prompt_tells_llm_to_separate_comparison_scopes(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_prompt_builder = load_component("langflow_components/data_analysis_flow/02_intent_prompt_builder.py")
+
+    payload = request_loader.build_request_payload(
+        "오늘 INPUT 공정 실적 대비해서 B/G1공정 실적이 얼마나 되는지 제품별로 알려줘",
+        "test-session",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+
+    prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
+
+    assert "When the user compares A versus B scopes" in prompt
+    assert "source-specific retrieval_jobs filters" in prompt
+    assert "Do not put the B scope filter on the A source" in prompt
+    assert "all process" in prompt
+    assert "PRODUCT_GROUP" in prompt
+
+
+def test_intent_normalizer_keeps_source_specific_process_filters(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "오늘 INPUT 공정 실적 대비해서 B/G1공정 실적이 얼마나 되는지 제품별로 알려줘",
+        "test-session",
+        request_date="20260623",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    product_keys = payload["metadata"]["domain_items"]["product_key_columns"]
+    llm_json = {
+        "intent_type": "multi_source_analysis",
+        "analysis_kind": "aggregate_join",
+        "datasets": ["production_today", "production_today"],
+        "filters": [{"field": "OPER_NAME", "op": "in", "values": ["B/G1"]}],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "input_production",
+                "filters": [{"field": "OPER_NAME", "op": "eq", "value": "INPUT"}],
+            },
+            {
+                "dataset_key": "production_today",
+                "source_alias": "bg1_production",
+                "filters": [{"field": "OPER_NAME", "op": "eq", "value": "B/G1"}],
+            },
+        ],
+        "step_plan": [
+            {
+                "step_id": "agg_input",
+                "operation": "aggregate_sum",
+                "source_alias": "input_production",
+                "metric": "PRODUCTION",
+                "group_by": product_keys,
+                "output_column": "INPUT_PRODUCTION",
+            },
+            {
+                "step_id": "agg_bg1",
+                "operation": "aggregate_sum",
+                "source_alias": "bg1_production",
+                "metric": "PRODUCTION",
+                "group_by": product_keys,
+                "output_column": "BG1_PRODUCTION",
+            },
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
+    jobs = {job["source_alias"]: job for job in payload["retrieval_jobs"]}
+
+    assert _filter_values(jobs["input_production"], "OPER_NAME") == ["INPUT"]
+    assert _filter_values(jobs["bg1_production"], "OPER_NAME") == ["B/G1"]
+
+
+def test_intent_normalizer_labels_product_term_scope_without_raw_condition_column(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "오늘 HBM재공 수량을 세부 공정별로 알려줘",
+        "test-session",
+        request_date="20260623",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_wip_total",
+        "datasets": ["wip_today"],
+        "retrieval_jobs": [{"dataset_key": "wip_today", "source_alias": "wip_data"}],
+        "step_plan": [
+            {
+                "step_id": "aggregate_wip_by_process",
+                "operation": "aggregate_sum",
+                "source_alias": "wip_data",
+                "metric": "WIP",
+                "group_by": ["OPER_NAME"],
+                "output_columns": ["OPER_NAME", "WIP"],
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+
+    hbm_filters = payload["retrieval_jobs"][0].get("filters", [])
+    assert any(
+        item.get("field") == "TSV_DIE_TYP" and item.get("op") in {"exists", "not_empty"}
+        for item in hbm_filters
+        if isinstance(item, dict)
+    )
+    assert {"column": "PRODUCT_GROUP", "value": "HBM", "source_field": "TSV_DIE_TYP"} in plan["result_scope_columns"]
+    assert not any(item.get("column") == "TSV_DIE_TYP" for item in plan["result_scope_columns"])
+
+
+def test_intent_normalizer_clears_process_filter_for_all_process_source(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "오늘 제품별로 INPUT공정 실적과 현재 전 공정 재공 수량을 같이 보여줘",
+        "test-session",
+        request_date="20260623",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    product_keys = payload["metadata"]["domain_items"]["product_key_columns"]
+    llm_json = {
+        "intent_type": "multi_source_analysis",
+        "analysis_kind": "aggregate_join",
+        "datasets": ["production_today", "wip_today"],
+        "filters": [{"field": "OPER_NAME", "op": "eq", "value": "INPUT"}],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "prod_input",
+                "filters": [{"field": "OPER_NAME", "op": "eq", "value": "INPUT"}],
+            },
+            {"dataset_key": "wip_today", "source_alias": "wip_current_all_process", "filters": []},
+        ],
+        "step_plan": [
+            {"step_id": "agg_input", "operation": "aggregate_sum", "source_alias": "prod_input", "metric": "PRODUCTION", "group_by": product_keys},
+            {"step_id": "agg_wip", "operation": "aggregate_sum", "source_alias": "wip_current_all_process", "metric": "WIP", "group_by": product_keys},
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
+    jobs = {job["source_alias"]: job for job in payload["retrieval_jobs"]}
+
+    assert _filter_values(jobs["prod_input"], "OPER_NAME") == ["INPUT"]
+    assert _filter_values(jobs["wip_current_all_process"], "OPER_NAME") == []
+
+
+def test_intent_normalizer_uses_explicit_device_grain_for_rank(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "오늘 MOBILE제품 기준으로 생산량이 가장 많은 DEVICE 3개를 알려줘",
+        "test-session",
+        request_date="20260623",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    product_keys = payload["metadata"]["domain_items"]["product_key_columns"]
+    llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "rank_top_n",
+        "datasets": ["production_today"],
+        "top_n": 3,
+        "retrieval_jobs": [{"dataset_key": "production_today", "source_alias": "production_today"}],
+        "step_plan": [
+            {
+                "step_id": "rank_mobile_products",
+                "operation": "rank_top_n",
+                "source_alias": "production_today",
+                "metric": "PRODUCTION",
+                "group_by": product_keys,
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+
+    assert plan["product_grain"] == ["DEVICE"]
+    assert plan["step_plan"][0]["group_by"] == ["DEVICE"]
+    assert plan["step_plan"][0]["top_n"] == 3
+    mobile_filters = payload["retrieval_jobs"][0].get("filters", [])
+    assert any(
+        item.get("field") == "MCP_NO" and item.get("op") == "empty"
+        for item in mobile_filters
+        if isinstance(item, dict)
+    )
+
+
+def test_intent_normalizer_uses_quantity_term_source_column_for_unique_count(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload("DA EQP_COUNT", "test-session", request_date="20260623")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "detail_rows",
+        "datasets": ["equipment_status"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "equipment_status",
+                "source_alias": "equipment_data",
+                "required_columns": ["EQUIP_COUNT"],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "equipment_count",
+                "operation": "aggregate_total",
+                "source_alias": "equipment_data",
+                "metric": "EQUIP_COUNT",
+                "output_columns": ["EQUIP_COUNT"],
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+    job = payload["retrieval_jobs"][0]
+
+    assert plan["analysis_kind"] == "unique_count_by_group"
+    assert plan["step_plan"][0]["operation"] == "unique_count_by_group"
+    assert plan["step_plan"][0]["count_column"] == "EQPID"
+    assert plan["step_plan"][0]["output_column"] == "EQP_COUNT"
+    assert "EQPID" in job["required_columns"]
+    assert "EQUIP_COUNT" not in job["required_columns"]
+
+
 def test_pandas_prompt_tells_llm_to_handle_dates_without_datetime_imports() -> None:
     pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
     payload = {
