@@ -92,6 +92,7 @@ def _execute_generated_pandas_code(
     state: dict[str, Any],
 ) -> dict[str, Any]:
     code = _strip_harmless_pandas_import(str(pandas_plan.get("code", "")))
+    repairable_errors: list[str] = []
     safety_errors = _check_code_safety(code)
     if safety_errors:
         return {
@@ -144,12 +145,18 @@ def _execute_generated_pandas_code(
         fallback_df = _fallback_result_df(plan, runtime_sources)
         if _should_replace_empty_generated_result(result_df, fallback_df):
             result_df = _normalize_result_columns(fallback_df, plan)
+            fallback_error = "Generated pandas code returned an empty contract result; executor fallback was used."
+            repairable_errors.append(fallback_error)
             code = code + "\n# executor_fallback: generated code returned an empty contract result"
         elif _should_replace_incomplete_generated_result(result_df, fallback_df, plan):
             result_df = _normalize_result_columns(fallback_df, plan)
+            fallback_error = "Generated pandas code missed required plan output columns; executor fallback was used."
+            repairable_errors.append(fallback_error)
             code = code + "\n# executor_fallback: generated code missed required plan output columns"
         elif _should_replace_filter_mismatched_generated_result(result_df, fallback_df, plan):
             result_df = _normalize_result_columns(fallback_df, plan)
+            fallback_error = "Generated pandas code did not match pandas-applied source filters; executor fallback was used."
+            repairable_errors.append(fallback_error)
             code = code + "\n# executor_fallback: generated code did not match pandas-applied source filters"
         result_df = _normalize_result_columns(_collapse_over_detailed_aggregate_result(result_df, plan), plan)
     except Exception as exc:
@@ -168,6 +175,7 @@ def _execute_generated_pandas_code(
                 "executed": False,
             }
         result_df = _normalize_result_columns(fallback_df, plan)
+        repairable_errors.append(f"Generated pandas code failed before executor fallback: {exc}")
         code = code + f"\n# executor_fallback: {exc}"
 
     rows = result_df.to_dict(orient="records")
@@ -185,6 +193,8 @@ def _execute_generated_pandas_code(
         "product_key_count": len(product_key_values),
         "intermediate_refs": {},
         "errors": [],
+        "repairable_errors": repairable_errors,
+        "used_executor_fallback": bool(repairable_errors),
         "safety_passed": True,
         "executed": True,
         "output_columns": pandas_plan.get("output_columns", []),
@@ -1578,10 +1588,11 @@ def _json_ready(value: Any) -> Any:
 
 def _mark_repair_attempt_result(repair_value: Any, analysis: dict[str, Any]) -> dict[str, Any]:
     repair = deepcopy(repair_value) if isinstance(repair_value, dict) else {}
+    final_errors = _unique_text([*_as_text_list(analysis.get("errors")), *_as_text_list(analysis.get("repairable_errors"))])
     repair["executed"] = True
-    repair["completed"] = not bool(analysis.get("errors"))
-    repair["status"] = "repaired" if not analysis.get("errors") else "repair_failed"
-    repair["final_errors"] = _as_text_list(analysis.get("errors"))
+    repair["completed"] = not bool(final_errors)
+    repair["status"] = "repaired" if not final_errors else "repair_failed"
+    repair["final_errors"] = final_errors
     return repair
 
 
@@ -1602,6 +1613,15 @@ def _as_text_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item or "").strip()]
+
+
+def _unique_text(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
 
 def _text(value: Any) -> str:
     if value is None:

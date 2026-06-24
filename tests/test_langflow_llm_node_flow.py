@@ -2550,6 +2550,58 @@ def test_pandas_executor_prefers_final_step_columns_over_narrow_plan_columns() -
     assert "executor_fallback" in result["analysis"]["analysis_code"]
 
 
+def test_pandas_repair_builder_repairs_executor_fallback_success_payload() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
+    repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
+    payload = {
+        "request": {"question": "생산량을 MODE별로 알려줘"},
+        "intent_plan": {
+            "analysis_kind": "rank_top_n",
+            "product_grain": ["MODE"],
+            "analysis_output_columns": ["MODE", "PRODUCTION"],
+            "retrieval_jobs": [{"dataset_key": "production_today", "source_alias": "production_data"}],
+            "step_plan": [
+                {
+                    "step_id": "rank_items",
+                    "operation": "rank_top_n",
+                    "source_alias": "production_data",
+                    "group_by": ["MODE"],
+                    "metric": "PRODUCTION",
+                    "top_n": 2,
+                    "rank_order": "desc",
+                    "output_columns": ["MODE", "PRODUCTION"],
+                }
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "production_data": [
+                {"MODE": "A", "PRODUCTION": 10},
+                {"MODE": "A", "PRODUCTION": 15},
+                {"MODE": "B", "PRODUCTION": 20},
+            ]
+        },
+    }
+    bad_pandas_json = {
+        "code": "result_df = sources['production_data'].missing_method()",
+        "output_columns": ["MODE", "PRODUCTION"],
+        "reasoning_steps": ["Broken pandas call."],
+    }
+
+    fallback_success = pandas_executor.execute_pandas_from_llm(payload, json.dumps(bad_pandas_json, ensure_ascii=False))
+    repair_payload = repair_payload_builder.build_pandas_repair_payload(fallback_success)
+    prompt_payload = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
+
+    assert fallback_success["analysis"]["status"] == "ok"
+    assert fallback_success["analysis"]["used_executor_fallback"] is True
+    assert "missing_method" in fallback_success["analysis"]["repairable_errors"][0]
+    assert repair_payload["pandas_repair"]["required"] is True
+    assert repair_payload["pandas_execution_branch"]["route"] == "repair"
+    assert "missing_method" in prompt_payload["prompt"]
+    assert "executor fallback produced rows" in prompt_payload["prompt"]
+
+
 def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")

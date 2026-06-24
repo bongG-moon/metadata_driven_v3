@@ -38,7 +38,7 @@ def build_pandas_repair_payload(payload_value: Any, max_attempts: Any = DEFAULT_
 
 def _pandas_repair_decision(payload: dict[str, Any], max_attempts: Any = DEFAULT_REPAIR_MAX_ATTEMPTS) -> dict[str, Any]:
     analysis = _analysis_from_payload(payload)
-    errors = _as_text_list(analysis.get("errors"))
+    errors = _unique_text([*_as_text_list(analysis.get("errors")), *_as_text_list(analysis.get("repairable_errors"))])
     attempt = _positive_int(payload.get("pandas_retry_attempt"), default=0, minimum=0) + 1
     max_count = _positive_int(max_attempts, default=DEFAULT_REPAIR_MAX_ATTEMPTS, minimum=0)
     required = bool(errors) and attempt <= max_count
@@ -76,6 +76,8 @@ def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
         ),
         "executed_code": str(analysis.get("analysis_code") or ""),
         "errors": _as_text_list(analysis.get("errors")),
+        "repairable_errors": _as_text_list(analysis.get("repairable_errors")),
+        "used_executor_fallback": bool(analysis.get("used_executor_fallback")),
         "analysis_columns": _as_text_list(analysis.get("columns")),
         "analysis_row_count": analysis.get("row_count", 0),
         "llm_text_preview": str(analysis.get("llm_text_preview") or "")[:1200],
@@ -94,6 +96,8 @@ def _analysis_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "rows",
         "row_count",
         "errors",
+        "repairable_errors",
+        "used_executor_fallback",
         "pandas_code_json",
         "llm_text_preview",
     }
@@ -167,6 +171,15 @@ def _without_pandas_executor_warnings(warnings: Any) -> list[Any]:
         if str(item).startswith(PANDAS_WARNING_PREFIX):
             continue
         result.append(item)
+    return result
+
+
+def _unique_text(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
     return result
 
 

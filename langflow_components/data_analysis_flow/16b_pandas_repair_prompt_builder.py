@@ -56,6 +56,7 @@ def build_pandas_repair_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
             "For date/date-format repairs, do not import datetime/date/timedelta. Use pandas only: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, or direct string comparison with DATE values already present in the plan.",
             "Fix the failed code using the same intent plan and available source DataFrames. Keep result columns aligned to the requested output contract.",
+            "If executor fallback produced rows, treat those rows only as a hint for the expected shape. Repair the original failed pandas code instead of copying the fallback comment or returning an empty placeholder.",
             "Do not use .to_frame() in repaired code. For one total row with multiple metrics, build result_df with pd.DataFrame([{...}]).",
             "Do not use DataFrame.agg(named_metric=(column, func)).to_frame().T; DataFrame.agg can already return a DataFrame and then to_frame will fail.",
             "When combining scalar totals from multiple sources with no group_by, create one DataFrame row directly instead of merging DataFrames with no common key.",
@@ -106,7 +107,9 @@ def _pandas_repair_context(payload: dict[str, Any]) -> dict[str, Any]:
             analysis.get("pandas_code_json") if isinstance(analysis.get("pandas_code_json"), dict) else {}
         ),
         "executed_code": str(analysis.get("analysis_code") or ""),
-        "errors": _as_text_list(analysis.get("errors")),
+        "errors": _unique_text([*_as_text_list(analysis.get("errors")), *_as_text_list(analysis.get("repairable_errors"))]),
+        "repairable_errors": _as_text_list(analysis.get("repairable_errors")),
+        "used_executor_fallback": bool(analysis.get("used_executor_fallback")),
         "analysis_columns": _as_text_list(analysis.get("columns")),
         "analysis_row_count": analysis.get("row_count", 0),
         "llm_text_preview": str(analysis.get("llm_text_preview") or "")[:1200],
@@ -125,6 +128,8 @@ def _analysis_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "rows",
         "row_count",
         "errors",
+        "repairable_errors",
+        "used_executor_fallback",
         "pandas_code_json",
         "llm_text_preview",
     }
@@ -265,6 +270,15 @@ def _as_text_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         value = [value]
     return [str(item) for item in value if str(item or "").strip()]
+
+
+def _unique_text(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in result:
+            result.append(text)
+    return result
 
 
 def _unique_columns(columns: list[str]) -> list[str]:
