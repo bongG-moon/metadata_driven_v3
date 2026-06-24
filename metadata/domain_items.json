@@ -68,8 +68,7 @@
     "DS": {
       "display_name": "D/S",
       "aliases": ["D/S", "DS"],
-      "processes": ["D/S1"],
-      "condition": {"PKG_TYPE1": {"in": ["FCBGA"]}}
+      "processes": ["D/S1"]
     },
     "FCB": {
       "display_name": "FCB",

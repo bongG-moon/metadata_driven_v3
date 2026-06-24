@@ -19,7 +19,7 @@ DA 또는 D/A는 D/A1, D/A2, D/A3, D/A4, D/A5, D/A6를 포함해.
 PCO는 PCO1, PCO2, PCO3, PCO4, PCO5, PCO6를 포함해.
 D/C는 D/C1, D/C2, D/C3, D/C4를 포함해.
 D/I 또는 DI 또는 DVI는 D/I를 의미해.
-D/S 또는 DS는 D/S1을 의미하며, PKG_TYPE1이 FCBGA인 자재만 해당해.
+D/S 또는 DS는 D/S1을 의미해.
 FCB는 FCB1, FCB2, FCB/H를 포함해.
 FCB/H 또는 FCBH는 FCB/H를 의미해.
 B/M 또는 BM 또는 비엠은 B/M을 의미해.

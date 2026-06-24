@@ -149,22 +149,13 @@ FILTER_AUTHORING_HINTS: dict[str, dict[str, Any]] = {
     "MODE": {"aliases": ["제품 모드", "MODE"], "semantic_role": "product_attribute"},
     "PKG_TYPE1": {"aliases": ["패키지 타입1", "PKG_TYPE1"], "semantic_role": "package_attribute"},
     "PKG_TYPE2": {"aliases": ["패키지 타입2", "PKG_TYPE2"], "semantic_role": "package_attribute"},
+    "ORG": {"aliases": ["ORG", "조직 코드"], "semantic_role": "product_attribute"},
     "LEAD": {"aliases": ["Lead", "LEAD"], "semantic_role": "product_attribute"},
     "MCP_NO": {"aliases": ["제품 코드", "MCP 번호", "MCP NO"], "semantic_role": "product_code"},
-    "DEVICE": {"aliases": ["디바이스", "DEVICE", "제품 코드"], "semantic_role": "device"},
     "DEVICE_DESC": {"aliases": ["device", "device code", "DEVICE_DESC"], "semantic_role": "device"},
     "TSV_DIE_TYP": {"aliases": ["HBM 판별", "3DS 판별", "TSV 판별"], "semantic_role": "product_condition"},
     "OPER_NUM": {"aliases": ["공정 번호", "OPER_NUM"], "semantic_role": "process_number"},
-    "OPER_DESC": {"aliases": ["공정 설명", "OPER_DESC", "INPUT 공정"], "semantic_role": "process_description"},
-    "OPER_SEQ": {"aliases": ["공정 순서", "OPER_SEQ"], "semantic_role": "process_sequence"},
-    "FAB": {"aliases": ["FAB"], "semantic_role": "product_attribute"},
-    "OWNER": {"aliases": ["OWNER", "OWER"], "semantic_role": "product_attribute"},
-    "GRADE": {"aliases": ["GRADE"], "semantic_role": "product_attribute"},
-    "DIE_ATTACH_QTY": {"aliases": ["Die attach 수량", "DIE_ATTACH_QTY"], "semantic_role": "quantity"},
-    "NETDIE_300_CNT": {"aliases": ["Net die 수량", "NETDIE_300_CNT"], "semantic_role": "quantity"},
     "LOT_ID": {"aliases": ["Lot ID", "LOT 번호"], "semantic_role": "lot_id"},
-    "LOT_STAT_CD": {"aliases": ["Lot 작업 상태", "LOT 상태"], "semantic_role": "lot_status"},
-    "LOT_HOLD_STAT_CD": {"aliases": ["Lot hold 상태", "Hold 상태"], "semantic_role": "hold_status"},
     "EQP_ID": {"aliases": ["장비 ID", "장비 번호"], "semantic_role": "equipment_id"},
     "EQP_MODEL": {"aliases": ["장비 모델", "EQP_MODEL"], "semantic_role": "equipment_model"},
     "RECIPE_ID": {"aliases": ["Recipe ID", "레시피"], "semantic_role": "recipe_id"},
@@ -420,7 +411,7 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "domain:analysis_recipes:top_production_products_equipment_count",
     }
     assert docs["domain:process_groups:DP"]["payload"]["processes"] == ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
-    assert docs["domain:process_groups:DS"]["payload"]["condition"] == {"PKG_TYPE1": {"in": ["FCBGA"]}}
+    assert "condition" not in docs["domain:process_groups:DS"]["payload"]
     assert docs["domain:product_terms:hbm"]["payload"]["condition"] == {"TSV_DIE_TYP": {"exists": True, "not_in": [None, ""]}}
     assert docs["domain:product_terms:pop"]["payload"]["condition"]["MODE"] == {"starts_with": "LP"}
     assert docs["domain:product_terms:mobile"]["payload"]["condition"]["MCP_NO"] == {"empty": True}
@@ -539,9 +530,10 @@ def test_worker_bulk_filter_text_input_saves_all_current_filters(monkeypatch: An
 
     assert written["raw_text"] == FILTER_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 26
+    assert written["write_result"]["saved_count"] == 17
     docs = store[("metadata_driven_agent_v3", "agent_v3_main_flow_filters")]
-    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL", "main_flow_filter:OPER_DESC", "main_flow_filter:FAB", "main_flow_filter:OWNER", "main_flow_filter:GRADE"}
+    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:ORG", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL", "main_flow_filter:RECIPE_ID"}
+    assert not {"main_flow_filter:OPER_DESC", "main_flow_filter:FAB", "main_flow_filter:OWNER", "main_flow_filter:GRADE"} & set(docs)
     assert docs["main_flow_filter:DATE"]["payload"]["semantic_role"] == "date"
 
 

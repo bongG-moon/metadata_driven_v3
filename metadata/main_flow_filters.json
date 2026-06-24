@@ -1,106 +1,127 @@
 {
   "DATE": {
-    "column_candidates": ["WORK_DATE", "WORK_DT", "DATE", "BASE_DT"],
+    "column_candidates": [
+      "WORK_DATE",
+      "WORK_DT",
+      "DATE",
+      "BASE_DT"
+    ],
     "description": "기준일"
   },
   "OPER_NAME": {
-    "column_candidates": ["OPER_NAME", "OPER_DESC", "OPER_ID", "OPER_SHORT_DESC"],
+    "column_candidates": [
+      "OPER_NAME",
+      "OPER_ID",
+      "OPER_SHORT_DESC"
+    ],
     "description": "공정명"
   },
+  "OPER_NUM": {
+    "column_candidates": [
+      "OPER_NUM",
+      "OPER",
+      "OPER_NO"
+    ],
+    "description": "공정 번호"
+  },
   "TECH": {
-    "column_candidates": ["TECH"],
+    "column_candidates": [
+      "TECH"
+    ],
     "description": "제품 기술"
   },
   "DEN": {
-    "column_candidates": ["DEN", "DENSITY", "DEN_TYP"],
+    "column_candidates": [
+      "DEN",
+      "DENSITY",
+      "DEN_TYP"
+    ],
     "description": "제품 용량"
   },
   "MODE": {
-    "column_candidates": ["MODE"],
+    "column_candidates": [
+      "MODE"
+    ],
     "description": "제품 모드"
   },
   "PKG_TYPE1": {
-    "column_candidates": ["PKG_TYPE1", "PKG1", "PKG_TYP1", "PKG_TYP"],
+    "column_candidates": [
+      "PKG_TYPE1",
+      "PKG1",
+      "PKG_TYP1",
+      "PKG_TYP"
+    ],
     "description": "패키지 타입1"
   },
   "PKG_TYPE2": {
-    "column_candidates": ["PKG_TYPE2", "PKG2", "PKG_TYP2", "PKG_TYP_2"],
+    "column_candidates": [
+      "PKG_TYPE2",
+      "PKG2",
+      "PKG_TYP2",
+      "PKG_TYP_2"
+    ],
     "description": "패키지 타입2"
   },
+  "ORG": {
+    "column_candidates": [
+      "ORG",
+      "ORGANIZ_CD",
+      "organiz_cd"
+    ],
+    "description": "제품 ORG/조직 코드"
+  },
   "LEAD": {
-    "column_candidates": ["LEAD"],
+    "column_candidates": [
+      "LEAD"
+    ],
     "description": "Lead"
   },
   "MCP_NO": {
-    "column_candidates": ["MCP_NO", "MCP NO", "MCP_SALES_NO", "MCP_SALE_CD", "MCPSALENO"],
+    "column_candidates": [
+      "MCP_NO",
+      "MCP NO",
+      "MCP_SALES_NO",
+      "MCP_SALE_CD",
+      "MCPSALENO"
+    ],
     "description": "제품 코드"
   },
   "DEVICE_DESC": {
-    "column_candidates": ["DEVICE_DESC", "DEVICE", "DEVICE_CODE"],
+    "column_candidates": [
+      "DEVICE_DESC"
+    ],
     "description": "사용자가 device를 직접 언급했을 때만 사용하는 device 계열"
   },
-  "DEVICE": {
-    "column_candidates": ["DEVICE", "DEVICE_CODE"],
-    "description": "제품/디바이스 코드"
-  },
   "TSV_DIE_TYP": {
-    "column_candidates": ["TSV_DIE_TYP", "TSV_DIE_TYPE"],
+    "column_candidates": [
+      "TSV_DIE_TYP",
+      "TSV_DIE_TYPE"
+    ],
     "description": "HBM/3DS/TSV 제품 판별용 컬럼"
   },
-  "OPER_NUM": {
-    "column_candidates": ["OPER_NUM", "OPER", "OPER_NO"],
-    "description": "공정 번호"
-  },
-  "OPER_DESC": {
-    "column_candidates": ["OPER_DESC", "OPER_NAME", "OPER_SHORT_DESC"],
-    "description": "공정 설명"
-  },
-  "OPER_SEQ": {
-    "column_candidates": ["OPER_SEQ"],
-    "description": "공정 순서"
-  },
-  "FAB": {
-    "column_candidates": ["FAB", "FAB_ID"],
-    "description": "FAB"
-  },
-  "OWNER": {
-    "column_candidates": ["OWNER", "OWNER_CD", "OWER"],
-    "description": "제품 owner"
-  },
-  "GRADE": {
-    "column_candidates": ["GRADE", "GRADE_CD"],
-    "description": "제품 grade"
-  },
-  "DIE_ATTACH_QTY": {
-    "column_candidates": ["DIE_ATTACH_QTY"],
-    "description": "Die attach 수량"
-  },
-  "NETDIE_300_CNT": {
-    "column_candidates": ["NETDIE_300_CNT"],
-    "description": "300mm wafer 기준 net die 수량"
-  },
-  "LOT_ID": {
-    "column_candidates": ["LOT_ID"],
-    "description": "Lot ID"
-  },
-  "LOT_STAT_CD": {
-    "column_candidates": ["LOT_STAT_CD"],
-    "description": "Lot 작업 상태"
-  },
-  "LOT_HOLD_STAT_CD": {
-    "column_candidates": ["LOT_HOLD_STAT_CD"],
-    "description": "Lot hold 상태"
-  },
   "EQP_ID": {
-    "column_candidates": ["EQP_ID", "EQPID"],
+    "column_candidates": [
+      "EQP_ID",
+      "EQPID"
+    ],
     "description": "장비 ID"
   },
   "EQP_MODEL": {
-    "column_candidates": ["EQP_MODEL"],
+    "column_candidates": [
+      "EQP_MODEL"
+    ],
     "description": "장비 모델"
   },
+  "LOT_ID": {
+    "column_candidates": [
+      "LOT_ID"
+    ],
+    "description": "Lot ID"
+  },
   "RECIPE_ID": {
-    "column_candidates": ["RECIPE_ID"],
+    "column_candidates": [
+      "RECIPE_ID"
+    ],
     "description": "Recipe ID"
   }
 }

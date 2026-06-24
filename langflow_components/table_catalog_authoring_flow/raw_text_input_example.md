@@ -17,7 +17,7 @@ WHERE 1=1
 AND A.WORK_DATE = {DATE}
 AND A.PRODUCTION > 0
 
-filter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, OPER_NUM -> OPER, OPER_NAME -> OPER_NAME로 연결해줘.
+filter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, OPER_NUM -> OPER, OPER_NAME -> OPER_NAME로 연결해줘.
 standard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, OPER_NUM -> OPER로 연결해줘.
 
 [Oracle 재공 데이터셋]
@@ -32,20 +32,20 @@ WHERE 1=1
 AND A.WORK_DATE = {DATE}
 GROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.OPER, A.OPER_NAME, A.OPER_SEQ
 
-filter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, OPER_NUM -> OPER, OPER_NAME -> OPER_NAME로 연결해줘.
+filter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, OPER_NUM -> OPER, OPER_NAME -> OPER_NAME로 연결해줘.
 standard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, OPER_NUM -> OPER로 연결해줘.
 
 [Goodocs 목표 데이터셋]
 target은 목표 또는 계획 데이터셋이야.
 source는 goodocs이고 DATE 형식은 YYYY-MM-DD야.
 주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.
-filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.
+filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.
 
 [장비 현황 데이터셋]
 equipment_status는 제품에 할당된 장비 현황 데이터셋이야.
 source는 oracle이고 필수 조회 파라미터는 없어.
 장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.
-filter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, EQP_ID -> EQPID로 연결해줘.
+filter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, EQP_ID -> EQPID로 연결해줘.
 standard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO로 연결해줘.
 ```
 <!-- bulk_table_catalog:end -->

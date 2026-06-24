@@ -1,51 +1,42 @@
 # Main Flow Filters Authoring Raw Text Examples
 
 아래 예시는 질문에서 공통 필터 의미를 인식하도록 등록하는 최소 샘플입니다.
-실제 dataset별 컬럼 연결은 table catalog의 filter_mappings와 standard_column_aliases를 함께 사용합니다.
+메인 필터는 여러 dataset에서 공통으로 쓰는 표준 의미 key만 관리합니다.
+실제 dataset별 물리 컬럼 연결은 table catalog의 filter_mappings와 standard_column_aliases에 저장합니다.
 
 <!-- bulk_main_flow_filters:start -->
 ```text
-[날짜 필터]
-DATE는 기준일 필터야.
-사용자가 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date라고 말하면 DATE 조건으로 해석해줘.
-값은 기간이 명시되지 않으면 YYYYMMDD 형식의 단일 날짜로 정규화하고, operator는 eq로 사용해.
-실제 컬럼 후보는 WORK_DT, WORK_DATE, DATE, BASE_DT야.
+[기준일/공정 필터]
+DATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.
+OPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.
+OPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.
 
-[공정명 필터]
-OPER_NAME은 공정명 필터야.
-사용자가 공정, 작업공정, operation, process, oper name, 차수라고 말하면 OPER_NAME 조건으로 해석해줘.
-실제 컬럼 후보는 OPER_NAME, OPER_DESC, OPER_ID, OPER_SHORT_DESC야.
-값이 여러 개면 in 조건으로 처리해.
-
-[제품 MODE 필터]
-MODE는 제품 mode 필터야.
-사용자가 mode, product mode, 모드, 제품모드, 제품군이라고 말하면 MODE 조건으로 해석해줘.
-실제 컬럼 후보는 MODE, PROD_TYP야.
-POP 제품이라고 말하면 MODE가 LP로 시작하는 조건으로 해석할 수 있어.
-
-[패키지 타입 필터]
+[제품 속성 필터]
+TECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.
 PKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.
-실제 컬럼 후보는 PKG_TYPE1/PKG1/PKG_TYP1, PKG_TYPE2/PKG2/PKG_TYP2/PKG_TYP_2야.
-dataset마다 실제 컬럼명이 다르면 table catalog의 alias 정보를 사용해 표준 컬럼명으로 맞춰줘.
+ORG는 제품 ORG/조직 코드 필터야.
+LEAD는 lead count 필터야.
+MCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.
+DEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.
+TSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.
 
-[장비 필터]
+[장비/Lot/Recipe 필터]
+EQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.
 EQP_MODEL은 장비 모델 필터야.
-사용자가 eqp model, equipment model, 장비 모델, 설비 모델이라고 말하면 EQP_MODEL 조건으로 해석해줘.
-실제 컬럼 후보는 EQP_MODEL, EQP_MODEL_CD야.
-
-[제품 코드와 INPUT 공정 설명 필터]
-MCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO를 실제 컬럼 후보로 사용해.
-OPER_DESC는 공정 설명 필터야. 투입량처럼 OPER_DESC가 INPUT인 조건을 표현할 때 사용하고, 실제 컬럼 후보는 OPER_DESC, OPER_NAME, OPER_SHORT_DESC야.
-
-[유연제품 비교 키]
-FAB, OWNER, GRADE는 유연제품 조건에서 DEVICE와 함께 쓰는 제품 속성 필터야.
-FAB의 실제 컬럼 후보는 FAB, FAB_ID야.
-OWNER의 실제 컬럼 후보는 OWNER, OWNER_CD, OWER야.
-GRADE의 실제 컬럼 후보는 GRADE, GRADE_CD야.
+LOT_ID는 Lot ID 필터야.
+RECIPE_ID는 Recipe ID 필터야.
 ```
 <!-- bulk_main_flow_filters:end -->
 
 ## 단일 항목 예시
+
+<!-- single_org:start -->
+```text
+ORG는 제품 ORG 또는 조직 코드 필터야.
+사용자가 ORG, 조직, organization code라고 말하면 ORG 조건으로 해석해줘.
+실제 컬럼 후보는 ORG, ORGANIZ_CD, organiz_cd야.
+```
+<!-- single_org:end -->
 
 <!-- single_eqp_model:start -->
 ```text
