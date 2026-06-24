@@ -50,6 +50,30 @@ def safe_markdown_text(value: Any) -> str:
     return re.sub(r"(?<!\\)~", r"\\~", text)
 
 
+def format_answer_markdown_text(value: Any) -> str:
+    text = _separate_answer_summary_blocks(str(value or ""))
+    return safe_markdown_text(text)
+
+
+def _separate_answer_summary_blocks(text: str) -> str:
+    if not text.strip():
+        return text
+    text = _break_adjacent_metric_pairs(text)
+    text = re.sub(r"(?<!\n)\s+(위 결과는|이 결과는|해당 결과는|참고:|사용 데이터셋:|적용 필터:)", r"\n\n\1", text)
+    return text
+
+
+def _break_adjacent_metric_pairs(text: str) -> str:
+    metric_pair = r"[^\s:]{1,40}\s*:\s*[-+]?\d[\d,]*(?:\.\d+)?(?:\s*(?:%|개|건|대|Lot|Wafer|EA|WIP))?"
+    pattern = re.compile(rf"({metric_pair})(?=[ \t]+{metric_pair})")
+    previous = None
+    result = text
+    while previous != result:
+        previous = result
+        result = pattern.sub(r"\1  \n", result)
+    return re.sub(r"\n[ \t]+(?=[^\s:]{1,40}\s*:)", "\n", result)
+
+
 def chat_table_visible_rows(max_height: int = TABLE_MAX_HEIGHT) -> int:
     usable_height = max_height - TABLE_HEADER_HEIGHT - TABLE_VERTICAL_PADDING
     return max(1, usable_height // TABLE_ROW_HEIGHT)
