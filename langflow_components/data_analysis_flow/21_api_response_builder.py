@@ -100,10 +100,22 @@ def _payload_from_value(value: Any) -> dict[str, Any]:
 def _build_data_view(payload: dict[str, Any]) -> dict[str, Any]:
     source = _as_dict(payload.get("data"))
     analysis = _as_dict(payload.get("analysis"))
-    rows = _row_list(source.get("rows")) or _row_list(analysis.get("rows"))
-    columns = _string_list(source.get("columns")) or _string_list(analysis.get("columns")) or _columns_from_rows(rows)
-    row_count = _int_value(source.get("row_count"), _int_value(analysis.get("row_count"), len(rows)))
-    data_ref = _normalize_data_ref(source.get("data_ref") or analysis.get("data_ref"))
+    source_rows = _row_list(source.get("rows"))
+    analysis_rows = _row_list(analysis.get("rows"))
+    source_columns = _string_list(source.get("columns")) or _columns_from_rows(source_rows)
+    analysis_columns = _string_list(analysis.get("columns")) or _columns_from_rows(analysis_rows)
+    use_analysis = _should_prefer_analysis_data(source_rows, source_columns, analysis_rows, analysis_columns)
+
+    if use_analysis:
+        rows = analysis_rows
+        columns = analysis_columns
+        row_count = _int_value(analysis.get("row_count"), len(rows))
+        data_ref = _normalize_data_ref(analysis.get("data_ref") or source.get("data_ref"))
+    else:
+        rows = source_rows or analysis_rows
+        columns = source_columns or analysis_columns or _columns_from_rows(rows)
+        row_count = _int_value(source.get("row_count"), _int_value(analysis.get("row_count"), len(rows)))
+        data_ref = _normalize_data_ref(source.get("data_ref") or analysis.get("data_ref"))
 
     data = {
         "columns": columns,
@@ -122,6 +134,21 @@ def _build_data_view(payload: dict[str, Any]) -> dict[str, Any]:
     if "data_is_reference" not in data and data_ref:
         data["data_is_reference"] = True
     return data
+
+
+def _should_prefer_analysis_data(
+    source_rows: list[dict[str, Any]],
+    source_columns: list[str],
+    analysis_rows: list[dict[str, Any]],
+    analysis_columns: list[str],
+) -> bool:
+    if not analysis_rows:
+        return False
+    if not source_rows:
+        return True
+    if analysis_columns and source_columns and analysis_columns != source_columns:
+        return True
+    return False
 
 
 def _build_analysis_view(payload: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:

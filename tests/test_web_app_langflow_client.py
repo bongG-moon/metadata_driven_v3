@@ -79,6 +79,47 @@ def test_normalize_query_response_accepts_legacy_flat_api_response_shape() -> No
     assert result["analysis"]["analysis_code"] == "legacy_code()"
 
 
+def test_normalize_query_response_prefers_analysis_rows_over_stale_data() -> None:
+    raw = {
+        "api_response": {
+            "status": "ok",
+            "answer_message": "ok",
+            "data": {
+                "columns": ["OPER_NAME", "PRODUCTION"],
+                "rows": [{"OPER_NAME": "W/B1", "PRODUCTION": 100}],
+                "row_count": 1,
+                "data_ref": {"store": "mongodb", "ref_id": "source-ref"},
+            },
+            "analysis": {
+                "status": "ok",
+                "columns": ["OPER_GROUP", "WIP", "TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "PRODUCTION"],
+                "rows": [
+                    {
+                        "OPER_GROUP": "DA",
+                        "WIP": 40,
+                        "TECH": "TSV",
+                        "DEN": "2048G",
+                        "MODE": "HBM3E",
+                        "PKG_TYPE1": "HBM",
+                        "PKG_TYPE2": "HBM",
+                        "LEAD": "LF",
+                        "MCP_NO": "H-HBM16E",
+                        "PRODUCTION": 100,
+                    }
+                ],
+                "row_count": 1,
+                "data_ref": {"store": "mongodb", "ref_id": "result-ref"},
+            },
+        }
+    }
+
+    result = normalize_query_response(raw)
+
+    assert result["data"]["columns"][0:2] == ["OPER_GROUP", "WIP"]
+    assert result["data"]["rows"][0]["WIP"] == 40
+    assert result["data"]["data_ref"]["ref_id"] == "result-ref"
+
+
 def test_normalize_query_response_collects_router_side_developer_payload() -> None:
     raw = {
         "api_response": {

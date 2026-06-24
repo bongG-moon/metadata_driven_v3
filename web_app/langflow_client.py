@@ -511,17 +511,34 @@ def _query_data(payload: dict[str, Any]) -> dict[str, Any]:
         rows = _row_list(data_value)
     final_data = _as_dict(payload.get("final_data"))
     analysis = _as_dict(payload.get("analysis") or payload.get("analysis_result"))
+    analysis_rows = _row_list(analysis.get("rows")) or _row_list(analysis.get("data"))
+    source_columns = _string_list(data_source.get("columns")) or _columns_from_rows(rows)
+    analysis_columns = _string_list(analysis.get("columns")) or _columns_from_rows(analysis_rows)
+    use_analysis = _should_prefer_analysis_data(rows, source_columns, analysis_rows, analysis_columns)
+    if use_analysis:
+        rows = analysis_rows
     if not rows:
-        rows = _row_list(final_data.get("rows")) or _row_list(analysis.get("rows")) or _row_list(analysis.get("data"))
+        rows = _row_list(final_data.get("rows")) or analysis_rows
     columns = (
-        _string_list(data_source.get("columns"))
+        (analysis_columns if use_analysis else [])
+        or _string_list(data_source.get("columns"))
         or _string_list(payload.get("columns"))
         or _string_list(final_data.get("columns"))
         or _string_list(analysis.get("columns"))
         or _columns_from_rows(rows)
     )
-    row_count = _int_value(data_source.get("row_count"), _int_value(payload.get("row_count"), _int_value(final_data.get("row_count"), len(rows))))
-    data_ref = _normalize_data_ref(data_source.get("data_ref") or payload.get("data_ref") or final_data.get("data_ref") or analysis.get("data_ref"))
+    row_count = (
+        _int_value(analysis.get("row_count"), len(rows))
+        if use_analysis
+        else _int_value(data_source.get("row_count"), _int_value(payload.get("row_count"), _int_value(final_data.get("row_count"), len(rows))))
+    )
+    data_ref = _normalize_data_ref(
+        (analysis.get("data_ref") if use_analysis else None)
+        or data_source.get("data_ref")
+        or payload.get("data_ref")
+        or final_data.get("data_ref")
+        or analysis.get("data_ref")
+    )
     result = {
         "columns": columns,
         "rows": rows,
@@ -537,6 +554,21 @@ def _query_data(payload: dict[str, Any]) -> dict[str, Any]:
     if "data_is_preview" not in result and row_count > len(rows):
         result["data_is_preview"] = True
     return result
+
+
+def _should_prefer_analysis_data(
+    source_rows: list[dict[str, Any]],
+    source_columns: list[str],
+    analysis_rows: list[dict[str, Any]],
+    analysis_columns: list[str],
+) -> bool:
+    if not analysis_rows:
+        return False
+    if not source_rows:
+        return True
+    if analysis_columns and source_columns and analysis_columns != source_columns:
+        return True
+    return False
 
 
 def _query_analysis(payload: dict[str, Any], data: dict[str, Any], developer: dict[str, Any] | None = None) -> dict[str, Any]:

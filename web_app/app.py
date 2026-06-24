@@ -1620,6 +1620,16 @@ def inject_style() -> None:
             pointer-events: none;
             white-space: nowrap;
         }
+        [data-testid="stSpinner"] svg,
+        [data-testid="stSpinner"] > div:first-child {
+            animation: mdv3-spinner-rotate 0.82s linear infinite !important;
+            transform-origin: center !important;
+            transform-box: fill-box !important;
+        }
+        @keyframes mdv3-spinner-rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
         [data-testid="stSidebar"] { background: #f7f8fb; border-right: 1px solid #e4e7ec; }
         h1, h2, h3 {
             letter-spacing: 0;
