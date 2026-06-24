@@ -20,6 +20,7 @@ For example, include DATE or LOT_ID only when the query_template has a {{DATE}}/
 If there are no required query parameters, set required_params to an empty list and required_param_mappings to an empty JSON object.
 Do not put DATE in required_params just because DATE exists in filter_mappings or date_format exists. That DATE may be an optional filter.
 Metadata has two mapping layers: main_flow_filters define standard filter keys, while table_catalog.filter_mappings maps those standard keys to this dataset's physical columns.
+Use the Registered main flow filter summary in authoring_context as the source of valid standard filter keys. The examples below are illustrative, not a fixed whitelist.
 Do not put dataset-specific mappings inside main_flow_filters. For each dataset, put DATE/OPER_NAME/product/equipment mappings in table_catalog.filter_mappings.
 The left side of filter_mappings must be a standard main flow filter key such as DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, or RECIPE_ID; the right side must be actual source column candidates for this dataset.
 If a source uses physical column names that differ from the standard analysis column names, also capture standard_column_aliases as {{standard_column: [physical columns]}}.

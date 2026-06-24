@@ -20,6 +20,7 @@ required_params는 DATE로 고정된 값이 아닙니다. query_template/API URL
 필수 query parameter가 없으면 required_params는 빈 list로, required_param_mappings는 빈 JSON object로 설정하세요.
 DATE가 filter_mappings에 있거나 date_format이 있다는 이유만으로 DATE를 required_params에 넣지 마세요. 그런 DATE는 optional filter일 수 있습니다.
 metadata에는 두 mapping layer가 있습니다. main_flow_filters는 표준 filter key를 정의하고, table_catalog.filter_mappings는 그 표준 key를 이 dataset의 물리 column에 매핑합니다.
+authoring_context의 Registered main flow filter summary를 유효한 표준 filter key의 기준으로 사용하세요. 아래 예시는 설명용일 뿐 고정 whitelist가 아닙니다.
 dataset별 mapping을 main_flow_filters에 넣지 마세요. 각 dataset의 DATE/OPER_NAME/product/equipment mapping은 table_catalog.filter_mappings에 넣으세요.
 filter_mappings의 왼쪽은 DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, RECIPE_ID 같은 표준 main flow filter key여야 하고, 오른쪽은 이 dataset의 실제 source column 후보여야 합니다.
 source의 물리 column 이름이 표준 분석 column 이름과 다르면 standard_column_aliases를 {{standard_column: [physical columns]}} 형태로 함께 저장하세요.

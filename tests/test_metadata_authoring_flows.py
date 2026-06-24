@@ -213,6 +213,133 @@ def test_domain_authoring_autofills_single_family_metric_from_worker_text() -> N
     assert item_payload["pandas_code_instructions"]
 
 
+def test_domain_authoring_context_includes_table_catalog_and_main_filters() -> None:
+    variables = load_module("langflow_components/domain_authoring_flow/03_domain_authoring_variables_builder.py")
+    payload = {
+        "raw_text": "장비 대수는 ASSIGN 테이블에서 EQP_ID unique count로 계산해.",
+        "refined_text": "장비 대수는 ASSIGN 테이블에서 EQP_ID의 unique count로 계산한다.",
+        "existing_items": [{"section": "metric_terms", "key": "equipment_count", "aliases": ["장비 대수"]}],
+        "metadata_context": {
+            "table_catalog": [
+                {
+                    "dataset_key": "equipment_status",
+                    "dataset_family": "equipment",
+                    "description": "장비 ASSIGN 현황",
+                    "columns": ["EQPID", "TECH", "DEN"],
+                    "filter_mappings": {"EQP_ID": ["EQPID"]},
+                }
+            ],
+            "main_flow_filters": [
+                {
+                    "filter_key": "EQP_ID",
+                    "aliases": ["장비 ID"],
+                    "column_candidates": ["EQP_ID", "EQPID"],
+                }
+            ],
+        },
+    }
+
+    context = variables.build_domain_authoring_prompt_variables(payload)["authoring_context"]
+
+    assert "Table catalog summary for source-family inference" in context
+    assert "equipment_status" in context
+    assert "Main flow filter summary for standard field inference" in context
+    assert "EQP_ID" in context
+
+
+def test_domain_authoring_drops_ungrounded_artifacts_from_wafer_metric() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    payload = {
+        "metadata_type": "domain",
+        "raw_text": (
+            "Wafer기준 실적은 생산량 조회 테이블에서 PRODUCTION/NETDIE_300_CNT로 계산하고, "
+            "NETDIE_300_CNT가 0이면 FAIL_UNIT_QTY에 PRODUCTION을 보여줘."
+        ),
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {"section": "product_terms", "key": "wafer", "payload": {"aliases": ["Wafer"]}},
+            {"section": "quantity_terms", "key": "fail_unit_qty", "payload": {"aliases": ["FAIL_UNIT_QTY"]}},
+            {"section": "process_groups", "key": "wafer", "payload": {"processes": []}},
+            {"section": "product_key_columns", "key": "default", "payload": {"columns": ["TECH", "DEN"]}},
+            {
+                "section": "metric_terms",
+                "key": "wafer_out_quantity",
+                "payload": {
+                    "aliases": ["Wafer 기준 실적", "Wafer Out 수량"],
+                    "formula": "WAFER_OUT_QTY = PRODUCTION / NETDIE_300_CNT; FAIL_UNIT_QTY = PRODUCTION when denominator is zero",
+                },
+            },
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    assert [(item["section"], item["key"]) for item in normalized["items"]] == [("metric_terms", "wafer_out_quantity")]
+    metric_payload = normalized["items"][0]["payload"]
+    assert metric_payload["dataset_family"] == "production"
+    assert metric_payload["required_dataset_families"] == ["production"]
+    assert metric_payload["required_quantity_terms"] == ["production"]
+    assert metric_payload["source_columns"] == ["PRODUCTION", "NETDIE_300_CNT"]
+    assert metric_payload["output_columns"] == ["WAFER_OUT_QTY", "FAIL_UNIT_QTY"]
+    warnings_text = "\n".join(normalized["authoring"]["warnings"])
+    assert "product_terms/wafer" in warnings_text
+    assert "quantity_terms/fail_unit_qty" in warnings_text
+    assert "process_groups/wafer" in warnings_text
+    assert "product_key_columns item was ignored" in warnings_text
+
+
+def test_domain_authoring_autofills_equipment_count_metric_from_natural_text() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    payload = {
+        "metadata_type": "domain",
+        "raw_text": "장비 대수의 경우 장비 ASSIGN테이블에서 EQP_ID의 UNIQUE COUNT를 말한다.",
+        "metadata_context": {
+            "table_catalog": [
+                {
+                    "dataset_key": "equipment_status",
+                    "dataset_family": "equipment",
+                    "description": "장비 ASSIGN 테이블",
+                    "columns": ["EQP_ID", "EQP_MODEL"],
+                }
+            ]
+        },
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "section": "metric_terms",
+                "key": "equipment_count",
+                "payload": {
+                    "display_name": "장비 대수",
+                    "aliases": ["장비 대수"],
+                    "description": "장비 ASSIGN 테이블에서 EQP_ID의 unique count",
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+    metric_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert metric_payload["dataset_family"] == "equipment"
+    assert metric_payload["required_dataset_families"] == ["equipment"]
+    assert metric_payload["source_columns"] == ["EQP_ID"]
+    assert metric_payload["aggregation"] == "nunique"
+    assert metric_payload["output_column"] == "EQP_COUNT"
+    assert "EQP_COUNT" in metric_payload["output_columns"]
+
+
 def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
     writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
     payload = {
@@ -240,6 +367,8 @@ def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
         "supplement_requests": [
             {"field": "dataset_key", "reason": "데이터셋 식별자가 없습니다."},
             {"field": "dataset_family", "reason": "데이터셋 패밀리 정보가 없습니다."},
+            {"field": "required_quantity_terms", "reason": "required_quantity_terms에 production이 필요합니다."},
+            {"field": "alias_overlap", "reason": "alias가 겹칩니다: Wafer 기준 실적"},
             {"field": "output_column_name_FOR_FAIL_UNIT_QTY", "reason": "FAIL_UNIT_QTY 컬럼의 정확한 이름과 데이터 타입이 필요합니다."},
         ],
         "item_reviews": [{"section": "metric_terms", "key": "wafer_based_performance", "decision": "needs_fix", "reason": "보강 필요"}],
@@ -294,6 +423,45 @@ def test_table_catalog_authoring_requires_source_config_and_detects_same_dataset
     checked = similarity.check_table_catalog_similarity(normalized, "ask")
     assert checked["existing_matches"][0]["match_type"] == "same_dataset_key"
     assert checked["duplicate_decision"]["requires_user_choice"] is True
+
+
+def test_table_catalog_authoring_context_includes_main_flow_filters() -> None:
+    loader = load_module("langflow_components/table_catalog_authoring_flow/00_table_catalog_authoring_request_loader.py")
+    variables = load_module("langflow_components/table_catalog_authoring_flow/03_table_catalog_authoring_variables_builder.py")
+    payload = loader.build_table_catalog_authoring_request(
+        raw_text="production_today 데이터셋은 WORK_DATE, PKG_TYP1, PRODUCTION 컬럼을 사용한다.",
+        load_existing="false",
+    )
+    payload["existing_items"] = [
+        {
+            "dataset_key": "production_today",
+            "dataset_family": "production",
+            "columns": ["WORK_DATE", "PKG_TYP1", "PRODUCTION"],
+        }
+    ]
+    payload["metadata_context"]["main_flow_filters"] = [
+        {
+            "filter_key": "DATE",
+            "aliases": ["일자", "기준일"],
+            "column_candidates": ["DATE", "WORK_DATE"],
+            "semantic_role": "date",
+        },
+        {
+            "filter_key": "PKG_TYPE1",
+            "aliases": ["패키지1"],
+            "column_candidates": ["PKG_TYPE1", "PKG_TYP1", "PKG1"],
+            "semantic_role": "product_attribute",
+        },
+    ]
+
+    context = variables.build_table_catalog_authoring_prompt_variables(payload)["authoring_context"]
+
+    assert payload["mongo_config"]["main_flow_filter_collection"] == "agent_v3_main_flow_filters"
+    assert "Registered main flow filter summary" in context
+    assert "DATE" in context
+    assert "WORK_DATE" in context
+    assert "PKG_TYPE1" in context
+    assert "PKG_TYP1" in context
 
 
 def test_table_catalog_authoring_normalizes_detail_columns_and_filter_mappings() -> None:

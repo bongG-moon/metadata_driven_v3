@@ -100,32 +100,37 @@ def normalize_domain_authoring_result(payload_value: Any, llm_response_value: An
     payload = _payload(payload_value)
     parsed = _extract_json_object(_text(llm_response_value))
     errors = []
+    warnings = []
     items = []
     if not parsed:
         errors.append("저장 형식 변환 LLM 응답에서 JSON을 찾지 못했습니다.")
     raw_items = parsed.get("items") if isinstance(parsed.get("items"), list) else []
+    source_text = _source_text(payload)
+    metadata_context = payload.get("metadata_context") if isinstance(payload.get("metadata_context"), dict) else {}
     for index, raw_item in enumerate(raw_items):
-        item, item_errors = _normalize_item(raw_item, index)
+        item, item_errors, item_warnings = _normalize_item(raw_item, index, source_text, metadata_context)
         if item:
             items.append(item)
         errors.extend(item_errors)
+        warnings.extend(item_warnings)
 
     next_payload = dict(payload)
     next_payload["items"] = items
     next_payload["authoring"] = {
         "missing_information": _as_list(parsed.get("missing_information")),
-        "warnings": _as_list(parsed.get("warnings")),
+        "warnings": [*_as_list(parsed.get("warnings")), *warnings],
         "raw_item_count": len(raw_items),
     }
     next_payload["errors"] = list(next_payload.get("errors", [])) + errors
-    next_payload["warnings"] = list(next_payload.get("warnings", [])) + [str(item) for item in _as_list(parsed.get("warnings"))]
+    next_payload["warnings"] = list(next_payload.get("warnings", [])) + [str(item) for item in _as_list(parsed.get("warnings"))] + warnings
     return next_payload
 
 
-def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, list[str]]:
+def _normalize_item(raw_item: Any, index: int, source_text: str = "", metadata_context: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, list[str], list[str]]:
     errors = []
+    warnings = []
     if not isinstance(raw_item, dict):
-        return None, [f"items[{index}]가 object가 아닙니다."]
+        return None, [f"items[{index}]가 object가 아닙니다."], []
     key = _clean(raw_item.get("key") or raw_item.get("name"))
     payload = deepcopy(raw_item.get("payload")) if isinstance(raw_item.get("payload"), dict) else {}
     section = _normalize_section(raw_item, payload)
@@ -134,6 +139,8 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
     if not key and section != "product_key_columns":
         errors.append(f"items[{index}] key가 없습니다.")
     if section == "product_key_columns":
+        if not _source_mentions_product_key_columns(source_text):
+            return None, [], [f"items[{index}] product_key_columns item was ignored because it is not grounded in the worker input."]
         columns = _as_text_list(raw_item.get("columns") or payload.get("columns") or payload.get("product_key_columns"))
         if not columns:
             errors.append("product_key_columns에는 columns 목록이 필요합니다.")
@@ -143,12 +150,19 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
         payload.setdefault("aliases", _as_text_list(payload.get("aliases")))
         _normalize_payload_lists(payload)
         _normalize_condition_fields(payload)
+        if _is_derived_metric_artifact(section, key, payload, source_text):
+            return None, [], [f"items[{index}] {section}/{key} was ignored because it is a derived metric artifact, not a standalone domain term."]
         if section in {"product_terms", "quantity_terms", "status_terms", "metric_terms"}:
             _normalize_condition_overrides(payload, errors, key)
         if section == "process_groups" and not _as_text_list(payload.get("processes")):
-            errors.append(f"{key} process_groups에는 processes 목록이 필요합니다.")
+            if _source_mentions_process_group(source_text):
+                errors.append(f"{key} process_groups에는 processes 목록이 필요합니다.")
+            else:
+                return None, [], [f"items[{index}] process_groups/{key} was ignored because the worker input did not define a process group."]
         if section in {"quantity_terms", "status_terms"} and payload.get("aggregation") == "count_distinct":
             payload["aggregation"] = "nunique"
+        if section == "quantity_terms":
+            key = _normalize_quantity_payload(key, payload, source_text, metadata_context or {})
         if section in {"quantity_terms", "status_terms", "metric_terms", "analysis_recipes"}:
             if payload.get("required_quantity_terms") is not None:
                 payload["required_quantity_terms"] = _as_text_list(payload.get("required_quantity_terms"))
@@ -158,7 +172,7 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
             _normalize_analysis_recipe_payload(payload)
         if section == "metric_terms":
             _normalize_metric_role_filters(payload)
-            _normalize_metric_payload(payload)
+            _normalize_metric_payload(payload, metadata_context or {})
     if not payload:
         errors.append(f"items[{index}] payload가 비어 있습니다.")
     item = {
@@ -170,7 +184,7 @@ def _normalize_item(raw_item: Any, index: int) -> tuple[dict[str, Any] | None, l
     }
     if raw_item.get("columns"):
         item["columns"] = _as_text_list(raw_item.get("columns"))
-    return item, errors
+    return item, errors, warnings
 
 
 def _normalize_section(raw_item: dict[str, Any], payload: dict[str, Any]) -> str:
@@ -270,7 +284,7 @@ def _normalize_metric_role_filters(payload: dict[str, Any]) -> None:
             _normalize_condition_fields(role)
 
 
-def _normalize_metric_payload(payload: dict[str, Any]) -> None:
+def _normalize_metric_payload(payload: dict[str, Any], metadata_context: dict[str, Any] | None = None) -> None:
     metric_text = _metric_text(payload)
     source_columns = _as_text_list(payload.get("source_columns"))
     output_columns = _as_text_list(payload.get("output_columns"))
@@ -295,6 +309,20 @@ def _normalize_metric_payload(payload: dict[str, Any]) -> None:
         payload["source_columns"] = _unique_text([*source_columns, *inferred_sources])
 
     source_columns_set = set(_as_text_list(payload.get("source_columns")))
+    inferred_family = _infer_dataset_family(metric_text, source_columns_set, metadata_context or {})
+    if inferred_family and not _clean(payload.get("dataset_family")):
+        payload["dataset_family"] = inferred_family
+        _merge_text_list_field(payload, "required_dataset_families", [inferred_family])
+    if _has_unique_count_cue(metric_text) and _has_equipment_count_cue(metric_text, source_columns_set):
+        payload.setdefault("dataset_family", "equipment")
+        _merge_text_list_field(payload, "required_dataset_families", ["equipment"])
+        payload["source_columns"] = [_preferred_equipment_column(source_columns_set)]
+        source_columns_set = set(_as_text_list(payload.get("source_columns")))
+        payload.setdefault("aggregation", "nunique")
+        payload.setdefault("output_column", "EQP_COUNT")
+        output_columns = _unique_text([*output_columns, "EQP_COUNT"])
+        payload["output_columns"] = output_columns
+        _merge_text_list_field(payload, "aliases", ["장비 대수", "설비 대수", "equipment count"])
     lowered_metric_text = metric_text.lower()
     production_cues = {"PRODUCTION", "NETDIE_300_CNT"}.intersection(source_columns_set) or any(
         cue in lowered_metric_text
@@ -320,6 +348,38 @@ def _normalize_metric_payload(payload: dict[str, Any]) -> None:
             )
 
 
+def _normalize_quantity_payload(key: str, payload: dict[str, Any], source_text: str, metadata_context: dict[str, Any]) -> str:
+    quantity_text = _term_text(key, payload, source_text)
+    source_columns = _as_text_list(payload.get("source_columns"))
+    quantity_columns = _as_text_list(payload.get("quantity_column"))
+    inferred_columns = _identifier_columns_from_metric_text(quantity_text)
+    if inferred_columns:
+        payload["source_columns"] = _unique_text([*source_columns, *inferred_columns])
+    all_columns = {column.upper() for column in [*quantity_columns, *_as_text_list(payload.get("source_columns"))]}
+    inferred_family = _infer_dataset_family(quantity_text, all_columns, metadata_context)
+    if inferred_family and not _clean(payload.get("dataset_family")):
+        payload["dataset_family"] = inferred_family
+
+    compact = _compact_text(quantity_text)
+    if _has_input_production_cue(quantity_text):
+        key = "input_production" if not key or key in {"production", "input"} else key
+        payload.setdefault("dataset_family", "production")
+        payload.setdefault("quantity_column", "PRODUCTION")
+        payload.setdefault("aggregation", "sum")
+        payload.setdefault("output_column", "INPUT_QTY")
+        payload.setdefault("condition", {"OPER_DESC": "INPUT"})
+
+    if _has_unique_count_cue(quantity_text) and _has_equipment_count_cue(quantity_text, all_columns):
+        key = "equipment_count" if not key or key in {"count", "equipment"} else key
+        payload.setdefault("dataset_family", "equipment")
+        payload["quantity_column"] = _preferred_equipment_column(all_columns)
+        payload.setdefault("aggregation", "nunique")
+        payload.setdefault("output_column", "EQP_COUNT")
+        _merge_text_list_field(payload, "aliases", ["장비 대수", "설비 대수", "equipment count"])
+
+    return key
+
+
 def _metric_text(payload: dict[str, Any]) -> str:
     parts: list[str] = []
     for key in (
@@ -343,6 +403,28 @@ def _metric_text(payload: dict[str, Any]) -> str:
     return "\n".join(part for part in parts if part)
 
 
+def _term_text(key: str, payload: dict[str, Any], source_text: str = "") -> str:
+    parts = [key, source_text]
+    for field in (
+        "display_name",
+        "description",
+        "formula",
+        "calculation_rule",
+        "aggregation",
+        "quantity_column",
+        "source_columns",
+        "output_column",
+        "output_columns",
+    ):
+        value = payload.get(field)
+        if isinstance(value, list):
+            parts.extend(_clean(item) for item in value)
+        else:
+            parts.append(_clean(value))
+    parts.extend(_as_text_list(payload.get("aliases")))
+    return "\n".join(part for part in parts if part)
+
+
 def _output_columns_from_metric_text(text: str) -> list[str]:
     outputs: list[str] = []
     for match in re.finditer(r"\b([A-Z][A-Z0-9_]{2,})\s*=", text):
@@ -356,7 +438,7 @@ def _output_columns_from_metric_text(text: str) -> list[str]:
 
 def _identifier_columns_from_metric_text(text: str) -> list[str]:
     bracketed = re.findall(r"\[([A-Za-z][A-Za-z0-9_]*)\]", text)
-    identifiers = re.findall(r"\b([A-Z][A-Z0-9_]{2,})\b", text)
+    identifiers = re.findall(r"(?<![A-Za-z0-9_])([A-Z][A-Z0-9_]{2,})(?![A-Za-z0-9_])", text)
     candidates = [*bracketed, *identifiers]
     result = []
     for column in candidates:
@@ -368,6 +450,104 @@ def _identifier_columns_from_metric_text(text: str) -> list[str]:
             continue
         result.append(column_text)
     return _unique_text(result)
+
+
+def _infer_dataset_family(text: str, columns: set[str], metadata_context: dict[str, Any]) -> str:
+    compact = _compact_text(text)
+    table_items = metadata_context.get("table_catalog", []) if isinstance(metadata_context.get("table_catalog"), list) else []
+    for item in table_items:
+        if not isinstance(item, dict):
+            continue
+        family = _clean(item.get("dataset_family"))
+        if not family:
+            continue
+        candidates = [item.get("dataset_key"), item.get("description"), item.get("primary_quantity_column")]
+        candidates.extend(_as_text_list(item.get("aliases")))
+        candidates.extend(_as_text_list(item.get("columns")))
+        for candidate in candidates:
+            candidate_compact = _compact_text(candidate)
+            if candidate_compact and candidate_compact in compact:
+                return family
+        mapping_columns = _columns_from_mapping_dict(item.get("filter_mappings"))
+        mapping_columns.extend(_columns_from_mapping_dict(item.get("standard_column_aliases")))
+        if columns and columns.intersection({column.upper() for column in mapping_columns}):
+            return family
+    if {"INPUT_PLAN", "OUT_PLAN"}.intersection(columns) or any(cue in compact for cue in ("계획", "스케줄", "스케쥴", "schedule", "target")):
+        return "target"
+    if {"WIP"}.intersection(columns) or "재공" in compact:
+        return "wip"
+    if {"EQP_ID", "EQPID", "EQP_MODEL"}.intersection(columns) or any(cue in compact for cue in ("장비", "설비", "equipment", "assign")):
+        return "equipment"
+    if {"PRODUCTION", "NETDIE_300_CNT"}.intersection(columns) or any(cue in compact for cue in ("production", "생산", "실적")):
+        return "production"
+    return ""
+
+
+def _columns_from_mapping_dict(value: Any) -> list[str]:
+    if not isinstance(value, dict):
+        return []
+    result: list[str] = []
+    for key, mapped in value.items():
+        result.extend(_as_text_list(key))
+        result.extend(_as_text_list(mapped))
+    return _unique_text(result)
+
+
+def _source_text(payload: dict[str, Any]) -> str:
+    return "\n".join(_clean(payload.get(key)) for key in ("refined_text", "raw_text") if _clean(payload.get(key)))
+
+
+def _source_mentions_product_key_columns(text: str) -> bool:
+    compact = _compact_text(text)
+    return any(cue in compact for cue in ("productkey", "product_key", "productkeycolumns", "제품키", "제품기준", "조인키", "결합키"))
+
+
+def _source_mentions_process_group(text: str) -> bool:
+    compact = _compact_text(text)
+    return any(cue in compact for cue in ("processgroup", "공정그룹", "포함공정", "공정은", "공정목록"))
+
+
+def _is_derived_metric_artifact(section: str, key: str, payload: dict[str, Any], source_text: str) -> bool:
+    if not _has_formula_metric_cue(source_text, {"PRODUCTION", "NETDIE_300_CNT"}):
+        return False
+    compact_key = _compact_text(key)
+    compact_payload = _compact_text(_term_text(key, payload, source_text))
+    if section == "product_terms" and compact_key in {"wafer", "wafers"}:
+        return True
+    if section == "quantity_terms" and compact_key in {"failunitqty", "failunitquantity"}:
+        return True
+    return section == "quantity_terms" and "failunitqty" in compact_payload and "output" in compact_payload
+
+
+def _has_formula_metric_cue(text: str, required_columns: set[str]) -> bool:
+    upper = str(text or "").upper()
+    return all(column in upper for column in required_columns)
+
+
+def _has_input_production_cue(text: str) -> bool:
+    compact = _compact_text(text)
+    return ("input" in compact or "투입" in compact) and ("production" in compact or "생산" in compact or "실적" in compact)
+
+
+def _has_unique_count_cue(text: str) -> bool:
+    compact = _compact_text(text)
+    return any(cue in compact for cue in ("uniquecount", "nunique", "distinct", "중복제거", "고유", "유니크", "대수"))
+
+
+def _has_equipment_count_cue(text: str, columns: set[str]) -> bool:
+    compact = _compact_text(text)
+    return bool({"EQP_ID", "EQPID", "EQP_MODEL"}.intersection(columns)) or any(cue in compact for cue in ("장비", "설비", "equipment", "eqpid", "eqp_id", "assign"))
+
+
+def _preferred_equipment_column(columns: set[str]) -> str:
+    for column in ("EQP_ID", "EQPID", "EQP_MODEL"):
+        if column in columns:
+            return column
+    return "EQP_ID"
+
+
+def _compact_text(value: Any) -> str:
+    return re.sub(r"[\s_\-./]+", "", str(value or "").strip().lower())
 
 
 def _merge_text_list_field(payload: dict[str, Any], key: str, values: list[str]) -> None:

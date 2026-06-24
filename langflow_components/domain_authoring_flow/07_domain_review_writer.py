@@ -72,7 +72,11 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
         if not duplicate_waiting_for_user and _is_duplicate_action_request(item):
             duplicate_supplement_count += 1
             continue
+        if not duplicate_waiting_for_user and _is_non_blocking_alias_overlap_request(item):
+            continue
         if _is_resolved_metric_supplement_request(item, payload):
+            continue
+        if _is_resolved_quantity_supplement_request(item, payload):
             continue
         supplement.append(item)
     if duplicate_waiting_for_user:
@@ -250,12 +254,23 @@ def _is_duplicate_action_request(item: Any) -> bool:
     return "duplicate_action" in lowered or "merge" in lowered and "replace" in lowered and "skip" in lowered
 
 
+def _is_non_blocking_alias_overlap_request(item: Any) -> bool:
+    if isinstance(item, dict):
+        field = _clean(item.get("field")).lower()
+        text = " ".join(_clean(item.get(key)) for key in ("reason", "example_user_input"))
+    else:
+        field = ""
+        text = _clean(item)
+    compact = re.sub(r"[\s_\-./]+", "", f"{field} {text}".lower())
+    return "aliasoverlap" in compact or "alias가겹" in compact or "중복alias" in compact
+
+
 def _is_resolved_metric_supplement_request(item: Any, payload: dict[str, Any]) -> bool:
     field = _supplement_field(item)
     if not field:
         return False
     field_lower = field.lower()
-    if field_lower not in {"dataset_key", "dataset_family"} and "output_column" not in field_lower:
+    if field_lower not in {"dataset_key", "dataset_family", "required_quantity_terms"} and "output_column" not in field_lower:
         return False
     for domain_item in _as_list(payload.get("items")):
         if not isinstance(domain_item, dict) or _clean(domain_item.get("section")) != "metric_terms":
@@ -265,7 +280,38 @@ def _is_resolved_metric_supplement_request(item: Any, payload: dict[str, Any]) -
             return True
         if field_lower == "dataset_family" and _metric_has_dataset_family(metric_payload):
             return True
+        if field_lower == "required_quantity_terms" and _metric_has_required_quantity_terms(metric_payload):
+            return True
         if "output_column" in field_lower and _metric_has_output_column(metric_payload, field):
+            return True
+    return False
+
+
+def _is_resolved_quantity_supplement_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item)
+    if not field:
+        return False
+    field_lower = field.lower()
+    if field_lower not in {"dataset_key", "dataset_family", "aggregation", "quantity_column", "output_column", "output_column_name"}:
+        return False
+    for domain_item in _as_list(payload.get("items")):
+        if not isinstance(domain_item, dict) or _clean(domain_item.get("section")) != "quantity_terms":
+            continue
+        quantity_payload = domain_item.get("payload") if isinstance(domain_item.get("payload"), dict) else {}
+        if field_lower == "dataset_key" and (
+            _clean(quantity_payload.get("dataset_key"))
+            or _clean(quantity_payload.get("dataset_family"))
+            or _clean(quantity_payload.get("quantity_column"))
+            or _as_text_list(quantity_payload.get("source_columns"))
+        ):
+            return True
+        if field_lower == "dataset_family" and _clean(quantity_payload.get("dataset_family")):
+            return True
+        if field_lower == "aggregation" and _clean(quantity_payload.get("aggregation")):
+            return True
+        if field_lower == "quantity_column" and (_clean(quantity_payload.get("quantity_column")) or _as_text_list(quantity_payload.get("source_columns"))):
+            return True
+        if field_lower in {"output_column", "output_column_name"} and _clean(quantity_payload.get("output_column")):
             return True
     return False
 
@@ -293,6 +339,13 @@ def _metric_has_output_column(payload: dict[str, Any], field: str) -> bool:
     if any(output.upper() in field_upper for output in outputs):
         return True
     return len(outputs) == 1 and field.lower() in {"output_column", "output_column_name"}
+
+
+def _metric_has_required_quantity_terms(payload: dict[str, Any]) -> bool:
+    if _as_text_list(payload.get("required_quantity_terms")):
+        return True
+    source_columns = {column.upper() for column in _as_text_list(payload.get("source_columns"))}
+    return bool({"PRODUCTION", "NETDIE_300_CNT", "WIP", "OUT_PLAN", "INPUT_PLAN"}.intersection(source_columns))
 
 
 def _supplement_field(item: Any) -> str:

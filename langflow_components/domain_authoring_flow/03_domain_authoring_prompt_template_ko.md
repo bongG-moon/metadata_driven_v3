@@ -1,12 +1,19 @@
 정제된 제조 domain 설명을 MongoDB에 저장 가능한 domain metadata로 변환하세요.
 반드시 하나의 엄격한 JSON object만 반환하세요. markdown으로 감싸지 마세요.
 정제된 설명에 있는 정보만 사용하세요. 필수 정보가 부족하면 missing_information에 넣으세요.
+authoring context에는 기존 domain metadata, table catalog metadata, main flow filter metadata가 함께 들어 있습니다.
+기존 domain metadata는 기존 key 선택 또는 중복/update 의도 판단에만 사용하세요. 기존 요약에 보인다는 이유만으로 입력에 없는 항목을 새로 만들지 마세요.
+table catalog metadata는 작업자가 production table, ASSIGN table, target/schedule table, WIP table처럼 말하거나 컬럼명을 언급했을 때 dataset_family와 source column을 추론하는 데 사용하세요.
+main flow filter metadata는 물리 컬럼이나 업무 표현을 표준 field로 해석할 때만 사용하고, 이 domain flow에서 main_flow_filter item을 만들지 마세요.
+재사용 가능한 domain rule은 작업자가 특정 dataset_key를 명시하지 않았다면 dataset_key보다 dataset_family/source_columns를 선호하세요.
 조건은 가능한 한 구조화된 JSON으로 표현하세요. 예: {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}.
 실행에 쓰이는 필터 조건을 자연어 문장으로 저장하지 마세요. 컬럼 판정은 condition object로, 정확한 값 매칭은 filters object로 저장하세요.
 descriptor 형태 입력은 실행 가능한 구조로 변환하세요. 예: {{"column": "TSV_DIE_TYP", "condition": "not null and not empty"}}는 {{"condition": {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}}}가 됩니다.
 공정값이나 상태값처럼 정확히 일치해야 하는 값은 문장 대신 {{"filters": {{"OPER_NAME": ["INPUT"]}}}} 같은 구조로 저장하세요.
 같은 업무 용어가 dataset별 또는 dataset_family별로 다른 물리 필터를 사용해야 하면 condition_by_dataset 또는 condition_by_family를 사용하세요.
 metric_terms에는 텍스트가 필요한 수량이나 결과명을 설명하는 경우 required_quantity_terms와 output_column을 포함하세요.
+metric_terms에서 source column/formula가 명확하고 table catalog 문맥으로 source family를 추론할 수 있으면 dataset_key를 요구하지 마세요.
+quantity_terms에서 특정 table family의 특정 column unique count라고 설명되면 aggregation='nunique', quantity_column/source_columns, dataset_family를 추론하고 output_column은 명시되지 않았으면 업무 용어로 생성해도 됩니다.
 metric_terms에서는 source가 명확하면 작업자가 내부 필드를 모두 쓰지 않아도 재사용 가능한 dataset 의도를 추론하세요.
 production table, production result table, 생산량 조회 테이블, 생산 실적, 생산량 조회는 dataset_family='production' 및 required_quantity_terms=['production']로 해석하세요.
 하나의 dataset family만 쓰는 metric은 dataset_key가 선택 사항입니다. 현재/이력 dataset은 날짜 범위에 따라 고를 수 있도록 dataset_family 또는 required_dataset_families를 우선 사용하세요.

@@ -17,6 +17,7 @@ from lfx.schema.message import Message
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_table_catalog_authoring_prompt_variables(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
+    metadata_context = payload.get("metadata_context") if isinstance(payload.get("metadata_context"), dict) else {}
     existing_summary = [
         {
             "dataset_key": item.get("dataset_key"),
@@ -29,6 +30,17 @@ def build_table_catalog_authoring_prompt_variables(payload_value: Any) -> dict[s
         for item in payload.get("existing_items", [])[:80]
         if isinstance(item, dict)
     ]
+    main_filter_summary = [
+        {
+            "filter_key": item.get("filter_key"),
+            "aliases": item.get("aliases", [])[:8],
+            "column_candidates": item.get("column_candidates", [])[:12],
+            "semantic_role": item.get("semantic_role"),
+            "description": item.get("description"),
+        }
+        for item in metadata_context.get("main_flow_filters", [])[:120]
+        if isinstance(item, dict)
+    ]
     return {
         "prompt_type": "table_catalog_authoring_json",
         "payload": payload,
@@ -36,6 +48,10 @@ def build_table_catalog_authoring_prompt_variables(payload_value: Any) -> dict[s
             [
                 "Existing dataset summary for duplicate awareness:",
                 json.dumps(existing_summary, ensure_ascii=False, indent=2),
+                "",
+                "Registered main flow filter summary:",
+                "Use these registered filter_key values as the left side of table_catalog.filter_mappings. Map each filter_key to this dataset's physical output columns on the right side. Do not create new main flow filters here.",
+                json.dumps(main_filter_summary, ensure_ascii=False, indent=2),
                 "",
                 "Original user text:",
                 str(payload.get("raw_text") or ""),

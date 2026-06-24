@@ -17,6 +17,7 @@ from lfx.schema.message import Message
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def build_domain_authoring_prompt_variables(payload_value: Any) -> dict[str, Any]:
     payload = _payload(payload_value)
+    metadata_context = payload.get("metadata_context") if isinstance(payload.get("metadata_context"), dict) else {}
     existing_summary = [
         {
             "section": item.get("section"),
@@ -28,13 +29,47 @@ def build_domain_authoring_prompt_variables(payload_value: Any) -> dict[str, Any
         for item in payload.get("existing_items", [])[:80]
         if isinstance(item, dict)
     ]
+    table_catalog_summary = [
+        {
+            "dataset_key": item.get("dataset_key"),
+            "dataset_family": item.get("dataset_family"),
+            "aliases": item.get("aliases", [])[:8],
+            "description": item.get("description"),
+            "primary_quantity_column": item.get("primary_quantity_column"),
+            "columns": item.get("columns", [])[:24],
+            "filter_mappings": item.get("filter_mappings", {}),
+            "standard_column_aliases": item.get("standard_column_aliases", {}),
+        }
+        for item in metadata_context.get("table_catalog", [])[:80]
+        if isinstance(item, dict)
+    ]
+    main_filter_summary = [
+        {
+            "filter_key": item.get("filter_key"),
+            "aliases": item.get("aliases", [])[:8],
+            "column_candidates": item.get("column_candidates", [])[:12],
+            "semantic_role": item.get("semantic_role"),
+            "description": item.get("description"),
+        }
+        for item in metadata_context.get("main_flow_filters", [])[:80]
+        if isinstance(item, dict)
+    ]
     return {
         "prompt_type": "domain_authoring_json",
         "payload": payload,
         "authoring_context": "\n".join(
             [
                 "Existing domain item summary for duplicate awareness:",
+                "Use this summary only to choose an existing key or detect duplicates. Do not create items from this summary unless the refined text explicitly asks for them.",
                 json.dumps(existing_summary, ensure_ascii=False, indent=2),
+                "",
+                "Table catalog summary for source-family inference:",
+                "Use this to infer dataset_family, source columns, and table wording from the worker text. Do not require dataset_key for reusable domain rules when dataset_family/source_columns are enough.",
+                json.dumps(table_catalog_summary, ensure_ascii=False, indent=2),
+                "",
+                "Main flow filter summary for standard field inference:",
+                "Use this to map business words and physical columns to standard field keys. Do not create main_flow_filter items in this domain flow.",
+                json.dumps(main_filter_summary, ensure_ascii=False, indent=2),
                 "",
                 "Refined text:",
                 str(payload.get("refined_text") or payload.get("raw_text") or ""),
