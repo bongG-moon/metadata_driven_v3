@@ -6,6 +6,19 @@
 아래 `.md` 파일들은 복사해서 Prompt Template 노드에 붙여 넣기 위한 참고 원본입니다. Langflow 실행 중 custom component가 로컬 `.md` 파일을 읽지 않습니다.
 영문/한글 템플릿은 같은 input 변수만 사용하므로, 원하는 언어 버전 하나를 골라 붙여 넣으면 됩니다.
 
+## Main Flow Filter Context
+
+이 flow에는 별도의 `Main Flow Filter Loader` 노드가 없습니다. `00 Table Catalog Authoring Request Loader`가 같은 MongoDB에서 `main_flow_filter_collection_name` 컬렉션을 내부적으로 읽고, 그 결과를 `payload.metadata_context.main_flow_filters`에 넣습니다.
+
+03번 노드는 이 값을 `authoring_context` 안의 `Registered main flow filter summary` 섹션으로 변환해서 Prompt Template에 전달합니다. Table Catalog 작성 LLM은 이 목록을 기준으로 `filter_mappings`의 왼쪽 key를 고르고, 오른쪽에는 해당 dataset의 실제 물리 컬럼명을 넣어야 합니다.
+
+main flow filter가 반영되지 않는 것처럼 보이면 아래를 먼저 확인하세요.
+
+- `00 Table Catalog Authoring Request Loader`의 `mongo_uri`, `mongo_database`가 실제 MongoDB를 가리키는지 확인합니다.
+- `00`의 `load_existing` 값이 `true`인지 확인합니다.
+- `00`의 `main_flow_filter_collection_name` 입력에 실제 main flow filter 컬렉션명을 넣었는지 확인합니다. 기본값은 `agent_v3_main_flow_filters`입니다.
+- 실행 후 `00` 노드 status의 `main_flow_filters`와 `03` 노드 status의 `loaded_main_flow_filters`가 0보다 큰지 확인합니다.
+
 ## Prompt Template Files
 
 | Template node | English file | Korean file |
@@ -42,25 +55,26 @@
 | 2 | Text input | MongoDB URI | `00 Table Catalog Authoring Request Loader` | `mongo_uri` |
 | 3 | Text input | DB name | `00 Table Catalog Authoring Request Loader` | `mongo_database` |
 | 4 | Text input | full collection name, e.g. `agent_v3_table_catalog_items` | `00 Table Catalog Authoring Request Loader` | `collection_name` |
-| 5 | `00 Table Catalog Authoring Request Loader` | `payload_out` | `01 Table Catalog Text Refinement Variables Builder` | `payload` |
-| 6 | `01 Table Catalog Text Refinement Variables Builder` | `raw_text` | `01 Table Catalog Text Refinement Prompt Template` | `raw_text` |
-| 7 | `01 Table Catalog Text Refinement Prompt Template` | prompt/message output | Gemini/LLM refinement node | prompt/message input |
-| 8 | `00 Table Catalog Authoring Request Loader` | `payload_out` | `02 Table Catalog Text Refinement Normalizer` | `payload` |
-| 9 | Gemini/LLM refinement node | text/message output | `02 Table Catalog Text Refinement Normalizer` | `llm_response` |
-| 10 | `02 Table Catalog Text Refinement Normalizer` | `payload_out` | `03 Table Catalog Authoring Variables Builder` | `payload` |
-| 11 | `03 Table Catalog Authoring Variables Builder` | `authoring_context` | `03 Table Catalog Authoring Prompt Template` | `authoring_context` |
-| 12 | `03 Table Catalog Authoring Prompt Template` | prompt/message output | Gemini/LLM authoring node | prompt/message input |
-| 13 | `02 Table Catalog Text Refinement Normalizer` | `payload_out` | `04 Table Catalog Authoring Result Normalizer` | `payload` |
-| 14 | Gemini/LLM authoring node | text/message output | `04 Table Catalog Authoring Result Normalizer` | `llm_response` |
-| 15 | `04 Table Catalog Authoring Result Normalizer` | `payload_out` | `05 Table Catalog Similarity Checker` | `payload` |
-| 16 | `05 Table Catalog Similarity Checker` | `payload_out` | `06 Table Catalog Review Variables Builder` | `payload` |
-| 17 | `06 Table Catalog Review Variables Builder` | `review_input_json` | `06 Table Catalog Review Prompt Template` | `review_input_json` |
-| 18 | `06 Table Catalog Review Prompt Template` | prompt/message output | Gemini/LLM review node | prompt/message input |
-| 19 | `05 Table Catalog Similarity Checker` | `payload_out` | `07 Table Catalog Review Writer` | `payload` |
-| 20 | Gemini/LLM review node | text/message output | `07 Table Catalog Review Writer` | `llm_response` |
-| 21 | Optional Text input | MongoDB URI override | `07 Table Catalog Review Writer` | `mongo_uri` |
-| 22 | `07 Table Catalog Review Writer` | `payload_out` | `08 Table Catalog Authoring Response Builder` | `payload` |
-| 23 | `08 Table Catalog Authoring Response Builder` | `message` | `Chat Output` | `message` |
+| 5 | Text input | main flow filter collection name, e.g. `agent_v3_main_flow_filters` | `00 Table Catalog Authoring Request Loader` | `main_flow_filter_collection_name` |
+| 6 | `00 Table Catalog Authoring Request Loader` | `payload_out` | `01 Table Catalog Text Refinement Variables Builder` | `payload` |
+| 7 | `01 Table Catalog Text Refinement Variables Builder` | `raw_text` | `01 Table Catalog Text Refinement Prompt Template` | `raw_text` |
+| 8 | `01 Table Catalog Text Refinement Prompt Template` | prompt/message output | Gemini/LLM refinement node | prompt/message input |
+| 9 | `00 Table Catalog Authoring Request Loader` | `payload_out` | `02 Table Catalog Text Refinement Normalizer` | `payload` |
+| 10 | Gemini/LLM refinement node | text/message output | `02 Table Catalog Text Refinement Normalizer` | `llm_response` |
+| 11 | `02 Table Catalog Text Refinement Normalizer` | `payload_out` | `03 Table Catalog Authoring Variables Builder` | `payload` |
+| 12 | `03 Table Catalog Authoring Variables Builder` | `authoring_context` | `03 Table Catalog Authoring Prompt Template` | `authoring_context` |
+| 13 | `03 Table Catalog Authoring Prompt Template` | prompt/message output | Gemini/LLM authoring node | prompt/message input |
+| 14 | `02 Table Catalog Text Refinement Normalizer` | `payload_out` | `04 Table Catalog Authoring Result Normalizer` | `payload` |
+| 15 | Gemini/LLM authoring node | text/message output | `04 Table Catalog Authoring Result Normalizer` | `llm_response` |
+| 16 | `04 Table Catalog Authoring Result Normalizer` | `payload_out` | `05 Table Catalog Similarity Checker` | `payload` |
+| 17 | `05 Table Catalog Similarity Checker` | `payload_out` | `06 Table Catalog Review Variables Builder` | `payload` |
+| 18 | `06 Table Catalog Review Variables Builder` | `review_input_json` | `06 Table Catalog Review Prompt Template` | `review_input_json` |
+| 19 | `06 Table Catalog Review Prompt Template` | prompt/message output | Gemini/LLM review node | prompt/message input |
+| 20 | `05 Table Catalog Similarity Checker` | `payload_out` | `07 Table Catalog Review Writer` | `payload` |
+| 21 | Gemini/LLM review node | text/message output | `07 Table Catalog Review Writer` | `llm_response` |
+| 22 | Optional Text input | MongoDB URI override | `07 Table Catalog Review Writer` | `mongo_uri` |
+| 23 | `07 Table Catalog Review Writer` | `payload_out` | `08 Table Catalog Authoring Response Builder` | `payload` |
+| 24 | `08 Table Catalog Authoring Response Builder` | `message` | `Chat Output` | `message` |
 
 ## Required Dataset Information
 

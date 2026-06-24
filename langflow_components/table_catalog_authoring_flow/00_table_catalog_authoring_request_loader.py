@@ -235,7 +235,7 @@ class TableCatalogAuthoringRequestLoader(Component):
         MessageTextInput(name="mongo_uri", display_name="Mongo URI", value=""),
         MessageTextInput(name="mongo_database", display_name="Mongo Database", value="metadata_driven_agent_v3"),
         MessageTextInput(name="collection_name", display_name="Collection Name", value=DEFAULT_COLLECTION_NAME),
-        MessageTextInput(name="main_flow_filter_collection_name", display_name="Main Flow Filter Collection Name", value=DEFAULT_MAIN_FLOW_FILTER_COLLECTION_NAME, advanced=True),
+        MessageTextInput(name="main_flow_filter_collection_name", display_name="Main Flow Filter Collection Name", value=DEFAULT_MAIN_FLOW_FILTER_COLLECTION_NAME),
         DropdownInput(name="duplicate_action", display_name="Duplicate Action", options=DUPLICATE_ACTION_OPTIONS, value="ask", advanced=True),
         DropdownInput(name="load_existing", display_name="Load Existing Items", options=LOAD_EXISTING_OPTIONS, value="true", advanced=True),
         MessageTextInput(name="load_limit", display_name="Load Limit", value="200", advanced=True),

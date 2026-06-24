@@ -85,6 +85,22 @@ def _payload(value: Any) -> dict[str, Any]:
     return dict(data) if isinstance(data, dict) else {}
 
 
+def _metadata_context_counts(payload_value: Any) -> dict[str, int]:
+    payload = _payload(payload_value)
+    metadata_context = payload.get("metadata_context") if isinstance(payload.get("metadata_context"), dict) else {}
+
+    def _count(key: str) -> int:
+        value = metadata_context.get(key)
+        return len(value) if isinstance(value, list) else 0
+
+    existing_items = payload.get("existing_items")
+    return {
+        "existing_items": len(existing_items) if isinstance(existing_items, list) else 0,
+        "table_catalog": _count("table_catalog"),
+        "main_flow_filters": _count("main_flow_filters"),
+    }
+
+
 # 컴포넌트 설명: 03 Domain Authoring Variables Builder
 # Langflow 표시 설명: Domain Authoring Prompt Template에 넣을 authoring_context 변수를 준비합니다.
 class DomainAuthoringVariablesBuilder(Component):
@@ -100,7 +116,15 @@ class DomainAuthoringVariablesBuilder(Component):
     # 처리 역할: Domain Authoring Prompt Template에 넣을 authoring_context 변수를 준비합니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_authoring_context(self) -> Message:
-        variables = build_domain_authoring_prompt_variables(getattr(self, "payload", None))
-        self.status = {"prompt_type": variables["prompt_type"], "authoring_context_chars": len(variables["authoring_context"])}
+        payload_value = getattr(self, "payload", None)
+        variables = build_domain_authoring_prompt_variables(payload_value)
+        counts = _metadata_context_counts(payload_value)
+        self.status = {
+            "prompt_type": variables["prompt_type"],
+            "authoring_context_chars": len(variables["authoring_context"]),
+            "loaded_existing_items": counts["existing_items"],
+            "loaded_table_catalog": counts["table_catalog"],
+            "loaded_main_flow_filters": counts["main_flow_filters"],
+        }
 
         return Message(text=variables["authoring_context"])

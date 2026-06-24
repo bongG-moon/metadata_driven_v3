@@ -696,6 +696,72 @@ def test_intent_normalizer_keeps_source_specific_process_filters(monkeypatch: An
     assert _filter_values(jobs["bg1_production"], "OPER_NAME") == ["B/G1"]
 
 
+def test_intent_normalizer_applies_process_scope_per_source_alias(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload(
+        "어제 DP공정에서 생산량이 가장 많은 제품의 오늘 DA공정 재공을 차수별로 알려줘",
+        "test-session",
+        request_date="20260624",
+    )
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    product_keys = payload["metadata"]["domain_items"]["product_key_columns"]
+    process_groups = payload["metadata"]["domain_items"]["process_groups"]
+    dp_processes = process_groups["DP"]["processes"]
+    da_processes = process_groups["DA"]["processes"]
+    combined_processes = [*da_processes, *dp_processes]
+    llm_json = {
+        "intent_type": "multi_source_analysis",
+        "analysis_kind": "rank_then_lookup",
+        "datasets": ["production", "wip_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production",
+                "source_alias": "prod_yesterday_dp",
+                "params": {"DATE": "20260623"},
+                "filters": [
+                    {"field": "DATE", "op": "eq", "value": "20260623"},
+                    {"field": "OPER_NAME", "op": "in", "values": combined_processes},
+                ],
+            },
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wip_today_da",
+                "params": {"DATE": "20260624"},
+                "filters": [
+                    {"field": "DATE", "op": "eq", "value": "20260624"},
+                    {"field": "OPER_NAME", "op": "in", "values": combined_processes},
+                ],
+            },
+        ],
+        "step_plan": [
+            {
+                "step_id": "rank_top_product_in_dp",
+                "operation": "rank_top_n",
+                "source_alias": "prod_yesterday_dp",
+                "group_by": product_keys,
+                "metric": "PRODUCTION",
+                "top_n": 1,
+            },
+            {
+                "step_id": "wip_by_oper_num_for_top_product",
+                "operation": "aggregate_sum",
+                "source_alias": "wip_today_da",
+                "group_by": ["OPER_NUM"],
+                "metric": "WIP",
+            },
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
+    jobs = {job["source_alias"]: job for job in payload["retrieval_jobs"]}
+
+    assert _filter_values(jobs["prod_yesterday_dp"], "OPER_NAME") == dp_processes
+    assert _filter_values(jobs["wip_today_da"], "OPER_NAME") == da_processes
+
+
 def test_intent_normalizer_labels_product_term_scope_without_raw_condition_column(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")

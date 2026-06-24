@@ -1639,6 +1639,10 @@ def _augmented_filters_for_job(
         merged = _remove_filter_fields(merged, blocked_fields)
     if _all_process_scope_for_job(question, job, dataset_catalog):
         merged = _remove_filter_fields(merged, ["OPER_NAME"])
+    else:
+        process_scope_values = _job_process_scope_values(job, metadata)
+        if process_scope_values and _catalog_has_filter(dataset_catalog, "OPER_NAME"):
+            merged = _replace_include_filters_for_field(merged, "OPER_NAME", process_scope_values)
     merged = _drop_conflicting_product_alias_filters(merged, inferred_filters, metadata)
     return _filters_for_dataset(_dedupe_filters(merged), dataset_key, dataset_catalog)
 
@@ -1673,6 +1677,67 @@ def _all_process_scope_for_job(question: str, job: dict[str, Any], dataset_catal
     ).lower()
     family = str(dataset_catalog.get("dataset_family") or "").lower()
     return any(token in job_text for token in ("all", "current", "wip", "전체", "전공정")) or family in {"wip", "inventory"}
+
+
+def _job_process_scope_values(job: dict[str, Any], metadata: dict[str, Any]) -> list[str]:
+    for keys in (("source_alias", "job_id"), ("purpose",)):
+        text = " ".join(str(job.get(key) or "") for key in keys)
+        values = _single_process_scope_values_from_text(text, metadata)
+        if values:
+            return values
+    return []
+
+
+def _single_process_scope_values_from_text(text: str, metadata: dict[str, Any]) -> list[str]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    groups = domain.get("process_groups") if isinstance(domain.get("process_groups"), dict) else {}
+    exact_matches: list[str] = []
+    for group in groups.values():
+        if not isinstance(group, dict):
+            continue
+        for value in group.get("processes") if isinstance(group.get("processes"), list) else []:
+            process = str(value or "").strip()
+            if process and _alias_in_text(text, process):
+                exact_matches.append(process)
+    if exact_matches:
+        return _unique(exact_matches)
+
+    matched_group_values: list[list[str]] = []
+    for group_key, group in groups.items():
+        if not isinstance(group, dict):
+            continue
+        aliases = group.get("aliases") if isinstance(group.get("aliases"), list) else []
+        match_values = [group_key, group.get("display_name"), *aliases]
+        if not _mentions_any(text, match_values):
+            continue
+        values = [str(item) for item in group.get("processes", []) if str(item or "").strip()] if isinstance(group.get("processes"), list) else []
+        if values:
+            matched_group_values.append(values)
+    if len(matched_group_values) == 1:
+        return _unique(matched_group_values[0])
+    return []
+
+
+def _replace_include_filters_for_field(filters: list[Any], field_name: str, values: list[Any]) -> list[dict[str, Any]]:
+    replacement_values = _unique([str(value) for value in values if str(value or "").strip()])
+    if not replacement_values:
+        return [deepcopy(item) for item in filters if isinstance(item, dict)]
+    result: list[dict[str, Any]] = []
+    inserted = False
+    for item in filters:
+        if not isinstance(item, dict):
+            continue
+        field = str(item.get("field") or "").strip()
+        op = str(item.get("op") or ("eq" if "value" in item else "")).strip().lower()
+        if field == field_name and op in {"eq", "in"}:
+            if not inserted:
+                result.append({"field": field_name, "op": "in", "values": replacement_values})
+                inserted = True
+            continue
+        result.append(deepcopy(item))
+    if not inserted:
+        result.append({"field": field_name, "op": "in", "values": replacement_values})
+    return result
 
 
 def _infer_filters(

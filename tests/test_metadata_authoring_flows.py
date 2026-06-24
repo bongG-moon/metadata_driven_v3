@@ -245,6 +245,22 @@ def test_domain_authoring_context_includes_table_catalog_and_main_filters() -> N
     assert "equipment_status" in context
     assert "Main flow filter summary for standard field inference" in context
     assert "EQP_ID" in context
+    assert variables._metadata_context_counts(payload)["main_flow_filters"] == 1
+
+
+def test_main_flow_filter_collection_inputs_are_visible() -> None:
+    domain_loader = load_module("langflow_components/domain_authoring_flow/00_domain_authoring_request_loader.py")
+    table_loader = load_module("langflow_components/table_catalog_authoring_flow/00_table_catalog_authoring_request_loader.py")
+
+    for component_cls in [
+        domain_loader.DomainAuthoringRequestLoader,
+        table_loader.TableCatalogAuthoringRequestLoader,
+    ]:
+        input_by_name = {item.name: item for item in component_cls.inputs}
+        main_filter_input = input_by_name["main_flow_filter_collection_name"]
+
+        assert main_filter_input.value == "agent_v3_main_flow_filters"
+        assert getattr(main_filter_input, "advanced", False) is False
 
 
 def test_domain_authoring_drops_ungrounded_artifacts_from_wafer_metric() -> None:
@@ -462,6 +478,7 @@ def test_table_catalog_authoring_context_includes_main_flow_filters() -> None:
     assert "WORK_DATE" in context
     assert "PKG_TYPE1" in context
     assert "PKG_TYP1" in context
+    assert variables._metadata_context_counts(payload)["main_flow_filters"] == 2
 
 
 def test_table_catalog_authoring_normalizes_detail_columns_and_filter_mappings() -> None:
