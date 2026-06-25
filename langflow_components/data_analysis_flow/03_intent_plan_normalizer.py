@@ -96,6 +96,7 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             dataset_catalog,
             _required_product_grain(plan, dataset_catalog),
             metadata,
+            _metric_output_columns(plan, plan.get("matched_metric_terms", []) if isinstance(plan.get("matched_metric_terms"), list) else []),
         )
         job["source_type"] = dataset_catalog.get("source_type", job.get("source_type", "dummy"))
         if isinstance(dataset_catalog.get("source_config"), dict):
@@ -1200,11 +1201,13 @@ def _normalize_required_columns(
     catalog: dict[str, Any],
     product_grain: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
+    output_only_columns: list[str] | None = None,
 ) -> list[str]:
     catalog_columns = _unique(catalog.get("columns", []))
     filter_mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
     standard_aliases = catalog.get("standard_column_aliases") if isinstance(catalog.get("standard_column_aliases"), dict) else {}
     columns = _unique(raw_columns if isinstance(raw_columns, list) and raw_columns else catalog_columns)
+    output_only_set = set(_unique(output_only_columns or []))
     normalized: list[str] = []
     for column in columns:
         if column in catalog_columns:
@@ -1212,8 +1215,15 @@ def _normalize_required_columns(
             continue
         standard_column = _standard_column_for_required_column(str(column), catalog, product_grain, metadata)
         mapped_columns = _source_columns_for_standard_column(standard_column, catalog)
-        if mapped_columns:
+        unmapped_fallback = (
+            len(mapped_columns) == 1
+            and mapped_columns[0] == standard_column
+            and standard_column not in catalog_columns
+        )
+        if mapped_columns and not (unmapped_fallback and column in output_only_set):
             normalized.extend(item for item in mapped_columns if item in catalog_columns or item not in normalized)
+        elif column in output_only_set:
+            continue
         elif column:
             normalized.append(column)
     quantity = catalog.get("primary_quantity_column")

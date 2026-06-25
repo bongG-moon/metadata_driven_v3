@@ -1235,6 +1235,81 @@ def test_intent_normalizer_converts_rich_product_conditions_to_filters(monkeypat
     assert {"field": "MCP_NO", "op": "not_empty"} in filters
 
 
+def test_intent_normalizer_treats_non_catalog_metric_name_as_output_label(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+
+    payload = request_loader.build_request_payload("today package out by product", "test-session", request_date="20260625")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    product_grain = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_join",
+        "datasets": ["production_today"],
+        "analysis_output_columns": [*product_grain, "PKG_OUT_QTY"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "prod_today_pkg",
+                "params": {"DATE": "20260625"},
+                "filters": [{"field": "OPER_NAME", "op": "eq", "value": "SHIP PKT"}],
+                "required_columns": ["DATE", "OPER_NAME", *product_grain, "PKG_OUT_QTY"],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "aggregate_pkg_out_by_product",
+                "operation": "aggregate",
+                "source_alias": "prod_today_pkg",
+                "group_by": product_grain,
+                "metric": "PKG_OUT_QTY",
+                "output_columns": [*product_grain, "PKG_OUT_QTY"],
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    required_columns = payload["retrieval_jobs"][0]["required_columns"]
+
+    assert "PKG_OUT_QTY" not in required_columns
+    assert "PRODUCTION" in required_columns
+
+    payload["runtime_sources"] = {
+        "prod_today_pkg": [
+            {
+                "WORK_DATE": "20260625",
+                "OPER_NAME": "SHIP PKT",
+                "TECH": "TSV",
+                "DEN": "2048G",
+                "MODE": "HBM3E",
+                "PKG_TYP1": "HBM",
+                "PKG_TYP2": "HBM",
+                "LEAD": "LF",
+                "MCP_NO": "H-HBM16E",
+                "PRODUCTION": 10,
+            }
+        ]
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "prod_df = sources['prod_today_pkg']",
+                "prod_df = prod_df[(prod_df['OPER_NAME'] == 'SHIP PKT') & (prod_df['DATE'] == '20260625')]",
+                "result_df = prod_df.groupby(['TECH', 'DEN', 'MODE', 'PKG_TYPE1', 'PKG_TYPE2', 'LEAD', 'MCP_NO'], dropna=False)['PRODUCTION'].sum().reset_index()",
+                "result_df = result_df.rename(columns={'PRODUCTION': 'PKG_OUT_QTY'})",
+            ]
+        ),
+        "output_columns": [*product_grain, "PKG_OUT_QTY"],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["rows"][0]["PKG_OUT_QTY"] == 10
+
+
 def test_intent_normalizer_aligns_followup_equipment_to_state_products(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
