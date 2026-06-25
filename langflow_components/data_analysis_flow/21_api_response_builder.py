@@ -156,13 +156,18 @@ def _build_analysis_view(payload: dict[str, Any], data: dict[str, Any]) -> dict[
     debug = _as_dict(payload.get("debug")) or _as_dict(payload.get("developer"))
     pandas_code_json = _as_dict(source.get("pandas_code_json")) or _as_dict(debug.get("pandas_code_json"))
     analysis_code = source.get("analysis_code") or debug.get("analysis_code") or pandas_code_json.get("code")
+    analysis_rows = _row_list(source.get("rows"))
+    analysis_columns = _string_list(source.get("columns")) or _columns_from_rows(analysis_rows)
+    analysis_row_count = None
+    if source.get("row_count") not in (None, "", [], {}) or analysis_rows:
+        analysis_row_count = _int_value(source.get("row_count"), len(analysis_rows))
     view = {
         "status": source.get("status") or debug.get("analysis_status") or payload.get("analysis_status"),
         "safety_passed": source.get("safety_passed"),
         "executed": source.get("executed"),
-        "columns": _string_list(source.get("columns")) or list(data.get("columns", [])),
-        "rows": _row_list(source.get("rows")) or list(data.get("rows", [])),
-        "row_count": _int_value(source.get("row_count"), int(data.get("row_count") or 0)),
+        "columns": analysis_columns,
+        "rows": analysis_rows,
+        "row_count": analysis_row_count,
         "analysis_code": analysis_code or "",
         "pandas_code_json": pandas_code_json,
         "reasoning_steps": _as_list(source.get("reasoning_steps") or debug.get("reasoning_steps")),

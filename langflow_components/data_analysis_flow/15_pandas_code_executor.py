@@ -442,11 +442,11 @@ def _collapse_over_detailed_aggregate_result(frame: pd.DataFrame, plan: dict[str
 
 def _final_aggregate_step(plan: dict[str, Any]) -> dict[str, Any]:
     steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
-    for step in reversed(steps):
-        if not isinstance(step, dict):
-            continue
-        if str(step.get("operation") or "").strip() in AGGREGATE_STEP_OPERATIONS:
-            return step
+    if not steps:
+        return {}
+    final_step = steps[-1] if isinstance(steps[-1], dict) else {}
+    if str(final_step.get("operation") or "").strip() in AGGREGATE_STEP_OPERATIONS:
+        return final_step
     return {}
 
 

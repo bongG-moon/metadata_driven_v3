@@ -515,6 +515,70 @@ def test_pandas_executor_collapses_over_detailed_metric_aggregate_result() -> No
     assert result["analysis"]["rows"] == [{"OPER_GROUP": "WB", "WAFER_OUT_QTY": 12.5, "FAIL_UNIT_QTY": 53.0}]
 
 
+def test_pandas_executor_does_not_collapse_union_after_intermediate_aggregates() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "multi_source_analysis",
+            "analysis_output_columns": ["OPER_GROUP", "PRODUCTION", "WIP"],
+            "step_plan": [
+                {
+                    "step_id": "agg_prod_da",
+                    "operation": "aggregate_sum",
+                    "group_by": [],
+                    "metrics": ["PRODUCTION"],
+                    "output_columns": ["OPER_GROUP", "PRODUCTION"],
+                },
+                {
+                    "step_id": "agg_wip_da",
+                    "operation": "aggregate_sum",
+                    "group_by": [],
+                    "metrics": ["WIP"],
+                    "output_columns": ["OPER_GROUP", "WIP"],
+                },
+                {"step_id": "join_da", "operation": "left_join", "output_columns": ["OPER_GROUP", "PRODUCTION", "WIP"]},
+                {
+                    "step_id": "agg_prod_wb",
+                    "operation": "aggregate_sum",
+                    "group_by": [],
+                    "metrics": ["PRODUCTION"],
+                    "output_columns": ["OPER_GROUP", "PRODUCTION"],
+                },
+                {
+                    "step_id": "agg_wip_wb",
+                    "operation": "aggregate_sum",
+                    "group_by": [],
+                    "metrics": ["WIP"],
+                    "output_columns": ["OPER_GROUP", "WIP"],
+                },
+                {"step_id": "join_wb", "operation": "left_join", "output_columns": ["OPER_GROUP", "PRODUCTION", "WIP"]},
+                {"step_id": "final_union", "operation": "concat", "output_columns": ["OPER_GROUP", "PRODUCTION", "WIP"]},
+            ],
+        },
+        "state": {},
+        "runtime_sources": {},
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "da = pd.DataFrame([{'OPER_GROUP': 'DA', 'PRODUCTION': 10, 'WIP': 3}])",
+                "wb = pd.DataFrame([{'OPER_GROUP': 'WB', 'PRODUCTION': 20, 'WIP': 4}])",
+                "result_df = pd.concat([da, wb], ignore_index=True)",
+            ]
+        ),
+        "output_columns": ["OPER_GROUP", "PRODUCTION", "WIP"],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["columns"] == ["OPER_GROUP", "PRODUCTION", "WIP"]
+    assert result["analysis"]["rows"] == [
+        {"OPER_GROUP": "DA", "PRODUCTION": 10, "WIP": 3},
+        {"OPER_GROUP": "WB", "PRODUCTION": 20, "WIP": 4},
+    ]
+
+
 def test_pandas_executor_collapses_duplicate_group_metric_rows() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {

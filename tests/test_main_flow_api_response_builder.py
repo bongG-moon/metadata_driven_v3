@@ -120,6 +120,33 @@ def test_main_flow_api_response_builder_prefers_analysis_rows_over_stale_data() 
     assert result["data"]["data_ref"]["ref_id"] == "result-ref"
 
 
+def test_main_flow_api_response_builder_does_not_show_source_rows_as_analysis_rows() -> None:
+    builder = load_component("langflow_components/data_analysis_flow/21_api_response_builder.py")
+
+    result = builder.build_main_flow_api_response(
+        {
+            "answer_message": "ok",
+            "data": {
+                "columns": ["OPER_NAME", "PRODUCTION"],
+                "rows": [{"OPER_NAME": "W/B1", "PRODUCTION": 100}],
+                "row_count": 1,
+            },
+            "analysis": {
+                "status": "ok",
+                "safety_passed": True,
+                "executed": True,
+                "analysis_code": "result_df = pd.DataFrame([{'OPER_GROUP': 'WB', 'WIP': 100000.0}])",
+            },
+        }
+    )["api_response"]
+
+    assert result["data"]["columns"] == ["OPER_NAME", "PRODUCTION"]
+    assert result["analysis"]["analysis_code"].startswith("result_df")
+    assert "columns" not in result["analysis"]
+    assert "rows" not in result["analysis"]
+    assert "row_count" not in result["analysis"]
+
+
 def test_main_flow_api_response_builder_collects_state_followup_source_refs() -> None:
     builder = load_component("langflow_components/data_analysis_flow/21_api_response_builder.py")
     source_ref = {
