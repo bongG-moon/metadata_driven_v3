@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 from importlib import import_module
 from typing import Any
 
@@ -46,6 +47,69 @@ def load_metadata_items(
         close = getattr(client, "close", None)
         if callable(close):
             close()
+
+
+def mark_metadata_deleted(
+    metadata_type: str,
+    mongo_uri: str,
+    mongo_database: str = DEFAULT_DATABASE,
+    collection_name: str = "",
+    item: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Mark one metadata document as deleted without removing it from MongoDB."""
+    kind = normalize_metadata_type(metadata_type)
+    uri = str(mongo_uri or "").strip()
+    if not uri:
+        return {"ok": False, "message": "MONGODB_URI is empty.", "matched_count": 0, "modified_count": 0}
+    query = delete_query_for(kind, item or {})
+    if not query:
+        return {"ok": False, "message": "Cannot identify metadata item to delete.", "matched_count": 0, "modified_count": 0}
+
+    database = str(mongo_database or DEFAULT_DATABASE).strip() or DEFAULT_DATABASE
+    collection = str(collection_name or DEFAULT_COLLECTIONS[kind]).strip() or DEFAULT_COLLECTIONS[kind]
+    client = None
+    try:
+        mongo_client_cls = getattr(import_module("pymongo"), "MongoClient")
+        client = mongo_client_cls(uri, serverSelectionTimeoutMS=5000)
+        update = {
+            "$set": {
+                "status": "deleted",
+                "deleted_at": datetime.now(timezone.utc).isoformat(),
+            }
+        }
+        result = client[database][collection].update_one(query, update)
+        matched_count = int(getattr(result, "matched_count", 0) or 0)
+        modified_count = int(getattr(result, "modified_count", 0) or 0)
+        ok = matched_count > 0
+        message = "Metadata item marked as deleted." if ok else "No matching metadata item found."
+        return {
+            "ok": ok,
+            "message": message,
+            "database": database,
+            "collection_name": collection,
+            "query": query,
+            "matched_count": matched_count,
+            "modified_count": modified_count,
+        }
+    except Exception as exc:
+        return {"ok": False, "message": str(exc), "database": database, "collection_name": collection, "query": query, "matched_count": 0, "modified_count": 0}
+    finally:
+        close = getattr(client, "close", None)
+        if callable(close):
+            close()
+
+
+def delete_query_for(metadata_type: str, item: dict[str, Any]) -> dict[str, Any]:
+    kind = normalize_metadata_type(metadata_type)
+    if kind == "domain":
+        section = str(item.get("section") or item.get("gbn") or "").strip()
+        key = str(item.get("key") or "").strip()
+        return {"$or": [{"section": section, "key": key}, {"gbn": section, "key": key}]} if section and key else {}
+    if kind == "table_catalog":
+        dataset_key = str(item.get("dataset_key") or item.get("key") or "").strip()
+        return {"$or": [{"dataset_key": dataset_key}, {"key": dataset_key}]} if dataset_key else {}
+    filter_key = str(item.get("filter_key") or item.get("key") or "").strip()
+    return {"$or": [{"filter_key": filter_key}, {"key": filter_key}]} if filter_key else {}
 
 
 def normalize_metadata_document(metadata_type: str, document: dict[str, Any]) -> dict[str, Any]:

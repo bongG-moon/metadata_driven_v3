@@ -576,13 +576,18 @@ def _query_analysis(payload: dict[str, Any], data: dict[str, Any], developer: di
     developer = _as_dict(developer) or _as_dict(payload.get("developer") or payload.get("debug"))
     pandas_code_json = _as_dict(source.get("pandas_code_json")) or _as_dict(developer.get("pandas_code_json"))
     analysis_code = source.get("analysis_code") or developer.get("analysis_code") or pandas_code_json.get("code") or payload.get("analysis_code")
+    analysis_rows = _row_list(source.get("rows"))
+    analysis_columns = _string_list(source.get("columns")) or _columns_from_rows(analysis_rows)
+    analysis_row_count = None
+    if source.get("row_count") not in (None, "", [], {}) or analysis_rows:
+        analysis_row_count = _int_value(source.get("row_count"), len(analysis_rows))
     result = {
         "status": source.get("status") or payload.get("analysis_status") or developer.get("analysis_status"),
         "safety_passed": source.get("safety_passed"),
         "executed": source.get("executed"),
-        "columns": _string_list(source.get("columns")) or list(data.get("columns") or []),
-        "rows": _row_list(source.get("rows")),
-        "row_count": _int_value(source.get("row_count"), int(data.get("row_count") or 0)),
+        "columns": analysis_columns,
+        "rows": analysis_rows,
+        "row_count": analysis_row_count,
         "analysis_code": analysis_code or "",
         "pandas_code_json": pandas_code_json,
         "reasoning_steps": _as_list(source.get("reasoning_steps") or developer.get("reasoning_steps")),

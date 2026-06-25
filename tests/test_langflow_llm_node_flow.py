@@ -478,6 +478,67 @@ def test_intent_normalizer_recipe_promotes_generic_lot_quantity_plan(monkeypatch
     assert {"LOT_ID", "WF_QTY", "SUB_PROD_QTY"}.issubset(set(payload["retrieval_jobs"][0]["required_columns"]))
 
 
+def test_intent_normalizer_removes_unrequested_optional_date_for_raw_lookup(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload("lot status data 조회해줘", "test-session", request_date="20260625")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    lot_catalog = payload["metadata"]["table_catalog"]["datasets"]["lot_status"]
+    lot_catalog["filter_mappings"]["DATE"] = ["WORK_DATE"]
+    lot_catalog["date_format"] = "YYYYMMDD"
+    lot_catalog["required_params"] = []
+    lot_catalog["required_param_mappings"] = {}
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "detail_rows",
+        "datasets": ["lot_status"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "lot_status",
+                "source_alias": "lot_status_data",
+                "params": {"DATE": "20260625"},
+                "filters": [{"field": "DATE", "op": "eq", "value": "20260625"}],
+            }
+        ],
+        "step_plan": [{"step_id": "retrieve_lot_status", "operation": "detail_rows", "source_alias": "lot_status_data"}],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    job = payload["retrieval_jobs"][0]
+
+    assert "DATE" not in job["params"]
+    assert "DATE" not in {item["field"] for item in job["filters"]}
+
+
+def test_intent_normalizer_keeps_optional_date_filter_when_question_has_date_scope(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    payload = request_loader.build_request_payload("today lot status data 조회해줘", "test-session", request_date="20260625")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    lot_catalog = payload["metadata"]["table_catalog"]["datasets"]["lot_status"]
+    lot_catalog["filter_mappings"]["DATE"] = ["WORK_DATE"]
+    lot_catalog["date_format"] = "YYYYMMDD"
+    lot_catalog["required_params"] = []
+    lot_catalog["required_param_mappings"] = {}
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "detail_rows",
+        "datasets": ["lot_status"],
+        "retrieval_jobs": [{"dataset_key": "lot_status", "source_alias": "lot_status_data"}],
+        "step_plan": [{"step_id": "retrieve_lot_status", "operation": "detail_rows", "source_alias": "lot_status_data"}],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    job = payload["retrieval_jobs"][0]
+
+    assert "DATE" not in job["params"]
+    assert _filter_values(job, "DATE") == ["20260625"]
+
+
 def test_intent_normalizer_recipe_aligns_history_dataset_for_date_split(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")

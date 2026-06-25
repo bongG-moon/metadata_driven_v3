@@ -4,7 +4,7 @@ import sys
 import types
 from typing import Any
 
-from web_app.metadata_store import load_metadata_items, normalize_metadata_document
+from web_app.metadata_store import load_metadata_items, mark_metadata_deleted, normalize_metadata_document
 
 
 class FakeCursor(list):
@@ -21,6 +21,19 @@ class FakeCollection:
         if query.get("status"):
             return FakeCursor([doc for doc in self.docs if doc.get("status") == query["status"]])
         return FakeCursor(list(self.docs))
+
+    def update_one(self, query: dict[str, Any], update: dict[str, Any]) -> Any:
+        for doc in self.docs:
+            if matches_query(doc, query):
+                doc.update(update.get("$set", {}))
+                return types.SimpleNamespace(matched_count=1, modified_count=1)
+        return types.SimpleNamespace(matched_count=0, modified_count=0)
+
+
+def matches_query(doc: dict[str, Any], query: dict[str, Any]) -> bool:
+    if "$or" in query and isinstance(query["$or"], list):
+        return any(matches_query(doc, item) for item in query["$or"] if isinstance(item, dict))
+    return all(doc.get(key) == value for key, value in query.items())
 
 
 class FakeDatabase:
@@ -92,3 +105,25 @@ def test_normalize_metadata_document_handles_table_payload() -> None:
     assert item["display_name"] == "오늘 생산"
     assert item["dataset_family"] == "production"
     assert item["source_type"] == "oracle"
+
+
+def test_mark_metadata_deleted_updates_status_without_removing_document(monkeypatch: Any) -> None:
+    docs = [
+        {"section": "process_groups", "key": "DA", "status": "active", "payload": {"display_name": "DA"}},
+        {"section": "process_groups", "key": "WB", "status": "active", "payload": {"display_name": "WB"}},
+    ]
+    client = install_fake_pymongo(monkeypatch, docs)
+
+    result = mark_metadata_deleted(
+        "domain",
+        mongo_uri="mongodb://fake",
+        mongo_database="metadata_driven_agent_v3",
+        collection_name="agent_v3_domain_items",
+        item={"section": "process_groups", "key": "DA"},
+    )
+
+    assert result["ok"] is True
+    assert docs[0]["status"] == "deleted"
+    assert "deleted_at" in docs[0]
+    assert docs[1]["status"] == "active"
+    assert client.closed is True

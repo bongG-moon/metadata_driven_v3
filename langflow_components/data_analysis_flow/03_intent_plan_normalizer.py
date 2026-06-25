@@ -76,6 +76,7 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             params.update(deepcopy(job["params"]))
         original_params = deepcopy(params)
         _fill_required_params(params, dataset_key, dataset_catalog, question, request_date, job)
+        _drop_optional_date_param_without_required_param(params, dataset_catalog)
         job["params"] = params
         original_filters = deepcopy(job.get("filters")) if isinstance(job.get("filters"), list) else []
         job["filters"] = _augmented_filters_for_job(job, plan, metadata, question, request_date)
@@ -1587,10 +1588,9 @@ def _fill_required_params(
     request_date: str,
     job: dict[str, Any] | None = None,
 ) -> None:
-    required = catalog.get("required_params") if isinstance(catalog.get("required_params"), list) else []
+    required = _catalog_required_params(catalog)
     has_date_param = bool(params.get("DATE"))
-    supports_date_filter = _catalog_has_filter(catalog, "DATE")
-    if "DATE" in required or has_date_param or supports_date_filter:
+    if "DATE" in required or has_date_param:
         date_value = _date_value_for_job(question, dataset_key, catalog, job or {}, request_date)
         if date_value:
             params["DATE"] = _date_param(dataset_key, date_value, catalog)
@@ -1643,6 +1643,8 @@ def _augmented_filters_for_job(
         process_scope_values = _job_process_scope_values(job, metadata)
         if process_scope_values and _catalog_has_filter(dataset_catalog, "OPER_NAME"):
             merged = _replace_include_filters_for_field(merged, "OPER_NAME", process_scope_values)
+    if not _date_filter_allowed(question, dataset_catalog):
+        merged = _remove_filter_fields(merged, ["DATE"])
     merged = _drop_conflicting_product_alias_filters(merged, inferred_filters, metadata)
     return _filters_for_dataset(_dedupe_filters(merged), dataset_key, dataset_catalog)
 
@@ -1754,7 +1756,8 @@ def _infer_filters(
     catalog = dataset_catalog or {}
     filters: list[dict[str, Any]] = []
     date_value = _date_value_for_job(text, dataset_key, catalog, job or {}, request_date)
-    if date_value and _metadata_has_filter(metadata, "DATE") and _catalog_has_filter(catalog, "DATE"):
+    should_add_date_filter = _date_filter_allowed(text, catalog)
+    if date_value and should_add_date_filter and _metadata_has_filter(metadata, "DATE") and _catalog_has_filter(catalog, "DATE"):
         filters.append({"field": "DATE", "op": "eq", "value": date_value})
     term_filters = _metadata_term_filters(text, metadata, dataset_key, catalog)
     filters.extend(_remove_filter_fields(term_filters, blocked_filter_fields or []))
@@ -2595,6 +2598,43 @@ def _metadata_has_filter(metadata: dict[str, Any], filter_key: str) -> bool:
 def _catalog_has_filter(catalog: dict[str, Any], filter_key: str) -> bool:
     mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
     return str(filter_key or "") in mappings
+
+
+def _catalog_required_params(catalog: dict[str, Any]) -> set[str]:
+    required: set[str] = set()
+    raw_required = catalog.get("required_params") if isinstance(catalog.get("required_params"), list) else []
+    required.update(str(item).strip() for item in raw_required if str(item).strip())
+    required_mappings = catalog.get("required_param_mappings") if isinstance(catalog.get("required_param_mappings"), dict) else {}
+    required.update(str(key).strip() for key in required_mappings if str(key).strip())
+    return required
+
+
+def _drop_optional_date_param_without_required_param(params: dict[str, Any], catalog: dict[str, Any]) -> None:
+    if "DATE" not in _catalog_required_params(catalog):
+        params.pop("DATE", None)
+
+
+def _date_filter_allowed(question: str, catalog: dict[str, Any]) -> bool:
+    return "DATE" in _catalog_required_params(catalog) or _question_mentions_date_scope(question)
+
+
+def _question_mentions_date_scope(text: str) -> bool:
+    if _mentions_any(
+        text,
+        [
+            "\uc624\ub298",
+            "\ud604\uc7ac",
+            "\uae08\uc77c",
+            "\uc5b4\uc81c",
+            "\uc804\uc77c",
+            "today",
+            "current",
+            "yesterday",
+            "previous day",
+        ],
+    ):
+        return True
+    return bool(re.search(r"\b20\d{2}[-./]?\d{2}[-./]?\d{2}\b", str(text or "")))
 
 
 def _supports_product_grain_filter(catalog: dict[str, Any], plan: dict[str, Any]) -> bool:

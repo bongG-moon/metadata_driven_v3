@@ -15,14 +15,14 @@ REPO_ROOT = APP_DIR.parent
 try:
     from .data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from .langflow_client import LangflowApiClient, LangflowSettings
-    from .metadata_store import collection_name_for, load_metadata_items
+    from .metadata_store import collection_name_for, load_metadata_items, mark_metadata_deleted
     from .ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, format_answer_markdown_text, json_text, safe_markdown_text
 except ImportError:
     if str(REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(REPO_ROOT))
     from web_app.data_ref_store import DEFAULT_RESULT_COLLECTION, load_data_ref_rows
     from web_app.langflow_client import LangflowApiClient, LangflowSettings
-    from web_app.metadata_store import collection_name_for, load_metadata_items
+    from web_app.metadata_store import collection_name_for, load_metadata_items, mark_metadata_deleted
     from web_app.ui_helpers import chat_dataframe_height, compact_json_html, display_table_frame, format_answer_markdown_text, json_text, safe_markdown_text
 
 
@@ -1370,6 +1370,7 @@ def render_domain_item_detail(item: dict[str, Any], settings: dict[str, Any], ke
         st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
         if item.get("source_text"):
             st.text_area("Source Text", value=str(item.get("source_text") or ""), height=120, disabled=True, key=f"{key_prefix}_domain_source")
+        render_metadata_delete_action("domain", item, settings, f"{key_prefix}_domain")
     with tab_payload:
         st.dataframe(key_value_frame(payload), width="stretch", hide_index=True)
     with tab_langflow:
@@ -1403,6 +1404,7 @@ def render_table_item_detail(item: dict[str, Any], settings: dict[str, Any], key
         st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
         if payload.get("description") or item.get("description"):
             st.text_area("Description", value=str(payload.get("description") or item.get("description") or ""), height=100, disabled=True, key=f"{key_prefix}_table_description")
+        render_metadata_delete_action("table_catalog", item, settings, f"{key_prefix}_table")
     with tab_metadata:
         st.dataframe(key_value_frame(metadata), width="stretch", hide_index=True)
     with tab_columns:
@@ -1434,6 +1436,7 @@ def render_main_filter_item_detail(item: dict[str, Any], settings: dict[str, Any
     tab_summary, tab_payload, tab_document = st.tabs(["요약", "Payload", "원본 Document"])
     with tab_summary:
         st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
+        render_metadata_delete_action("main_flow_filter", item, settings, f"{key_prefix}_main_filter")
     with tab_payload:
         st.dataframe(key_value_frame(payload), width="stretch", hide_index=True)
     with tab_document:
@@ -1467,6 +1470,30 @@ def load_lookup_metadata(metadata_type: str, status: str, settings: dict[str, An
         return []
     st.caption(f"MongoDB `{loaded.get('database')}` / `{loaded.get('collection_name')}`에서 {len(loaded.get('items', [])):,}건을 불러왔습니다.")
     return [item for item in loaded.get("items", []) if isinstance(item, dict)]
+
+
+def render_metadata_delete_action(metadata_type: str, item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
+    if str(item.get("status") or "active").strip() == "deleted":
+        render_inline_status("삭제됨", "이 항목은 이미 deleted 상태입니다.")
+        return
+    api_settings = settings.get("api_settings") if isinstance(settings, dict) else None
+    mongo_uri = str(getattr(api_settings, "mongo_uri", "") or "").strip()
+    if not mongo_uri:
+        render_inline_status("", "MONGODB_URI가 설정되어 있지 않아 웹에서 삭제할 수 없습니다.", tone="warning")
+        return
+    if st.button("선택 항목 삭제", key=f"{key_prefix}_delete", width="stretch"):
+        result = mark_metadata_deleted(
+            metadata_type,
+            mongo_uri=mongo_uri,
+            mongo_database=str(getattr(api_settings, "mongo_database", "") or "metadata_driven_agent_v3"),
+            collection_name=collection_name_for(metadata_type, api_settings),
+            item=item,
+        )
+        if result.get("ok"):
+            st.success("선택한 metadata 항목을 deleted 상태로 변경했습니다.")
+            st.rerun()
+        else:
+            render_inline_status("삭제 실패", result.get("message") or "metadata 상태를 변경하지 못했습니다.", tone="error")
 
 
 def domain_export_payload(rows: list[dict[str, Any]]) -> dict[str, Any]:

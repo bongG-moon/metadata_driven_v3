@@ -120,6 +120,32 @@ def test_normalize_query_response_prefers_analysis_rows_over_stale_data() -> Non
     assert result["data"]["data_ref"]["ref_id"] == "result-ref"
 
 
+def test_normalize_query_response_does_not_use_raw_data_columns_as_pandas_columns() -> None:
+    raw = {
+        "api_response": {
+            "status": "ok",
+            "answer_message": "ok",
+            "data": {
+                "columns": ["OPER_NAME", "PRODUCTION"],
+                "rows": [{"OPER_NAME": "W/B1", "PRODUCTION": 100}],
+                "row_count": 1,
+            },
+            "analysis": {
+                "status": "ok",
+                "executed": True,
+                "analysis_code": "result_df = pd.DataFrame([{'WIP': 40}])",
+            },
+        }
+    }
+
+    result = normalize_query_response(raw)
+
+    assert result["data"]["columns"] == ["OPER_NAME", "PRODUCTION"]
+    assert "columns" not in result["analysis"]
+    assert "row_count" not in result["analysis"]
+    assert result["analysis"]["analysis_code"].startswith("result_df")
+
+
 def test_normalize_query_response_collects_router_side_developer_payload() -> None:
     raw = {
         "api_response": {
