@@ -91,6 +91,7 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
                     *metric_source_columns,
                 ]
             )
+        raw_required_columns = _with_filter_required_columns(raw_required_columns, job)
         job["required_columns"] = _normalize_required_columns(
             raw_required_columns,
             dataset_catalog,
@@ -313,17 +314,23 @@ def _recipe_match_score(
     plan: dict[str, Any],
 ) -> int:
     score = 0
+    semantic_score = 0
     default_kind = str(recipe.get("default_analysis_kind") or recipe_key)
-    if default_kind and str(plan.get("analysis_kind") or "") == default_kind:
-        score += 5
     aliases = recipe.get("aliases") if isinstance(recipe.get("aliases"), list) else []
-    if _mentions_any(question, [recipe_key, recipe.get("display_name"), *aliases]):
-        score += 4
+    matched_aliases = [
+        str(alias or "").strip()
+        for alias in [recipe_key, recipe.get("display_name"), *aliases]
+        if str(alias or "").strip() and _alias_in_text(question, alias)
+    ]
+    if matched_aliases:
+        semantic_score += 4
+        if max(len(alias) for alias in matched_aliases) >= 10:
+            semantic_score += 2
     cues = recipe.get("question_cues") if isinstance(recipe.get("question_cues"), list) else []
     matched_cues = [cue for cue in cues if _alias_in_text(question, cue)]
-    score += len(matched_cues)
+    semantic_score += len(matched_cues)
     if cues and len(matched_cues) == len(cues):
-        score += 2
+        semantic_score += 2
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     metric_terms = domain.get("metric_terms") if isinstance(domain.get("metric_terms"), dict) else {}
     recipe_metric_terms = recipe.get("metric_terms") if isinstance(recipe.get("metric_terms"), list) else []
@@ -331,7 +338,10 @@ def _recipe_match_score(
         metric = metric_terms.get(metric_key) if isinstance(metric_terms.get(metric_key), dict) else {}
         metric_aliases = metric.get("aliases") if isinstance(metric.get("aliases"), list) else []
         if _mentions_any(question, [metric_key, metric.get("display_name"), *metric_aliases]):
-            score += 3
+            semantic_score += 3
+    score += semantic_score
+    if semantic_score and default_kind and str(plan.get("analysis_kind") or "") == default_kind:
+        score += 2
     return score
 
 
@@ -1238,6 +1248,23 @@ def _normalize_required_columns(
     return _unique(normalized)
 
 
+def _with_filter_required_columns(raw_columns: Any, job: dict[str, Any]) -> list[str]:
+    columns = _unique(raw_columns if isinstance(raw_columns, list) else [])
+    filters = job.get("filters") if isinstance(job.get("filters"), list) else []
+    for condition in filters:
+        if not isinstance(condition, dict):
+            continue
+        field = str(condition.get("field") or "").strip()
+        if field and field != "PRODUCT_GRAIN":
+            columns.append(field)
+    params = job.get("params") if isinstance(job.get("params"), dict) else {}
+    for key in params:
+        text = str(key or "").strip()
+        if text:
+            columns.append(text)
+    return _unique(columns)
+
+
 def _standard_column_for_required_column(
     column: str,
     catalog: dict[str, Any],
@@ -1661,6 +1688,9 @@ def _augmented_filters_for_job(
 
 def _filters_for_dataset(filters: list[Any], dataset_key: str, catalog: dict[str, Any]) -> list[dict[str, Any]]:
     mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
+    catalog_columns = set(_unique(catalog.get("columns", [])))
+    quantity = catalog.get("primary_quantity_column")
+    quantity_columns = set(quantity if isinstance(quantity, list) else [quantity] if quantity else [])
     result = []
     for item in filters:
         if not isinstance(item, dict):
@@ -1668,7 +1698,7 @@ def _filters_for_dataset(filters: list[Any], dataset_key: str, catalog: dict[str
         field = str(item.get("field") or "").strip()
         if not field:
             continue
-        if field == "PRODUCT_GRAIN" or field in mappings:
+        if field == "PRODUCT_GRAIN" or field in mappings or field in catalog_columns or field in quantity_columns:
             clean_item = deepcopy(item)
             if field == "DATE":
                 _normalize_date_filter(clean_item, dataset_key, catalog)
@@ -1771,6 +1801,7 @@ def _infer_filters(
         filters.append({"field": "DATE", "op": "eq", "value": date_value})
     term_filters = _metadata_term_filters(text, metadata, dataset_key, catalog)
     filters.extend(_remove_filter_fields(term_filters, blocked_filter_fields or []))
+    filters.extend(_numeric_threshold_filters(text, metadata, catalog))
     process_values = _metadata_process_values(text, metadata)
     if process_values and _metadata_has_filter(metadata, "OPER_NAME") and _catalog_has_filter(catalog, "OPER_NAME"):
         filters.append({"field": "OPER_NAME", "op": "in", "values": _unique(process_values)})
@@ -1808,6 +1839,62 @@ def _attach_state_product_keys(plan: dict[str, Any], payload: dict[str, Any]) ->
             product_rows.append(product)
     if product_rows:
         plan["state_product_keys"] = product_rows
+
+
+def _numeric_threshold_filters(text: str, metadata: dict[str, Any], catalog: dict[str, Any]) -> list[dict[str, Any]]:
+    field = _threshold_metric_field(text, catalog)
+    if not field:
+        return []
+    value = _threshold_number(text)
+    if value is None:
+        return []
+    op = _threshold_operator(text)
+    if not op:
+        return []
+    if not _metadata_has_filter(metadata, field) and field not in set(_unique(catalog.get("columns", []))):
+        return []
+    return [{"field": field, "op": op, "value": value}]
+
+
+def _threshold_metric_field(text: str, catalog: dict[str, Any]) -> str:
+    source = str(text or "")
+    if _mentions_any(source, ["재공", "WIP", "wip"]):
+        return "WIP"
+    if _mentions_any(source, ["생산량", "실적", "OUTPUT", "output", "PRODUCTION", "production"]):
+        return "PRODUCTION"
+    quantity = catalog.get("primary_quantity_column")
+    if isinstance(quantity, str) and quantity:
+        return quantity
+    return ""
+
+
+def _threshold_number(text: str) -> int | float | None:
+    source = str(text or "")
+    match = re.search(r"(\d+(?:\.\d+)?)\s*([Kk천만])", source)
+    if not match:
+        match = re.search(r"(\d+(?:\.\d+)?)\s*(?=(?:이상|초과|이하|미만))", source)
+    if not match:
+        return None
+    value = float(match.group(1))
+    unit = match.group(2)
+    if unit in {"K", "k", "천"}:
+        value *= 1000
+    elif unit == "만":
+        value *= 10000
+    return int(value) if value.is_integer() else value
+
+
+def _threshold_operator(text: str) -> str:
+    source = str(text or "")
+    if _mentions_any(source, ["이상", ">= ", "greater than or equal", "at least"]):
+        return "gte"
+    if _mentions_any(source, ["초과", "> ", "greater than", "more than"]):
+        return "gt"
+    if _mentions_any(source, ["이하", "<= ", "less than or equal", "at most"]):
+        return "lte"
+    if _mentions_any(source, ["미만", "< ", "less than"]):
+        return "lt"
+    return ""
 
 
 def _product_keys_from_state_summary(current_data: dict[str, Any], product_grain: list[Any]) -> list[dict[str, Any]]:
@@ -2431,7 +2518,7 @@ def _attach_result_scope_columns(
     scope_columns: list[dict[str, Any]] = [
         deepcopy(item)
         for item in plan.get("result_scope_columns", [])
-        if isinstance(item, dict)
+        if isinstance(item, dict) and not _is_filter_scope_column(item)
     ] if isinstance(plan.get("result_scope_columns"), list) else []
     product_scope_fields = _append_product_term_scope_columns(scope_columns, metadata, question)
     for job in jobs:
@@ -2443,6 +2530,8 @@ def _attach_result_scope_columns(
                 continue
             field = str(condition.get("field") or "").strip()
             if not field or field in {"DATE", "PRODUCT_GRAIN"}:
+                continue
+            if str(condition.get("op") or "").strip().lower() in {"gte", ">=", "gt", ">", "lte", "<=", "lt", "<"}:
                 continue
             if field in product_scope_fields:
                 continue
@@ -2557,6 +2646,14 @@ def _append_scope_column(scope_columns: list[dict[str, Any]], column: str, value
         scope_columns.append(item)
 
 
+def _is_filter_scope_column(item: dict[str, Any]) -> bool:
+    column = str(item.get("column") or "").strip().upper()
+    source_field = str(item.get("source_field") or "").strip().upper()
+    if column.endswith("_FILTER"):
+        return True
+    return source_field in {"WIP", "PRODUCTION"} and column not in {"PRODUCT_GROUP", "OPER_GROUP"}
+
+
 def _condition_for_dataset(term: dict[str, Any], dataset_key: str, dataset_catalog: dict[str, Any]) -> dict[str, Any]:
     overrides = term.get("condition_by_dataset") if isinstance(term.get("condition_by_dataset"), dict) else {}
     if dataset_key and isinstance(overrides.get(dataset_key), dict):
@@ -2587,6 +2684,9 @@ def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any]) -
                 result.append({"field": field_name, "op": "starts_with", "value": spec.get("starts_with")})
             if isinstance(spec.get("last_char_in"), list):
                 result.append({"field": field_name, "op": "last_char_in", "values": deepcopy(spec["last_char_in"])})
+            for op_key in ("gte", "gt", "lte", "lt"):
+                if op_key in spec:
+                    result.append({"field": field_name, "op": op_key, "value": spec.get(op_key)})
             if isinstance(spec.get("in"), list):
                 result.append({"field": field_name, "op": "in", "values": deepcopy(spec["in"])})
             if isinstance(spec.get("not_in"), list):
@@ -2763,10 +2863,28 @@ def _alias_in_text(question: str, alias: Any) -> bool:
     value = str(alias or "").strip()
     if not value:
         return False
+    if _should_use_normalized_alias_match(value) and _normalized_alias_text(value) in _normalized_alias_text(text):
+        return True
     if re.fullmatch(r"[A-Za-z0-9/.-]{1,4}", value):
         pattern = r"(?<![A-Za-z0-9])" + re.escape(value) + r"(?![A-Za-z0-9])"
         return re.search(pattern, text, flags=re.IGNORECASE) is not None
     return value in text or value.upper() in text.upper()
+
+
+def _normalized_alias_text(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    if not text:
+        return ""
+    text = re.sub(r"\s*([~\-–—])\s*", r"\1", text)
+    text = re.sub(r"\s+", " ", text)
+    return text
+
+
+def _should_use_normalized_alias_match(value: Any) -> bool:
+    text = str(value or "")
+    return bool(re.search(r"\d{1,2}\s*:\s*\d{2}\s*[~\-–—]\s*\d{1,2}\s*:\s*\d{2}", text)) or bool(
+        re.search(r"\S+\s+\S+", text)
+    )
 
 
 def _extract_lot_id(question: str) -> str:
@@ -2797,11 +2915,26 @@ def _date_value_for_job(
     job: dict[str, Any],
     request_date: str,
 ) -> str:
+    job_text = " ".join(
+        [
+            str(job.get("source_alias") or ""),
+            str(job.get("purpose") or ""),
+            str(job.get("job_id") or ""),
+            json.dumps(job.get("source_scope"), ensure_ascii=False) if isinstance(job.get("source_scope"), dict) else "",
+        ]
+    )
+    job_scope = _relative_date_from_text(job_text, request_date)
+    if job_scope:
+        return job_scope
+    concrete_date = _concrete_date_from_text(question, request_date)
+    if concrete_date:
+        return concrete_date
+    explicit_scope = _date_scope_from_job(job, request_date)
+    if explicit_scope:
+        return explicit_scope
     text = " ".join(
         [
             str(question or ""),
-            str(job.get("source_alias") or ""),
-            str(job.get("purpose") or ""),
             str(dataset_key or ""),
             str(catalog.get("display_name") or ""),
         ]
@@ -2819,6 +2952,68 @@ def _date_value_for_job(
             return _shift_date(request_date, -1)
     if mentions_today or scope == "current_day":
         return request_date
+    return ""
+
+
+def _date_scope_from_job(job: dict[str, Any], request_date: str) -> str:
+    params = job.get("params") if isinstance(job.get("params"), dict) else {}
+    date_from_params = _relative_or_absolute_date_value(params.get("DATE"), request_date)
+    if date_from_params:
+        return date_from_params
+    filters = job.get("filters") if isinstance(job.get("filters"), list) else []
+    for condition in filters:
+        if not isinstance(condition, dict):
+            continue
+        if str(condition.get("field") or "").strip() != "DATE":
+            continue
+        if "value" in condition:
+            value = _relative_or_absolute_date_value(condition.get("value"), request_date)
+            if value:
+                return value
+        values = condition.get("values")
+        if isinstance(values, list) and len(values) == 1:
+            value = _relative_or_absolute_date_value(values[0], request_date)
+            if value:
+                return value
+    return ""
+
+
+def _relative_date_from_text(text: str, request_date: str) -> str:
+    if _mentions_any(text, ["today", "current", "금일", "오늘", "현재"]):
+        return request_date
+    if _mentions_any(text, ["yesterday", "previous day", "전일", "어제"]):
+        return _shift_date(request_date, -1)
+    return ""
+
+
+def _relative_or_absolute_date_value(value: Any, request_date: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    relative = _relative_date_from_text(text, request_date)
+    if relative:
+        return relative
+    clean = text.replace("-", "").replace("/", "").replace(".", "")
+    if re.fullmatch(r"20\d{6}", clean):
+        return clean
+    return ""
+
+
+def _concrete_date_from_text(text: str, request_date: str) -> str:
+    source = str(text or "")
+    full = re.search(r"\b(20\d{2})[-./년\s]*(\d{1,2})[-./월\s]*(\d{1,2})\s*일?\b", source)
+    if full:
+        return f"{int(full.group(1)):04d}{int(full.group(2)):02d}{int(full.group(3)):02d}"
+    short = re.search(r"(?<!\d)(\d{1,2})\s*[/.-]\s*(\d{1,2})(?!\d)", source)
+    if short:
+        year = str(request_date or "")[:4]
+        if len(year) == 4 and year.isdigit():
+            return f"{year}{int(short.group(1)):02d}{int(short.group(2)):02d}"
+    korean = re.search(r"(?<!\d)(\d{1,2})\s*월\s*(\d{1,2})\s*일", source)
+    if korean:
+        year = str(request_date or "")[:4]
+        if len(year) == 4 and year.isdigit():
+            return f"{year}{int(korean.group(1)):02d}{int(korean.group(2)):02d}"
     return ""
 
 

@@ -206,6 +206,7 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
     result = frame.copy()
     rename_map: dict[str, str] = {}
     analysis_kind = plan.get("analysis_kind")
+    rename_map.update(_dotted_result_column_renames(result, plan))
 
     for base_name in ["PRODUCTION", "WIP", "OUT_PLAN", "TARGET_QTY", "LOT_COUNT", "WF_QTY", "DIE_QTY", "PRESS_CNT"]:
         for suffix in ("_sum", "_total", "_quantity", "_qty"):
@@ -266,6 +267,34 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
         result.insert(0, "SCOPE", plan.get("scope_label") or "ALL")
     result = _add_result_scope_columns(result, plan)
     return _order_result_columns(result, plan)
+
+
+def _dotted_result_column_renames(frame: pd.DataFrame, plan: dict[str, Any]) -> dict[str, str]:
+    aliases = {
+        str(job.get("source_alias") or job.get("dataset_key") or "").strip().lower()
+        for job in plan.get("retrieval_jobs", [])
+        if isinstance(job, dict)
+    }
+    aliases = {alias for alias in aliases if alias}
+    renames: dict[str, str] = {}
+    existing = {str(column) for column in frame.columns}
+    for column in frame.columns:
+        column_text = str(column or "").strip()
+        if "." not in column_text:
+            continue
+        prefix, metric = column_text.split(".", 1)
+        prefix_key = prefix.strip().lower()
+        metric_text = metric.strip()
+        if not prefix_key or not metric_text or (aliases and prefix_key not in aliases):
+            continue
+        clean_prefix = re.sub(r"[^0-9A-Za-z]+", "_", prefix.strip()).strip("_").upper()
+        clean_metric = re.sub(r"[^0-9A-Za-z]+", "_", metric_text).strip("_").upper()
+        if not clean_metric:
+            continue
+        candidate = clean_prefix if clean_prefix.endswith(f"_{clean_metric}") or clean_prefix == clean_metric else f"{clean_prefix}_{clean_metric}"
+        if candidate and candidate not in existing and candidate not in renames.values():
+            renames[column_text] = candidate
+    return renames
 
 
 def _fallback_result_df(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> pd.DataFrame | None:
@@ -467,7 +496,11 @@ def _aggregate_output_metrics_for_frame(
         if column not in group_by:
             candidates.append(column)
     if isinstance(plan.get("analysis_output_columns"), list):
-        candidates.extend(str(item) for item in plan["analysis_output_columns"] if str(item or "").strip() and str(item) not in group_by)
+        candidates.extend(
+            column
+            for column in _column_names_from_output_specs(plan["analysis_output_columns"])
+            if column not in group_by
+        )
     scope_columns = set(_result_scope_column_names(plan))
     return _unique_columns(
         [
@@ -626,6 +659,21 @@ def _apply_source_filters_for_alias(frame: pd.DataFrame, alias: str, plan: dict[
             result = result[normalized_series.map(lambda value: any(value.startswith(target) for target in normalized_values))]
         elif op == "last_char_in":
             result = result[normalized_series.map(lambda value: bool(value) and value[-1:] in normalized_values)]
+        elif op in {"gte", ">=", "gt", ">", "lte", "<=", "lt", "<"}:
+            numeric_series = pd.to_numeric(series, errors="coerce")
+            numeric_targets = [pd.to_numeric(value, errors="coerce") for value in values]
+            numeric_targets = [value for value in numeric_targets if not pd.isna(value)]
+            if not numeric_targets:
+                continue
+            target = numeric_targets[0]
+            if op in {"gte", ">="}:
+                result = result[numeric_series >= target]
+            elif op in {"gt", ">"}:
+                result = result[numeric_series > target]
+            elif op in {"lte", "<="}:
+                result = result[numeric_series <= target]
+            elif op in {"lt", "<"}:
+                result = result[numeric_series < target]
     return result
 
 
@@ -785,7 +833,26 @@ def _apply_step_renames(frame: pd.DataFrame, step: dict[str, Any]) -> pd.DataFra
 
 def _step_output_columns(step: dict[str, Any]) -> list[str]:
     columns = step.get("output_columns") if isinstance(step.get("output_columns"), list) else []
-    return [str(column) for column in columns if str(column or "").strip()]
+    return _column_names_from_output_specs(columns)
+
+
+def _column_names_from_output_specs(values: list[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        column = _column_name_from_output_spec(value)
+        if column and column not in result:
+            result.append(column)
+    return result
+
+
+def _column_name_from_output_spec(value: Any) -> str:
+    if isinstance(value, dict):
+        for key in ("output_column", "column", "name"):
+            column = str(value.get(key) or "").strip()
+            if column:
+                return column
+        return ""
+    return str(value or "").strip()
 
 
 def _select_step_columns(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -821,7 +888,7 @@ def _should_replace_incomplete_generated_result(
         return False
     required = _preferred_columns(plan)
     if not required and isinstance(plan.get("analysis_output_columns"), list):
-        required = [str(column) for column in plan["analysis_output_columns"] if str(column or "").strip()]
+        required = _column_names_from_output_specs(plan["analysis_output_columns"])
     if not required:
         return False
     return any(column not in result_df.columns for column in required)
@@ -1202,7 +1269,7 @@ def _primary_source_alias(plan: dict[str, Any], runtime_sources: dict[str, Any])
 def _order_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.DataFrame:
     preferred = _final_step_output_columns(plan) or _preferred_columns(plan)
     if not preferred and isinstance(plan.get("analysis_output_columns"), list):
-        preferred = [str(column) for column in plan["analysis_output_columns"] if str(column or "").strip()]
+        preferred = _column_names_from_output_specs(plan["analysis_output_columns"])
     scope_columns = [column for column in _result_scope_column_names(plan) if column in frame.columns]
     if scope_columns:
         preferred = _unique_columns([*scope_columns, *preferred])
@@ -1397,7 +1464,7 @@ def _standard_columns_from_plan(plan: dict[str, Any]) -> list[str]:
     for key in ("product_grain", "analysis_output_columns"):
         value = plan.get(key)
         if isinstance(value, list):
-            columns.extend(str(item) for item in value if str(item or "").strip())
+            columns.extend(_column_names_from_output_specs(value))
     steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
     for step in steps:
         if not isinstance(step, dict):
@@ -1405,7 +1472,7 @@ def _standard_columns_from_plan(plan: dict[str, Any]) -> list[str]:
         for key in ("group_by", "join_keys", "output_columns"):
             value = step.get(key)
             if isinstance(value, list):
-                columns.extend(str(item) for item in value if str(item or "").strip())
+                columns.extend(_column_names_from_output_specs(value))
         for key in ("metric", "target_column", "count_column"):
             value = str(step.get(key) or "").strip()
             if value:

@@ -21,6 +21,7 @@ DOMAIN_SECTIONS = {
     "quantity_terms",
     "metric_terms",
     "status_terms",
+    "analysis_recipes",
     "product_key_columns",
 }
 
