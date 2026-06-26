@@ -53,7 +53,6 @@ DOMAIN_LIST_FIELDS = {
     "trigger_terms",
     "excluded_terms",
     "applies_to",
-    "quantity_column",
 }
 CONDITION_FILTER_KEYS = {
     "exists",
@@ -106,9 +105,10 @@ def normalize_domain_authoring_result(payload_value: Any, llm_response_value: An
         errors.append("저장 형식 변환 LLM 응답에서 JSON을 찾지 못했습니다.")
     raw_items = parsed.get("items") if isinstance(parsed.get("items"), list) else []
     source_text = _source_text(payload)
+    raw_source_text = _clean(payload.get("raw_text")) or source_text
     metadata_context = payload.get("metadata_context") if isinstance(payload.get("metadata_context"), dict) else {}
     for index, raw_item in enumerate(raw_items):
-        item, item_errors, item_warnings = _normalize_item(raw_item, index, source_text, metadata_context)
+        item, item_errors, item_warnings = _normalize_item(raw_item, index, source_text, metadata_context, raw_source_text)
         if item:
             items.append(item)
         errors.extend(item_errors)
@@ -126,7 +126,13 @@ def normalize_domain_authoring_result(payload_value: Any, llm_response_value: An
     return next_payload
 
 
-def _normalize_item(raw_item: Any, index: int, source_text: str = "", metadata_context: dict[str, Any] | None = None) -> tuple[dict[str, Any] | None, list[str], list[str]]:
+def _normalize_item(
+    raw_item: Any,
+    index: int,
+    source_text: str = "",
+    metadata_context: dict[str, Any] | None = None,
+    raw_source_text: str = "",
+) -> tuple[dict[str, Any] | None, list[str], list[str]]:
     errors = []
     warnings = []
     if not isinstance(raw_item, dict):
@@ -134,6 +140,8 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", metadata_c
     key = _clean(raw_item.get("key") or raw_item.get("name"))
     payload = deepcopy(raw_item.get("payload")) if isinstance(raw_item.get("payload"), dict) else {}
     section = _normalize_section(raw_item, payload)
+    if section == "process_groups" and not _as_text_list(payload.get("processes")) and _looks_like_analysis_recipe_payload(payload):
+        section = "analysis_recipes"
     if section not in ALLOWED_SECTIONS:
         errors.append(f"items[{index}] section이 허용값이 아닙니다: {section}")
     if not key and section != "product_key_columns":
@@ -155,6 +163,12 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", metadata_c
         if section in {"product_terms", "quantity_terms", "status_terms", "metric_terms"}:
             _normalize_condition_overrides(payload, errors, key)
         if section == "process_groups" and not _as_text_list(payload.get("processes")):
+            inferred_processes = _process_values_from_payload(payload)
+            if inferred_processes:
+                payload["processes"] = inferred_processes
+        if section == "process_groups" and not _is_process_group_grounded_in_source(key, payload, raw_source_text or source_text):
+            return None, [], [f"items[{index}] process_groups/{key} was ignored because it was not grounded in the worker input."]
+        if section == "process_groups" and not _as_text_list(payload.get("processes")):
             if _source_mentions_process_group(source_text):
                 errors.append(f"{key} process_groups에는 processes 목록이 필요합니다.")
             else:
@@ -163,6 +177,9 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", metadata_c
             payload["aggregation"] = "nunique"
         if section == "quantity_terms":
             key = _normalize_quantity_payload(key, payload, source_text, metadata_context or {})
+        if section in {"quantity_terms", "metric_terms"} and payload.get("quantity_column") is not None:
+            quantity_columns = _as_text_list(payload.get("quantity_column"))
+            payload["quantity_column"] = quantity_columns[0] if len(quantity_columns) == 1 else quantity_columns
         if section in {"quantity_terms", "status_terms", "metric_terms", "analysis_recipes"}:
             if payload.get("required_quantity_terms") is not None:
                 payload["required_quantity_terms"] = _as_text_list(payload.get("required_quantity_terms"))
@@ -190,6 +207,70 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", metadata_c
 def _normalize_section(raw_item: dict[str, Any], payload: dict[str, Any]) -> str:
     section = _clean(raw_item.get("section") or raw_item.get("gbn") or payload.get("section") or payload.get("gbn")).lower()
     return SECTION_ALIASES.get(section, section)
+
+
+def _looks_like_analysis_recipe_payload(payload: dict[str, Any]) -> bool:
+    recipe_fields = {
+        "grain_policy",
+        "output_columns",
+        "step_plan_template",
+        "required_dataset_families",
+        "override_analysis_kinds",
+        "blocked_filter_fields",
+        "default_analysis_kind",
+        "intent_type",
+        "result_mode",
+    }
+    return any(payload.get(field) not in (None, "", [], {}) for field in recipe_fields)
+
+
+def _process_values_from_payload(payload: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+
+    def add(value: Any) -> None:
+        for item in _as_list(value):
+            text = _clean(item)
+            if text and text not in values:
+                values.append(text)
+
+    for container_key in ("filters", "filter"):
+        container = payload.get(container_key)
+        if isinstance(container, dict):
+            add(container.get("OPER_NAME"))
+    condition = payload.get("condition")
+    if isinstance(condition, dict):
+        add(condition.get("OPER_NAME"))
+        nested_filters = condition.get("filters")
+        if isinstance(nested_filters, dict):
+            add(nested_filters.get("OPER_NAME"))
+        for value in condition.values():
+            if isinstance(value, dict):
+                add(value.get("OPER_NAME"))
+    return values
+
+
+def _is_process_group_grounded_in_source(key: str, payload: dict[str, Any], source_text: str) -> bool:
+    normalized_source = _match_text(source_text)
+    if not normalized_source:
+        return True
+    candidates = [key, payload.get("display_name")]
+    candidates.extend(_as_text_list(payload.get("aliases")))
+    candidates.extend(_as_text_list(payload.get("processes")))
+    filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    candidates.extend(_as_text_list(filters.get("OPER_NAME")))
+    condition = payload.get("condition") if isinstance(payload.get("condition"), dict) else {}
+    candidates.extend(_as_text_list(condition.get("OPER_NAME")))
+    nested_filters = condition.get("filters") if isinstance(condition.get("filters"), dict) else {}
+    candidates.extend(_as_text_list(nested_filters.get("OPER_NAME")))
+    for candidate in candidates:
+        normalized = _match_text(candidate)
+        if normalized and normalized in normalized_source:
+            return True
+    return False
+
+
+def _match_text(value: Any) -> str:
+    return re.sub(r"[\s_\-./,()]+", "", _clean(value).lower())
 
 
 def _normalize_payload_lists(payload: dict[str, Any]) -> None:
@@ -349,7 +430,10 @@ def _normalize_metric_payload(payload: dict[str, Any], metadata_context: dict[st
 
 
 def _normalize_quantity_payload(key: str, payload: dict[str, Any], source_text: str, metadata_context: dict[str, Any]) -> str:
-    quantity_text = _term_text(key, payload, source_text)
+    # 수량 항목은 같은 raw input 블록 안에 여러 개가 함께 들어올 수 있습니다.
+    # 전체 원문을 기준으로 보완하면 장비/INPUT 같은 다른 항목의 단서가 모든 quantity item에 섞이므로,
+    # item payload 자체에 포함된 이름, 별칭, 컬럼, 계산 규칙만 기준으로 정규화합니다.
+    quantity_text = _term_text(key, payload)
     source_columns = _as_text_list(payload.get("source_columns"))
     quantity_columns = _as_text_list(payload.get("quantity_column"))
     inferred_columns = _identifier_columns_from_metric_text(quantity_text)

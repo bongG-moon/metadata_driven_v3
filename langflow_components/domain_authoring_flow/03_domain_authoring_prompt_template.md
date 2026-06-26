@@ -3,6 +3,7 @@ Return one strict JSON object only. Do not wrap it in markdown.
 Use only information present in the refined text. Put missing essentials in missing_information.
 The authoring context contains existing domain metadata, table catalog metadata, and main flow filter metadata.
 Use existing domain metadata only to choose an existing key or detect duplicate/update intent; do not create unrelated items just because they appear in the existing summary.
+Every generated item must be directly grounded in the refined text. If a key, alias, process value, formula, or question pattern appears only in the existing summary but not in the refined text, do not create that item.
 Use table catalog metadata to infer dataset_family, source columns, and table wording when the worker says things like production table, ASSIGN table, target/schedule table, WIP table, or names a known column.
 Use main flow filter metadata to infer standard field names from physical columns or worker wording, but do not create main_flow_filter items in this domain flow.
 For reusable domain rules, prefer dataset_family/source_columns over a concrete dataset_key unless the worker explicitly names one dataset.
@@ -10,6 +11,9 @@ Prefer structured JSON conditions, for example {{"TSV_DIE_TYP": {{"exists": true
 Do not store executable filters as prose. Use condition objects for column predicates and filters objects for exact value matches.
 For descriptor-style input, convert it to executable form: {{"column": "TSV_DIE_TYP", "condition": "not null and not empty"}} becomes {{"condition": {{"TSV_DIE_TYP": {{"exists": true, "not_in": [null, ""]}}}}}}.
 For exact process or status values, use filters such as {{"filters": {{"OPER_NAME": ["INPUT"]}}}} instead of a sentence.
+For process_groups, put the actual OPER_NAME values in processes. If the worker says "OPER_NAME value is S/G", create processes=["S/G"], not processes=[] with a condition.
+Do not use process_groups for grouping-axis rules such as "세부공정별" or "차수별로 보여줘"; use analysis_recipes for reusable analysis/grain rules.
+For field-alias rules where the user asks to show a specific output column, such as DEVICE code, device suffix, or description, use analysis_recipes rather than product_key_columns. Use product_key_columns only when the worker explicitly defines product keys or join keys.
 Use condition_by_dataset or condition_by_family when the same business term must use different physical filters by dataset.
 For metric_terms, include required_quantity_terms and output_column when the text explains the needed measures or result name.
 For metric_terms, if the text clearly names source columns/formula and a source family can be inferred from table catalog context, do not ask for dataset_key.
@@ -23,6 +27,7 @@ For conditional division metrics, preserve zero/null denominator handling, fail/
 Use analysis_recipes when the text explains what kind of analysis plan should be built for a question pattern.
 For analysis_recipes, keep group/grain as a policy such as question_or_product_grain instead of hardcoding one group-by column unless the text explicitly fixes it.
 For multi-step analysis_recipes, preserve step_plan_template, required_columns_by_family, blocked_filter_fields, override_analysis_kinds, and replace/override flags when the text gives those details.
+If an analysis recipe describes a reusable interpretation rule that does not fit step_plan_template, preserve it in calculation_rule or pandas_generation_rule and save it. Do not block it just because there is no specialized internal field.
 Use aggregation='nunique' for distinct LOT_ID counts. Do not use count_distinct.
 Use aggregation='nunique' for equipment count questions such as 장비 대수 or 설비 대수 over EQPID, with output_column EQP_COUNT.
 Distinguish equipment detail and count intents: 장비 현황 or 설비 현황 should be detail rows with result_mode='detail_rows', while 장비 대수 or 설비 대수 should calculate EQP_COUNT.

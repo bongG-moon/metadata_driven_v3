@@ -21,12 +21,18 @@ def read_marked_example(relative_path: str, marker: str) -> str:
     return (fenced.group(1) if fenced else content).strip()
 
 
+def read_single_markers(relative_path: str) -> list[str]:
+    text = (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+    return re.findall(r"<!--\s*(single_[A-Za-z0-9_]+):start\s*-->", text)
+
+
 DOMAIN_EXAMPLE_PATH = "langflow_components/domain_authoring_flow/raw_text_input_example.md"
 TABLE_EXAMPLE_PATH = "langflow_components/table_catalog_authoring_flow/raw_text_input_example.md"
 FILTER_EXAMPLE_PATH = "langflow_components/main_flow_filters_authoring_flow/raw_text_input_example.md"
 
-DOMAIN_BULK_TEXT = read_marked_example(DOMAIN_EXAMPLE_PATH, "bulk_domain")
-DOMAIN_DA_TEXT = read_marked_example(DOMAIN_EXAMPLE_PATH, "single_da_process")
+DOMAIN_SINGLE_MARKERS = read_single_markers(DOMAIN_EXAMPLE_PATH)
+DOMAIN_BULK_TEXT = "\n\n".join(read_marked_example(DOMAIN_EXAMPLE_PATH, marker) for marker in DOMAIN_SINGLE_MARKERS)
+DOMAIN_DA_TEXT = read_marked_example(DOMAIN_EXAMPLE_PATH, "single_process_group_da")
 TABLE_BULK_TEXT = read_marked_example(TABLE_EXAMPLE_PATH, "bulk_table_catalog")
 TABLE_HOLD_HISTORY_TEXT = read_marked_example(TABLE_EXAMPLE_PATH, "single_hold_history")
 FILTER_BULK_TEXT = read_marked_example(FILTER_EXAMPLE_PATH, "bulk_main_flow_filters")
@@ -386,84 +392,68 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
 
     assert written["raw_text"] == DOMAIN_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 59
     docs = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]
+    assert written["write_result"]["saved_count"] == len(docs)
     assert set(docs) >= {
-        "domain:process_groups:DP",
-        "domain:process_groups:DA",
-        "domain:process_groups:WB",
-        "domain:process_groups:DS",
-        "domain:product_terms:hbm",
-        "domain:product_terms:pop",
-        "domain:product_terms:mobile",
+        "domain:process_groups:DP_DP_PROCESS_GROUP",
+        "domain:process_groups:DA_PROCESS_GROUP",
+        "domain:process_groups:WB_PROCESS_GROUP",
+        "domain:process_groups:DS_PROCESS_GROUP",
+        "domain:process_groups:SBM_PROCESS_GROUP",
+        "domain:process_groups:SG_PROCESS_GROUP",
+        "domain:product_terms:HBM_3DS_TSV_PRODUCT",
+        "domain:product_terms:POP_PRODUCT",
+        "domain:product_terms:MOBILE_PRODUCT",
         "domain:product_terms:flexible_product",
-        "domain:product_terms:lpddr5",
-        "domain:quantity_terms:input_production",
-        "domain:quantity_terms:lot_count",
-        "domain:quantity_terms:hold_lot_count",
-        "domain:quantity_terms:in_tat",
-        "domain:quantity_terms:wafer_qty",
-        "domain:quantity_terms:die_qty",
-        "domain:analysis_recipes:production_wip_target_rate",
-        "domain:analysis_recipes:lot_quantity_summary",
-        "domain:analysis_recipes:top_wip_process_hold_lot_in_tat",
-        "domain:analysis_recipes:top_wip_product_oldest_lot",
-        "domain:analysis_recipes:top_production_products_equipment_count",
+        "domain:metric_terms:PRODUCTION_ACHIEVEMENT_RATE_METRIC",
+        "domain:metric_terms:WAFER_OUT_QUANTITY_METRIC",
+        "domain:analysis_recipes:BOH_WIP_DATE_RULE",
+        "domain:analysis_recipes:SHIFT_PERFORMANCE_BY_GROUP",
+        "domain:analysis_recipes:DEVICE_ALIAS_TO_COLUMN_MAPPING",
+        "domain:analysis_recipes:PROCESS_SEQUENCE_INTERPRETATION_AND_GROUPING_RULE",
+        "domain:analysis_recipes:SBM_WIP_EXISTS_SG_WIP_NOT_EXISTS_PRODUCT_ANALYSIS",
+        "domain:analysis_recipes:SG_PROCESS_HIGH_WIP_PRODUCT_ANALYSIS",
+        "domain:analysis_recipes:PRODUCT_INPUT_CHANGE_ANALYSIS",
+        "domain:analysis_recipes:input_lt_out_analysis",
+        "domain:analysis_recipes:da_wb_process_analysis",
+        "domain:status_terms:SHIFT_A",
     }
-    assert docs["domain:process_groups:DP"]["payload"]["processes"] == ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
-    assert "condition" not in docs["domain:process_groups:DS"]["payload"]
-    assert docs["domain:product_terms:hbm"]["payload"]["condition"] == {"TSV_DIE_TYP": {"exists": True, "not_in": [None, ""]}}
-    assert docs["domain:product_terms:pop"]["payload"]["condition"]["MODE"] == {"starts_with": "LP"}
-    assert docs["domain:product_terms:mobile"]["payload"]["condition"]["MCP_NO"] == {"empty": True}
-    assert docs["domain:product_terms:flexible_product"]["payload"]["comparison_keys"] == ["FAB", "DEVICE", "OWNER", "GRADE"]
-    assert docs["domain:quantity_terms:input_production"]["payload"]["condition"] == {"OPER_DESC": "INPUT"}
-    assert docs["domain:quantity_terms:lot_count"]["payload"]["aggregation"] == "nunique"
-    assert docs["domain:quantity_terms:hold_lot_count"]["payload"]["output_column"] == "HOLD_LOT_COUNT"
-    assert docs["domain:quantity_terms:in_tat"]["payload"]["aggregation"] == "mean"
-    assert docs["domain:quantity_terms:equipment_count"]["payload"]["aggregation"] == "nunique"
-    assert docs["domain:quantity_terms:equipment_count"]["payload"]["output_column"] == "EQP_COUNT"
-    assert docs["domain:metric_terms:achievement_rate"]["payload"]["required_quantity_terms"] == ["production", "target"]
-    assert docs["domain:analysis_recipes:production_wip_target_rate"]["payload"]["intent_type"] == "multi_source_analysis"
-    assert docs["domain:analysis_recipes:production_wip_target_rate"]["payload"]["grain_policy"] == "question_or_product_grain"
-    assert docs["domain:analysis_recipes:production_wip_target_rate"]["payload"]["source_aliases_by_family"] == {
-        "production": "production_data",
-        "wip": "wip_data",
-        "target": "target_data",
-    }
-    assert docs["domain:analysis_recipes:lot_quantity_summary"]["payload"]["output_columns"] == [
-        "LOT_COUNT",
-        "WF_QTY",
-        "DIE_QTY",
+    assert docs["domain:process_groups:DP_DP_PROCESS_GROUP"]["payload"]["processes"] == ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
+    assert docs["domain:process_groups:DS_PROCESS_GROUP"]["payload"]["processes"] == ["D/S1"]
+    assert "condition" not in docs["domain:process_groups:DS_PROCESS_GROUP"]["payload"]
+    assert docs["domain:product_terms:HBM_3DS_TSV_PRODUCT"]["payload"]["condition"] == {"TSV_DIE_TYP": {"exists": True, "not_in": [None, ""]}}
+    assert "condition_by_dataset" in docs["domain:product_terms:POP_PRODUCT"]["payload"]
+    assert docs["domain:product_terms:MOBILE_PRODUCT"]["payload"]["condition"]["MCP_NO"] == {"in": [None, ""]}
+    assert "FAB, DEVICE, OWNER, GRADE" in docs["domain:product_terms:flexible_product"]["payload"]["calculation_rule"]
+    assert docs["domain:product_terms:flexible_product"]["payload"]["required_columns_by_family"]["production"] == ["FAB", "DEVICE"]
+    assert docs["domain:metric_terms:PRODUCTION_ACHIEVEMENT_RATE_METRIC"]["payload"]["required_dataset_families"] == ["production", "target"]
+    assert docs["domain:analysis_recipes:BOH_WIP_DATE_RULE"]["payload"]["required_dataset_families"] == ["wip"]
+    assert docs["domain:analysis_recipes:BOH_WIP_DATE_RULE"]["payload"]["blocked_filter_fields"] == ["DATE"]
+    assert docs["domain:analysis_recipes:SHIFT_PERFORMANCE_BY_GROUP"]["payload"]["group_by_columns"] == ["SHIFT"]
+    assert docs["domain:analysis_recipes:DEVICE_ALIAS_TO_COLUMN_MAPPING"]["payload"]["output_column"] == "DEVICE"
+    assert docs["domain:analysis_recipes:PROCESS_SEQUENCE_INTERPRETATION_AND_GROUPING_RULE"]["payload"]["output_columns"] == ["OPER_NAME"]
+    assert docs["domain:analysis_recipes:SBM_WIP_EXISTS_SG_WIP_NOT_EXISTS_PRODUCT_ANALYSIS"]["payload"]["step_plan_template"][2]["join_type"] == "left"
+    assert docs["domain:analysis_recipes:SG_PROCESS_HIGH_WIP_PRODUCT_ANALYSIS"]["payload"]["condition_by_family"]["wip"]["condition"] == {"WIP": {"gte": 100000}}
+    product_change_steps = docs["domain:analysis_recipes:PRODUCT_INPUT_CHANGE_ANALYSIS"]["payload"]["step_plan_template"]
+    assert product_change_steps[0]["filters"]["DATE"] == "yesterday"
+    assert product_change_steps[1]["filters"]["DATE"] == "today"
+    assert docs["domain:analysis_recipes:input_lt_out_analysis"]["payload"]["step_plan_template"][1]["join_source_step_id"] == "find_input_product_keys"
+    assert docs["domain:analysis_recipes:da_wb_process_analysis"]["payload"]["step_plan_template"][-1]["output_columns"] == [
+        "OPER_GROUP",
+        "PRODUCTION_QTY",
+        "WIP_QTY",
     ]
-    top_wip_recipe = docs["domain:analysis_recipes:top_wip_process_hold_lot_in_tat"]["payload"]
-    assert top_wip_recipe["intent_type"] == "multi_step_analysis"
-    assert top_wip_recipe["grain_policy"] == "recipe_step_grain"
-    assert top_wip_recipe["replace_retrieval_jobs"] is True
-    assert top_wip_recipe["required_question_cues"][0] == ["재공", "WIP", "wip"]
-    assert "장비 대수" in top_wip_recipe["forbidden_question_cues"]
-    assert top_wip_recipe["blocked_filter_fields"] == ["LOT_HOLD_STAT_CD", "LOT_STAT_CD"]
-    assert top_wip_recipe["step_plan_template"][0]["operation"] == "rank_top_n"
-    assert top_wip_recipe["step_plan_template"][0]["rename_columns"] == {"OPER_NAME": "OPER_SHORT_DESC"}
-    assert top_wip_recipe["output_columns"] == ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
-    assert docs["domain:analysis_recipes:top_wip_product_oldest_lot"]["payload"]["step_plan_template"][1]["metric"] == "IN_TAT"
-    assert docs["domain:analysis_recipes:top_production_products_equipment_count"]["payload"]["step_plan_template"][1]["count_column"] == "EQPID"
-    assert docs["domain:analysis_recipes:equipment_for_previous_products"]["payload"]["result_mode"] == "detail_rows"
-    assert docs["domain:analysis_recipes:equipment_count_for_previous_products"]["payload"]["output_columns"] == [
-        "TECH",
-        "DEN",
-        "MODE",
-        "PKG_TYPE1",
-        "PKG_TYPE2",
-        "LEAD",
-        "MCP_NO",
-        "EQP_COUNT",
-    ]
-    assert docs["domain:status_terms:hold_lot"]["payload"]["result_mode"] == "detail_rows"
+    assert docs["domain:status_terms:SHIFT_A"]["payload"]["condition"] == {"SHIFT": "1"}
 
 
 def test_worker_single_domain_text_input_saves_one_process_group(monkeypatch: Any) -> None:
     data = read_json("metadata/domain_items.json")
-    item = {"section": "process_groups", "key": "DA", "payload": data["process_groups"]["DA"], "confidence": "high"}
+    item = {
+        "section": "process_groups",
+        "key": "DA_PROCESS_GROUP",
+        "payload": data["process_groups"]["DA_PROCESS_GROUP"],
+        "confidence": "high",
+    }
     written, store = run_domain_authoring_flow(
         DOMAIN_DA_TEXT,
         [item],
@@ -473,10 +463,10 @@ def test_worker_single_domain_text_input_saves_one_process_group(monkeypatch: An
     assert written["write_result"]["status"] == "ok"
     assert written["write_result"]["saved_count"] == 1
     docs = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]
-    doc = docs["domain:process_groups:DA"]
+    doc = docs["domain:process_groups:DA_PROCESS_GROUP"]
     assert_lean_metadata_doc(doc)
     assert doc["section"] == "process_groups"
-    assert doc["key"] == "DA"
+    assert doc["key"] == "DA_PROCESS_GROUP"
     assert doc["payload"]["processes"] == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
 
 

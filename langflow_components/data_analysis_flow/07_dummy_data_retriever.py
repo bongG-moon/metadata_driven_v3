@@ -27,6 +27,8 @@ PROCESS_ROWS = [
     {"OPER_NAME": "W/B6", "OPER_SHORT_DESC": "W/B6", "OPER_NUM": "WB60", "OPER_SEQ": 160, "OPER_DESC": "WIRE BOND", "PROCESS_FAMILY": "WB"},
     {"OPER_NAME": "B/G1", "OPER_SHORT_DESC": "B/G1", "OPER_NUM": "BG10", "OPER_SEQ": 210, "OPER_DESC": "BACK GRIND", "PROCESS_FAMILY": "BG"},
     {"OPER_NAME": "B/G2", "OPER_SHORT_DESC": "B/G2", "OPER_NUM": "BG20", "OPER_SEQ": 220, "OPER_DESC": "BACK GRIND", "PROCESS_FAMILY": "BG"},
+    {"OPER_NAME": "L/T1", "OPER_SHORT_DESC": "L/T1", "OPER_NUM": "LT10", "OPER_SEQ": 250, "OPER_DESC": "LASER TRIM", "PROCESS_FAMILY": "LT"},
+    {"OPER_NAME": "L/T2", "OPER_SHORT_DESC": "L/T2", "OPER_NUM": "LT20", "OPER_SEQ": 260, "OPER_DESC": "LASER TRIM", "PROCESS_FAMILY": "LT"},
     {"OPER_NAME": "WSD1", "OPER_SHORT_DESC": "WSD1", "OPER_NUM": "WS10", "OPER_SEQ": 310, "OPER_DESC": "WAFER SAW DICE", "PROCESS_FAMILY": "WSD"},
     {"OPER_NAME": "WSD2", "OPER_SHORT_DESC": "WSD2", "OPER_NUM": "WS20", "OPER_SEQ": 320, "OPER_DESC": "WAFER SAW DICE", "PROCESS_FAMILY": "WSD"},
     {"OPER_NAME": "D/P1", "OPER_SHORT_DESC": "D/P1", "OPER_NUM": "DP10", "OPER_SEQ": 410, "OPER_DESC": "D/P FRONT", "PROCESS_FAMILY": "DP"},
@@ -39,6 +41,8 @@ PROCESS_ROWS = [
     {"OPER_NAME": "FCBH2", "OPER_SHORT_DESC": "FCBH2", "OPER_NUM": "FH20", "OPER_SEQ": 720, "OPER_DESC": "FCB HIGH", "PROCESS_FAMILY": "FCBH"},
     {"OPER_NAME": "B/M1", "OPER_SHORT_DESC": "B/M1", "OPER_NUM": "BM10", "OPER_SEQ": 810, "OPER_DESC": "BACK MARK", "PROCESS_FAMILY": "BM"},
     {"OPER_NAME": "B/M2", "OPER_SHORT_DESC": "B/M2", "OPER_NUM": "BM20", "OPER_SEQ": 820, "OPER_DESC": "BACK MARK", "PROCESS_FAMILY": "BM"},
+    {"OPER_NAME": "SBM", "OPER_SHORT_DESC": "SBM", "OPER_NUM": "SB10", "OPER_SEQ": 850, "OPER_DESC": "SUBSTRATE BALL MOUNT", "PROCESS_FAMILY": "SBM"},
+    {"OPER_NAME": "S/G", "OPER_SHORT_DESC": "S/G", "OPER_NUM": "SG10", "OPER_SEQ": 860, "OPER_DESC": "SINGULATION", "PROCESS_FAMILY": "SG"},
     {"OPER_NAME": "INPUT", "OPER_SHORT_DESC": "INPUT", "OPER_NUM": "IN10", "OPER_SEQ": 910, "OPER_DESC": "INPUT", "PROCESS_FAMILY": "INPUT"},
     {"OPER_NAME": "SHIP PKT", "OPER_SHORT_DESC": "SHIP PKT", "OPER_NUM": "PK10", "OPER_SEQ": 990, "OPER_DESC": "PACKAGE OUT", "PROCESS_FAMILY": "PKG_OUT"},
 ]
@@ -165,7 +169,7 @@ def _production_rows(work_date: str) -> list[dict[str, Any]]:
     for process_index, process in enumerate(PROCESS_ROWS, start=1):
         for product_index, product in enumerate(PRODUCT_ROWS, start=1):
             row = _base_process_product_row(work_date, process, product, process_index, product_index)
-            row["PRODUCTION"] = _production_qty(process["PROCESS_FAMILY"], product, process_index, product_index)
+            row["PRODUCTION"] = _production_qty_for_date(work_date, process, product, process_index, product_index)
             rows.append(row)
     return rows
 
@@ -475,10 +479,13 @@ def _production_qty(process_family: str, product: dict[str, Any], process_index:
         "DA": 1.25,
         "WB": 1.05,
         "BG": 0.62,
+        "LT": 0.74,
         "WSD": 0.70,
         "DP": 0.58,
         "FCB": 0.88,
         "FCBH": 0.78,
+        "SBM": 0.68,
+        "SG": 0.64,
         "PKG_OUT": 0.82,
     }.get(process_family, 0.45)
     if product["PKG_TYPE1"] == "HBM" and process_family == "DA":
@@ -490,17 +497,35 @@ def _production_qty(process_family: str, product: dict[str, Any], process_index:
     return int((_product_base(product) * factor + process_index * 35 + product_index * 18) * 10)
 
 
+def _production_qty_for_date(
+    work_date: str,
+    process: dict[str, Any],
+    product: dict[str, Any],
+    process_index: int,
+    product_index: int,
+) -> int:
+    qty = _production_qty(process["PROCESS_FAMILY"], product, process_index, product_index)
+    if process.get("PROCESS_FAMILY") == "INPUT" and _even_day(work_date) and product_index % 5 == 0:
+        return 0
+    return qty
+
+
 def _wip_qty(process_family: str, product: dict[str, Any], process_index: int, product_index: int) -> int:
     factor = {
         "DA": 2.55,
         "WB": 2.25,
         "BG": 1.32,
+        "LT": 1.20,
         "WSD": 1.48,
         "DP": 1.12,
         "FCB": 1.65,
         "FCBH": 1.48,
+        "SBM": 2.35,
+        "SG": 4.30,
         "INPUT": 0.88,
     }.get(process_family, 0.72)
+    if process_family == "SG" and product.get("PKG_TYPE1") != "HBM":
+        return 0
     if product["DEVICE"] == "DEV-HBM3E-16HI" and process_family == "DA":
         factor += 1.20
     if product["MODE"] == "LPDDR5" and process_family == "WB":
@@ -508,6 +533,14 @@ def _wip_qty(process_family: str, product: dict[str, Any], process_index: int, p
     if product["DEVICE"] == "DEV-HBM3-12HI" and process_family == "DA":
         factor += 0.75
     return int((_product_base(product) * factor + process_index * 55 + product_index * 24) * 10)
+
+
+def _even_day(work_date: str) -> bool:
+    text = str(work_date or "").strip()
+    try:
+        return int(text[-2:]) % 2 == 0
+    except Exception:
+        return False
 
 
 def _product_base(product: dict[str, Any]) -> int:
@@ -618,7 +651,30 @@ def _row_matches_filter(
         return any(any(_normalize_compare_value(value).startswith(str(target)) for target in normalized_values) for value in present_values)
     if op == "last_char_in":
         return any(bool(_normalize_compare_value(value)) and _normalize_compare_value(value)[-1:] in normalized_values for value in present_values)
+    if op in {"gte", ">=", "gt", ">", "lte", "<=", "lt", "<"}:
+        numeric_values = [_to_number(value) for value in present_values]
+        numeric_targets = [_to_number(value) for value in values]
+        numeric_values = [value for value in numeric_values if value is not None]
+        numeric_targets = [value for value in numeric_targets if value is not None]
+        if not numeric_values or not numeric_targets:
+            return False
+        target = numeric_targets[0]
+        if op in {"gte", ">="}:
+            return any(value >= target for value in numeric_values)
+        if op in {"gt", ">"}:
+            return any(value > target for value in numeric_values)
+        if op in {"lte", "<="}:
+            return any(value <= target for value in numeric_values)
+        if op in {"lt", "<"}:
+            return any(value < target for value in numeric_values)
     return True
+
+
+def _to_number(value: Any) -> float | None:
+    try:
+        return float(value)
+    except Exception:
+        return None
 
 
 def _field_candidates(field: str) -> list[str]:
