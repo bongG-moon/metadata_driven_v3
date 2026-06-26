@@ -28,6 +28,8 @@ Use analysis_recipes when the text explains what kind of analysis plan should be
 For analysis_recipes, keep group/grain as a policy such as question_or_product_grain instead of hardcoding one group-by column unless the text explicitly fixes it.
 For multi-step analysis_recipes, preserve step_plan_template, required_columns_by_family, blocked_filter_fields, override_analysis_kinds, and replace/override flags when the text gives those details.
 If an analysis recipe describes a reusable interpretation rule that does not fit step_plan_template, preserve it in calculation_rule or pandas_generation_rule and save it. Do not block it just because there is no specialized internal field.
+Use pandas_function_cases when the text describes a reusable helper-function case for pandas code generation, especially procedural matching or parsing logic that is too specific to reliably infer from ordinary intent fields.
+For pandas_function_cases, save only the helper selection hints such as function_name, use_when, token/source/output columns, and short pandas_code_instructions. Do not save large helper implementations in MongoDB/domain authoring raw text; put actual helper/reference code in the 14 Pandas Prompt Builder Pandas Function Cases input or an explicit external helper package.
 Use aggregation='nunique' for distinct LOT_ID counts. Do not use count_distinct.
 Use aggregation='nunique' for equipment count questions such as 장비 대수 or 설비 대수 over EQPID, with output_column EQP_COUNT.
 Distinguish equipment detail and count intents: 장비 현황 or 설비 현황 should be detail rows with result_mode='detail_rows', while 장비 대수 or 설비 대수 should calculate EQP_COUNT.
@@ -39,7 +41,7 @@ Required JSON schema:
 {{
   "items": [
     {{
-      "section": "process_groups | product_terms | quantity_terms | metric_terms | status_terms | analysis_recipes | product_key_columns",
+      "section": "process_groups | product_terms | quantity_terms | metric_terms | status_terms | analysis_recipes | pandas_function_cases | product_key_columns",
       "key": "stable_key",
       "payload": {{
         "display_name": "business display name",
@@ -71,7 +73,14 @@ Required JSON schema:
         "top_n_policy": "optional, e.g. question_or_default",
         "result_mode": "optional, e.g. detail_rows",
         "output_columns": ["optional standard output columns"],
-        "output_column": "optional standard output column"
+        "output_column": "optional standard output column",
+        "function_name": "optional helper function name for pandas_function_cases",
+        "use_when": "optional plain-language activation rule for pandas_function_cases",
+        "input_text": "optional expression source for pandas_function_cases",
+        "required_source_columns": ["optional source columns needed by pandas_function_cases"],
+        "token_columns": ["optional token-match columns for pandas_function_cases"],
+        "output_order": ["optional output order for pandas_function_cases"],
+        "pandas_code_instructions": ["optional short usage hints for generated pandas code"]
       }},
       "columns": ["only for product_key_columns"],
       "confidence": "high | medium | low"

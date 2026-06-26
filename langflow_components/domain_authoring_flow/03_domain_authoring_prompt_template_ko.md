@@ -28,6 +28,8 @@ FAIL_UNIT_QTY처럼 새로 만들어 옆에 보여주라는 파생 column은 out
 analysis_recipes에서는 텍스트가 특정 group-by column을 명시하지 않는 한 group/grain을 고정하지 말고 question_or_product_grain 같은 policy로 유지하세요.
 multi-step analysis_recipes에서는 텍스트가 해당 세부 정보를 제공하면 step_plan_template, required_columns_by_family, blocked_filter_fields, override_analysis_kinds, replace/override flag를 보존하세요.
 analysis recipe가 재사용 가능한 해석 규칙을 설명하지만 step_plan_template으로 정확히 표현하기 어렵다면 calculation_rule 또는 pandas_generation_rule에 보존하고 저장하세요. 전용 내부 field가 없다는 이유만으로 저장을 막지 마세요.
+일반 intent 필드만으로 pandas가 안정적으로 추론하기 어려운 절차형 매칭/파싱 함수 케이스는 pandas_function_cases로 저장하세요.
+pandas_function_cases에는 function_name, use_when, token/source/output 컬럼, 짧은 pandas_code_instructions 같은 helper 선택 힌트만 저장하세요. 큰 helper 구현 코드는 MongoDB/domain authoring raw text에 저장하지 말고 14 Pandas Prompt Builder의 Pandas Function Cases 입력 또는 명시적인 외부 helper package에 둡니다.
 LOT_ID distinct count는 aggregation='nunique'를 사용하세요. count_distinct는 사용하지 마세요.
 장비 대수 또는 설비 대수처럼 EQPID 기준의 distinct 장비 수를 묻는 항목은 aggregation='nunique'와 output_column EQP_COUNT를 사용하세요.
 장비 현황/설비 현황과 장비 대수/설비 대수를 구분하세요. 장비 현황/설비 현황은 result_mode='detail_rows' 상세 행이고, 장비 대수/설비 대수는 EQP_COUNT를 계산합니다.
@@ -39,7 +41,7 @@ LOT_ID distinct count는 aggregation='nunique'를 사용하세요. count_distinc
 {{
   "items": [
     {{
-      "section": "process_groups | product_terms | quantity_terms | metric_terms | status_terms | analysis_recipes | product_key_columns",
+      "section": "process_groups | product_terms | quantity_terms | metric_terms | status_terms | analysis_recipes | pandas_function_cases | product_key_columns",
       "key": "stable_key",
       "payload": {{
         "display_name": "업무 표시명",
@@ -71,7 +73,14 @@ LOT_ID distinct count는 aggregation='nunique'를 사용하세요. count_distinc
         "top_n_policy": "선택적 값, 예: question_or_default",
         "result_mode": "선택적 값, 예: detail_rows",
         "output_columns": ["선택적 표준 output column"],
-        "output_column": "선택적 표준 output column"
+        "output_column": "선택적 표준 output column",
+        "function_name": "pandas_function_cases용 선택적 helper function name",
+        "use_when": "pandas_function_cases용 선택적 적용 조건",
+        "input_text": "pandas_function_cases용 선택적 입력 표현 출처",
+        "required_source_columns": ["pandas_function_cases에 필요한 source column"],
+        "token_columns": ["pandas_function_cases에서 token match에 사용할 column"],
+        "output_order": ["pandas_function_cases 결과 표시 순서"],
+        "pandas_code_instructions": ["생성될 pandas 코드에 줄 수 있는 선택적 짧은 사용 힌트"]
       }},
       "columns": ["product_key_columns에서만 사용"],
       "confidence": "high | medium | low"

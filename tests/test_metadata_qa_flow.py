@@ -217,8 +217,8 @@ def test_metadata_qa_searches_domain_items(monkeypatch: Any) -> None:
     result = response_builder.build_metadata_qa_response(routed)
 
     assert result["metadata_qa"]["metadata_action"] == "domain_search"
-    assert any(row["SECTION"] == "product_terms" and row["KEY"] == "automotive" for row in result["data"]["rows"])
-    assert "automotive" in result["answer_message"]
+    assert any(row["SECTION"] == "product_terms" and row["KEY"] == "AUTO_PRODUCT" for row in result["data"]["rows"])
+    assert "AUTO_PRODUCT" in result["answer_message"]
 
 
 def test_metadata_qa_searches_domain_section_by_natural_name(monkeypatch: Any) -> None:
@@ -247,7 +247,9 @@ def test_metadata_qa_searches_domain_section_by_natural_name(monkeypatch: Any) -
     assert route_response["selected_flow"] == "metadata_qa_flow"
     assert result["metadata_qa"]["metadata_action"] == "domain_search"
     assert result["metadata_qa"]["target_term"] == "process_groups"
-    assert {"DA", "WB"}.issubset({row["KEY"] for row in result["data"]["rows"] if row["SECTION"] == "process_groups"})
+    assert {"DA_PROCESS_GROUP", "WB_PROCESS_GROUP"}.issubset(
+        {row["KEY"] for row in result["data"]["rows"] if row["SECTION"] == "process_groups"}
+    )
     assert "공정 그룹" in result["answer_message"]
     assert "process_groups" in result["answer_message"]
 

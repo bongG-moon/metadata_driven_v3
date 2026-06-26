@@ -60,6 +60,7 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
     raw_jobs = _repair_lot_count_plan(plan, raw_jobs, catalog, question, notes)
     raw_jobs = _repair_followup_equipment_plan(plan, raw_jobs, catalog, question, notes)
     _repair_followup_analysis_kind(plan, raw_jobs, catalog, notes)
+    raw_jobs = _normalize_pandas_function_case_intent(plan, raw_jobs, metadata, question, notes)
     for index, raw_job in enumerate(raw_jobs):
         if not isinstance(raw_job, dict):
             continue
@@ -177,6 +178,10 @@ def _base_plan(llm_json: dict[str, Any], product_grain: list[str]) -> dict[str, 
         "metric",
         "rank_order",
         "analysis_output_columns",
+        "pandas_function_case",
+        "pandas_function_cases",
+        "function_case",
+        "function_cases",
         "threshold",
         "threshold_percent",
         "top_n",
@@ -315,7 +320,13 @@ def _recipe_match_score(
 ) -> int:
     score = 0
     semantic_score = 0
+    current_kind = str(plan.get("analysis_kind") or "").strip()
+    original_kind = str(plan.get("original_analysis_kind") or "").strip()
     default_kind = str(recipe.get("default_analysis_kind") or recipe_key)
+    if current_kind and current_kind in {recipe_key, default_kind}:
+        score += 20
+    if original_kind and original_kind in {recipe_key, default_kind}:
+        score += 30
     aliases = recipe.get("aliases") if isinstance(recipe.get("aliases"), list) else []
     matched_aliases = [
         str(alias or "").strip()
@@ -340,7 +351,7 @@ def _recipe_match_score(
         if _mentions_any(question, [metric_key, metric.get("display_name"), *metric_aliases]):
             semantic_score += 3
     score += semantic_score
-    if semantic_score and default_kind and str(plan.get("analysis_kind") or "") == default_kind:
+    if semantic_score and default_kind and current_kind == default_kind:
         score += 2
     return score
 
@@ -819,13 +830,14 @@ def _apply_analysis_recipe(
     detail_requested = bool(plan.get("detail_rows_requested"))
     override_kinds = _as_recipe_text_list(recipe.get("override_analysis_kinds"))
     force_kind = bool(recipe.get("force_analysis_kind"))
+    has_execution_contract = _recipe_has_execution_contract(recipe)
     if not detail_requested and default_kind and (
         force_kind
         or current_kind in override_kinds
         or current_kind in {"", "none", "aggregate", "aggregate_join", "generic_analysis"}
-    ):
+    ) and has_execution_contract:
         plan["analysis_kind"] = default_kind
-    if not detail_requested and default_kind and (not plan.get("datasets") or not plan.get("retrieval_jobs")):
+    if not detail_requested and default_kind and has_execution_contract and (not plan.get("datasets") or not plan.get("retrieval_jobs")):
         plan["analysis_kind"] = default_kind
     intent_type = str(recipe.get("intent_type") or "").strip()
     if not detail_requested and intent_type and str(plan.get("intent_type") or "") not in {"finish", "followup_transform"}:
@@ -1002,15 +1014,14 @@ def _repair_explicit_grain_plan(plan: dict[str, Any], metadata: dict[str, Any], 
     if not explicit_grain:
         return
     current_grain = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
-    if current_grain == explicit_grain:
-        return
     should_override = (
         str(plan.get("analysis_kind") or "") in {"rank_top_n", "rank_bottom_n", "aggregate_join", "generic_aggregate_recipe", "aggregate_wip_total"}
         or _mentions_any(question, ["top", "rank", "상위", "많은", "가장", "별로", "별"])
     )
     if not should_override:
         return
-    plan["product_grain"] = deepcopy(explicit_grain)
+    if current_grain != explicit_grain:
+        plan["product_grain"] = deepcopy(explicit_grain)
     for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
         if not isinstance(step, dict):
             continue
@@ -1133,6 +1144,8 @@ def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, A
             step = _expand_recipe_step_value(step, top_n, plan)
             steps.append(step)
         return steps
+    if not _recipe_has_execution_contract(recipe):
+        return []
     kind = str(plan.get("analysis_kind") or recipe.get("default_analysis_kind") or "").strip()
     if not kind:
         return []
@@ -1146,6 +1159,13 @@ def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, A
             "output_columns": deepcopy(recipe.get("output_columns", [])),
         }
     ]
+
+
+def _recipe_has_execution_contract(recipe: dict[str, Any]) -> bool:
+    return any(
+        isinstance(recipe.get(key), list) and recipe.get(key)
+        for key in ("required_dataset_families", "required_quantity_terms", "output_columns")
+    ) or bool(recipe.get("step_plan_template") or recipe.get("default_analysis_kind") or recipe.get("force_analysis_kind"))
 
 
 def _expand_recipe_step_value(value: Any, top_n: int, plan: dict[str, Any]) -> Any:
@@ -1753,7 +1773,7 @@ def _single_process_scope_values_from_text(text: str, metadata: dict[str, Any]) 
         if not _mentions_any(text, match_values):
             continue
         values = [str(item) for item in group.get("processes", []) if str(item or "").strip()] if isinstance(group.get("processes"), list) else []
-        if values:
+        if values and values not in matched_group_values:
             matched_group_values.append(values)
     if len(matched_group_values) == 1:
         return _unique(matched_group_values[0])
@@ -2097,6 +2117,312 @@ def _repair_followup_equipment_plan(
     plan["datasets"] = ["equipment_status"]
     _append_once(notes, "후속 장비 질문은 이전 제품 key와 equipment_status만 사용하도록 조회 작업을 정리했습니다.")
     return [primary_job]
+
+
+def _normalize_pandas_function_case_intent(
+    plan: dict[str, Any],
+    raw_jobs: list[Any],
+    metadata: dict[str, Any],
+    question: str,
+    notes: list[str],
+) -> list[Any]:
+    case_key, case = _matched_pandas_function_case(plan, metadata, question)
+    if not case_key or not case:
+        return raw_jobs
+
+    function_name = str(case.get("function_name") or "").strip()
+    if not function_name:
+        return raw_jobs
+
+    input_text = _pandas_function_case_input_text(plan, question)
+    function_case = {
+        "key": case_key,
+        "function_name": function_name,
+        "input_text": input_text,
+        "source": "metadata.domain_items.pandas_function_cases",
+    }
+    for field in ("token_columns", "output_order", "output_columns", "use_when"):
+        value = case.get(field)
+        if value not in (None, "", [], {}):
+            function_case[field] = deepcopy(value)
+    plan["pandas_function_case"] = function_case
+
+    if _is_product_token_function_case(case_key, case):
+        _normalize_product_token_lookup_plan(plan, raw_jobs, case, function_case, question)
+        _append_once(notes, f"제품 토큰 조회는 pandas_function_cases.{case_key} helper로 처리하도록 정규화했습니다.")
+    else:
+        _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
+        _append_once(notes, f"pandas_function_cases.{case_key} helper 적용 단계를 보존했습니다.")
+    return raw_jobs
+
+
+def _matched_pandas_function_case(plan: dict[str, Any], metadata: dict[str, Any], question: str) -> tuple[str, dict[str, Any]]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    cases = domain.get("pandas_function_cases") if isinstance(domain.get("pandas_function_cases"), dict) else {}
+    if not cases:
+        return "", {}
+
+    explicit_key, explicit_name = _explicit_pandas_function_case_ref(plan)
+    if explicit_key and isinstance(cases.get(explicit_key), dict):
+        return explicit_key, cases[explicit_key]
+    if explicit_name:
+        for case_key, case in cases.items():
+            if isinstance(case, dict) and str(case.get("function_name") or "").strip() == explicit_name:
+                return str(case_key), case
+
+    if not _question_looks_like_product_token_lookup(question, metadata):
+        return "", {}
+    for case_key, case in cases.items():
+        if isinstance(case, dict) and _is_product_token_function_case(str(case_key), case):
+            return str(case_key), case
+    return "", {}
+
+
+def _explicit_pandas_function_case_ref(plan: dict[str, Any]) -> tuple[str, str]:
+    candidates: list[Any] = []
+    for key in ("pandas_function_case", "function_case"):
+        value = plan.get(key)
+        if value not in (None, "", [], {}):
+            candidates.append(value)
+    for key in ("pandas_function_cases", "function_cases"):
+        value = plan.get(key)
+        if isinstance(value, list):
+            candidates.extend(value)
+        elif value not in (None, "", [], {}):
+            candidates.append(value)
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if isinstance(step, dict):
+            candidates.append(step)
+
+    for item in candidates:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                return text, ""
+            continue
+        if not isinstance(item, dict):
+            continue
+        case_key = str(item.get("key") or item.get("case_key") or item.get("function_case_key") or "").strip()
+        function_name = str(item.get("function_name") or "").strip()
+        if case_key or function_name:
+            return case_key, function_name
+    return "", ""
+
+
+def _is_product_token_function_case(case_key: str, case: dict[str, Any]) -> bool:
+    function_name = str(case.get("function_name") or "").strip()
+    alias_text = " ".join(str(alias) for alias in case.get("aliases", []) if str(alias or "").strip()) if isinstance(case.get("aliases"), list) else ""
+    text = " ".join([case_key, function_name, str(case.get("display_name") or ""), str(case.get("use_when") or ""), alias_text]).lower()
+    return function_name == "match_product_tokens" or "product token" in text or "제품 토큰" in text
+
+
+def _question_looks_like_product_token_lookup(question: str, metadata: dict[str, Any]) -> bool:
+    text = str(question or "")
+    if _explicit_previous_reference_requested(text):
+        return False
+    if _mentions_any(text, ["장비", "설비", "EQP", "equipment", "Equipment"]):
+        return False
+    if _matches_registered_product_term(text, metadata):
+        return False
+    if not _mentions_any(text, ["제품", "product"]):
+        return False
+    if not _mentions_any(text, ["찾", "조회", "리스트", "목록", "보여", "find", "lookup", "list", "show", "match"]):
+        return False
+    metric_terms = [
+        "생산량",
+        "실적",
+        "재공",
+        "wip",
+        "production",
+        "target",
+        "목표",
+        "계획",
+        "달성률",
+        "수량",
+        "합계",
+        "총",
+    ]
+    return not _mentions_any(text, metric_terms)
+
+
+def _matches_registered_product_term(question: str, metadata: dict[str, Any]) -> bool:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    terms = domain.get("product_terms") if isinstance(domain.get("product_terms"), dict) else {}
+    for term_key, term in terms.items():
+        if not isinstance(term, dict):
+            continue
+        aliases = term.get("aliases") if isinstance(term.get("aliases"), list) else []
+        if _mentions_any(question, [term_key, term.get("display_name"), *aliases]):
+            return True
+    return False
+
+
+def _pandas_function_case_input_text(plan: dict[str, Any], question: str) -> str:
+    for key in ("pandas_function_case", "function_case"):
+        value = plan.get(key)
+        if isinstance(value, dict):
+            text = str(value.get("input_text") or value.get("product_expression") or "").strip()
+            if text:
+                return text
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if not isinstance(step, dict):
+            continue
+        text = str(step.get("input_text") or step.get("product_expression") or "").strip()
+        if text:
+            return text
+    return str(question or "").strip()
+
+
+def _normalize_product_token_lookup_plan(
+    plan: dict[str, Any],
+    raw_jobs: list[Any],
+    case: dict[str, Any],
+    function_case: dict[str, Any],
+    question: str,
+) -> None:
+    plan["analysis_kind"] = "detail_rows"
+    plan["product_grain"] = []
+    output_columns = _unique(
+        [str(column) for column in case.get("output_columns", []) if str(column or "").strip()]
+        or [str(column) for column in case.get("output_order", []) if str(column or "").strip()]
+    )
+    if output_columns:
+        plan["analysis_output_columns"] = output_columns
+    if not _explicit_previous_reference_requested(question):
+        plan["intent_type"] = "detail_lookup"
+        plan.pop("state_product_keys", None)
+        plan["depends_on_state"] = False
+        plan["requires_full_previous_result_restore"] = False
+        plan.pop("previous_result_restore_mode", None)
+
+    token_columns = _case_token_columns(case)
+    plan["filters"] = _remove_product_token_filters(plan.get("filters", []), token_columns, question)
+    for raw_job in raw_jobs:
+        if not isinstance(raw_job, dict):
+            continue
+        raw_job["filters"] = _remove_product_token_filters(raw_job.get("filters", []), token_columns, question)
+        if not _explicit_previous_reference_requested(question):
+            raw_job["filters"] = [
+                deepcopy(item)
+                for item in raw_job.get("filters", [])
+                if not (isinstance(item, dict) and str(item.get("field") or "").strip() == "PRODUCT_GRAIN")
+            ]
+        required = raw_job.get("required_columns") if isinstance(raw_job.get("required_columns"), list) else []
+        raw_job["required_columns"] = _unique(
+            [
+                *[str(column) for column in required if str(column or "").strip()],
+                *[str(column) for column in case.get("required_source_columns", []) if str(column or "").strip()],
+                *[str(column) for column in case.get("token_columns", []) if str(column or "").strip()],
+                *[str(column) for column in case.get("output_columns", []) if str(column or "").strip()],
+            ]
+        )
+    _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
+
+
+def _ensure_pandas_function_case_step(plan: dict[str, Any], raw_jobs: list[Any], function_case: dict[str, Any]) -> None:
+    source_alias = _first_source_alias(raw_jobs, plan)
+    step = {
+        "step_id": str(function_case.get("key") or "apply_pandas_function_case"),
+        "operation": "apply_pandas_function_case",
+        "source_alias": source_alias,
+        "function_case_key": function_case.get("key"),
+        "function_name": function_case.get("function_name"),
+        "input_text": function_case.get("input_text"),
+    }
+    output_columns = function_case.get("output_columns") or function_case.get("output_order")
+    if isinstance(output_columns, list) and output_columns:
+        step["output_columns"] = _unique([str(column) for column in output_columns if str(column or "").strip()])
+
+    existing_steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    kept_steps: list[dict[str, Any]] = []
+    for existing in existing_steps:
+        if not isinstance(existing, dict):
+            continue
+        operation = str(existing.get("operation") or "").strip()
+        if operation in {"filter_data", "detail_rows", "apply_pandas_function_case"}:
+            continue
+        kept_steps.append(deepcopy(existing))
+    plan["step_plan"] = [step, *kept_steps]
+
+
+def _first_source_alias(raw_jobs: list[Any], plan: dict[str, Any]) -> str:
+    for raw_job in raw_jobs:
+        if not isinstance(raw_job, dict):
+            continue
+        alias = str(raw_job.get("source_alias") or raw_job.get("dataset_key") or "").strip()
+        if alias:
+            return alias
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if isinstance(step, dict):
+            alias = str(step.get("source_alias") or "").strip()
+            if alias:
+                return alias
+    return ""
+
+
+def _case_token_columns(case: dict[str, Any]) -> set[str]:
+    columns: set[str] = set()
+    for field in ("token_columns", "candidate_columns", "required_source_columns", "output_columns", "output_order"):
+        value = case.get(field)
+        if isinstance(value, list):
+            columns.update(str(column).strip().upper() for column in value if str(column or "").strip())
+    return columns
+
+
+def _remove_product_token_filters(filters: Any, token_columns: set[str], question: str) -> list[dict[str, Any]]:
+    if not isinstance(filters, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in filters:
+        if not isinstance(item, dict):
+            continue
+        field = str(item.get("field") or "").strip().upper()
+        if field in token_columns and _filter_value_appears_in_question(item, question):
+            continue
+        result.append(deepcopy(item))
+    return result
+
+
+def _filter_value_appears_in_question(condition: dict[str, Any], question: str) -> bool:
+    values: list[Any] = []
+    if "value" in condition:
+        values.append(condition.get("value"))
+    if isinstance(condition.get("values"), list):
+        values.extend(condition["values"])
+    compact_question = _compact_token_text(question)
+    for value in values:
+        compact_value = _compact_token_text(value)
+        if compact_value and compact_value in compact_question:
+            return True
+    return False
+
+
+def _compact_token_text(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
+
+
+def _explicit_previous_reference_requested(question: str) -> bool:
+    return _mentions_any(
+        question,
+        [
+            "이 제품",
+            "그 제품",
+            "해당 제품",
+            "앞의 제품",
+            "위 제품",
+            "이 결과",
+            "그 결과",
+            "해당 결과",
+            "방금",
+            "직전",
+            "앞에서",
+            "위에서",
+            "이전 결과",
+            "previous product",
+            "previous result",
+            "prior result",
+        ],
+    )
 
 
 def _is_followup_equipment_question(
@@ -2478,7 +2804,7 @@ def _metadata_term_filters(
             if not _mentions_any(question, match_values):
                 continue
             condition = _condition_for_dataset(term, dataset_key, dataset_catalog or {})
-            result.extend(_condition_to_filters(condition, metadata))
+            result.extend(_condition_to_filters(condition, metadata, dataset_catalog or {}))
     return result
 
 
@@ -2665,32 +2991,54 @@ def _condition_for_dataset(term: dict[str, Any], dataset_key: str, dataset_catal
     return term.get("condition") if isinstance(term.get("condition"), dict) else {}
 
 
-def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any]) -> list[dict[str, Any]]:
+def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any], catalog: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    dataset_catalog = catalog or {}
+    catalog_columns = set(_unique(dataset_catalog.get("columns", [])))
+    quantity = dataset_catalog.get("primary_quantity_column")
+    quantity_columns = set(quantity if isinstance(quantity, list) else [quantity] if quantity else [])
     for field, spec in condition.items():
         field_name = str(field or "").strip()
-        if not field_name or not _metadata_has_filter(metadata, field_name):
+        supported_field = (
+            _metadata_has_filter(metadata, field_name)
+            or _catalog_has_filter(dataset_catalog, field_name)
+            or field_name in catalog_columns
+            or field_name in quantity_columns
+        )
+        if not field_name or not supported_field:
             continue
         if isinstance(spec, dict):
             if spec.get("empty") or spec.get("missing_or_empty"):
                 result.append({"field": field_name, "op": "empty"})
                 continue
-            if spec.get("exists") and spec.get("not_in"):
+            not_in_values = spec.get("not_in") if "not_in" in spec else spec.get("$nin")
+            in_values = spec.get("in") if "in" in spec else spec.get("$in")
+            exists_value = spec.get("exists") if "exists" in spec else spec.get("$exists")
+            if exists_value and _is_empty_exclusion(not_in_values):
                 result.append({"field": field_name, "op": "not_empty"})
                 continue
-            elif spec.get("exists"):
+            if exists_value:
                 result.append({"field": field_name, "op": "not_empty"})
             if isinstance(spec.get("starts_with"), str):
                 result.append({"field": field_name, "op": "starts_with", "value": spec.get("starts_with")})
+            regex_value = spec.get("regex") if "regex" in spec else spec.get("$regex")
+            if isinstance(regex_value, str) and regex_value:
+                starts_with_value = _simple_starts_with_regex_value(regex_value)
+                if starts_with_value:
+                    result.append({"field": field_name, "op": "starts_with", "value": starts_with_value})
+                else:
+                    result.append({"field": field_name, "op": "regex", "value": regex_value})
             if isinstance(spec.get("last_char_in"), list):
                 result.append({"field": field_name, "op": "last_char_in", "values": deepcopy(spec["last_char_in"])})
             for op_key in ("gte", "gt", "lte", "lt"):
                 if op_key in spec:
                     result.append({"field": field_name, "op": op_key, "value": spec.get(op_key)})
-            if isinstance(spec.get("in"), list):
-                result.append({"field": field_name, "op": "in", "values": deepcopy(spec["in"])})
-            if isinstance(spec.get("not_in"), list):
-                result.append({"field": field_name, "op": "not_in", "values": deepcopy(spec["not_in"])})
+            if _is_empty_inclusion(in_values):
+                result.append({"field": field_name, "op": "empty"})
+            elif isinstance(in_values, list):
+                result.append({"field": field_name, "op": "in", "values": deepcopy(in_values)})
+            if isinstance(not_in_values, list):
+                result.append({"field": field_name, "op": "not_in", "values": deepcopy(not_in_values)})
             if "value" in spec:
                 result.append({"field": field_name, "op": "eq", "value": spec.get("value")})
         elif isinstance(spec, list):
@@ -2698,6 +3046,26 @@ def _condition_to_filters(condition: dict[str, Any], metadata: dict[str, Any]) -
         else:
             result.append({"field": field_name, "op": "eq", "value": spec})
     return result
+
+
+def _is_empty_exclusion(values: Any) -> bool:
+    if not isinstance(values, list):
+        return False
+    normalized = {"" if value is None else str(value).strip() for value in values}
+    return "" in normalized
+
+
+def _is_empty_inclusion(values: Any) -> bool:
+    if not isinstance(values, list) or not values:
+        return False
+    normalized = {"" if value is None else str(value).strip() for value in values}
+    return normalized == {""}
+
+
+def _simple_starts_with_regex_value(value: str) -> str:
+    text = str(value or "").strip()
+    match = re.fullmatch(r"\^([A-Za-z0-9_/-]+)", text)
+    return match.group(1) if match else ""
 
 
 def _metadata_has_filter(metadata: dict[str, Any], filter_key: str) -> bool:
@@ -2759,11 +3127,16 @@ def _drop_conflicting_product_alias_filters(
     metadata: dict[str, Any],
 ) -> list[dict[str, Any]]:
     inferred_values = _filter_values(inferred_filters)
-    if not inferred_values:
-        return filters
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     product_fields = set(domain.get("product_key_columns") or [])
     product_term_values = _product_term_alias_values(domain)
+    has_non_scope_inferred_filter = any(
+        str(item.get("field") or "").strip() not in {"DATE", "OPER_NAME", "PRODUCT_GRAIN"}
+        for item in inferred_filters
+        if isinstance(item, dict)
+    )
+    if not has_non_scope_inferred_filter or (not inferred_values and not product_term_values):
+        return filters
     inferred_fields = {str(item.get("field") or "") for item in inferred_filters if isinstance(item, dict)}
     inferred_keys = {json.dumps(item, ensure_ascii=False, sort_keys=True, default=str) for item in inferred_filters}
     result = []
@@ -2929,6 +3302,10 @@ def _date_value_for_job(
     concrete_date = _concrete_date_from_text(question, request_date)
     if concrete_date:
         return concrete_date
+    if _mentions_any(question, ["오늘", "현재", "금일", "today", "current"]):
+        return request_date
+    if _mentions_any(question, ["어제", "전일", "yesterday", "previous day"]):
+        return _shift_date(request_date, -1)
     explicit_scope = _date_scope_from_job(job, request_date)
     if explicit_scope:
         return explicit_scope
@@ -3083,6 +3460,9 @@ def _domain_refs(intent_plan: dict[str, Any]) -> list[dict[str, Any]]:
     refs = [{"key": "product_grain", "columns": intent_plan.get("product_grain", [])}]
     if intent_plan.get("matched_analysis_recipe"):
         refs.append({"section": "analysis_recipes", "key": intent_plan["matched_analysis_recipe"]})
+    function_case = intent_plan.get("pandas_function_case") if isinstance(intent_plan.get("pandas_function_case"), dict) else {}
+    if function_case.get("key"):
+        refs.append({"section": "pandas_function_cases", "key": function_case["key"]})
     return refs
 
 

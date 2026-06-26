@@ -21,6 +21,7 @@ ALLOWED_SECTIONS = {
     "metric_terms",
     "status_terms",
     "analysis_recipes",
+    "pandas_function_cases",
     "product_key_columns",
 }
 SECTION_ALIASES = {
@@ -30,6 +31,10 @@ SECTION_ALIASES = {
     "metric": "metric_terms",
     "recipe": "analysis_recipes",
     "recipes": "analysis_recipes",
+    "function_case": "pandas_function_cases",
+    "function_cases": "pandas_function_cases",
+    "pandas_function_case": "pandas_function_cases",
+    "pandas_function_cases": "pandas_function_cases",
 }
 DOMAIN_LIST_FIELDS = {
     "aliases",
@@ -47,8 +52,16 @@ DOMAIN_LIST_FIELDS = {
     "override_analysis_kinds",
     "blocked_filter_fields",
     "output_columns",
+    "output_order",
     "result_columns",
     "detail_columns",
+    "required_source_columns",
+    "token_columns",
+    "candidate_columns",
+    "source_aliases",
+    "dataset_families",
+    "activation_cues",
+    "pandas_code_instructions",
     "clear_filters",
     "trigger_terms",
     "excluded_terms",
@@ -187,6 +200,8 @@ def _normalize_item(
                 payload["output_column"] = _clean(payload.get("output_column"))
         if section == "analysis_recipes":
             _normalize_analysis_recipe_payload(payload)
+        if section == "pandas_function_cases":
+            _normalize_pandas_function_case_payload(payload)
         if section == "metric_terms":
             _normalize_metric_role_filters(payload)
             _normalize_metric_payload(payload, metadata_context or {})
@@ -309,6 +324,35 @@ def _normalize_analysis_recipe_payload(payload: dict[str, Any]) -> None:
         payload["grain_policy"] = _clean(payload.get("grain_policy"))
     if payload.get("top_n_policy") is not None:
         payload["top_n_policy"] = _clean(payload.get("top_n_policy"))
+
+
+def _normalize_pandas_function_case_payload(payload: dict[str, Any]) -> None:
+    for key in (
+        "required_source_columns",
+        "token_columns",
+        "candidate_columns",
+        "source_aliases",
+        "dataset_families",
+        "activation_cues",
+        "question_cues",
+        "forbidden_question_cues",
+        "output_columns",
+        "output_order",
+        "pandas_code_instructions",
+    ):
+        if payload.get(key) is not None:
+            payload[key] = _as_text_list(payload.get(key))
+    for key in ("function_name", "use_when", "input_text", "calculation_rule"):
+        if payload.get(key) is not None:
+            payload[key] = _clean(payload.get(key))
+    if payload.get("function_code") is not None:
+        payload["function_code"] = _normalize_function_code(payload.get("function_code"))
+
+
+def _normalize_function_code(value: Any) -> str | list[str]:
+    if isinstance(value, list):
+        return [str(line).rstrip() for line in value]
+    return str(value or "").strip()
 
 
 def _normalize_condition_fields(payload: dict[str, Any]) -> None:

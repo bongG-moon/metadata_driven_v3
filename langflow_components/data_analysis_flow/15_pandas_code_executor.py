@@ -70,7 +70,8 @@ def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any) -> dict
 
     llm_text = _text(llm_response_value)
     pandas_json = _extract_json_object(llm_text)
-    analysis = _execute_generated_pandas_code(pandas_json, plan, runtime_sources, state)
+    helper_functions, helper_errors = _function_case_helpers(payload, pandas_json.get("code", ""))
+    analysis = _execute_generated_pandas_code(pandas_json, plan, runtime_sources, state, helper_functions, helper_errors)
     analysis["pandas_code_json"] = pandas_json
     analysis["llm_text_preview"] = llm_text[:1200]
 
@@ -90,10 +91,12 @@ def _execute_generated_pandas_code(
     plan: dict[str, Any],
     runtime_sources: dict[str, Any],
     state: dict[str, Any],
+    helper_functions: dict[str, Any] | None = None,
+    helper_errors: list[str] | None = None,
 ) -> dict[str, Any]:
     code = _strip_harmless_pandas_import(str(pandas_plan.get("code", "")))
     repairable_errors: list[str] = []
-    safety_errors = _check_code_safety(code)
+    safety_errors = [*(helper_errors or []), *_check_code_safety(code)]
     if safety_errors:
         return {
             "status": "error",
@@ -133,7 +136,13 @@ def _execute_generated_pandas_code(
             str(plan.get("analysis_kind") or ""),
         )
         sources[alias_text] = _standardize_source_frame_for_alias(frame, alias_text, plan)
-    local_vars: dict[str, Any] = {"pd": pd, "sources": sources, "plan": deepcopy(plan), "state": deepcopy(state)}
+    local_vars: dict[str, Any] = {
+        "pd": pd,
+        "sources": sources,
+        "plan": deepcopy(plan),
+        "state": deepcopy(state),
+        **(helper_functions or {}),
+    }
     safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
     try:
         exec(compile(code, "<llm_pandas_code>", "exec"), safe_globals, local_vars)
@@ -200,6 +209,245 @@ def _execute_generated_pandas_code(
         "output_columns": pandas_plan.get("output_columns", []),
         "reasoning_steps": pandas_plan.get("reasoning_steps", []),
     }
+
+
+def _function_case_helpers(payload: dict[str, Any], generated_code: Any = "") -> tuple[dict[str, Any], list[str]]:
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    cases = domain.get("pandas_function_cases") if isinstance(domain.get("pandas_function_cases"), dict) else {}
+    used_function_names = _called_function_names(str(generated_code or ""))
+    defined_function_names = _defined_function_names(str(generated_code or ""))
+    required_helpers = _required_function_case_helpers(payload, cases, used_function_names)
+    required_function_names = {item["function_name"] for item in required_helpers if item.get("function_name")}
+    helpers: dict[str, Any] = {}
+    errors: list[str] = []
+    helpers.update(_manual_function_case_helpers(payload, required_function_names, errors))
+    for case_key, case in cases.items():
+        if not isinstance(case, dict):
+            continue
+        function_name = str(case.get("function_name") or "").strip()
+        function_code = _function_case_code_text(case.get("function_code"))
+        if not function_name or not function_code:
+            continue
+        if function_name not in required_function_names:
+            continue
+        helper_code = _function_definition_code(function_code, function_name) or function_code
+        case_errors = _check_code_safety(helper_code)
+        if case_errors:
+            errors.extend(f"pandas_function_cases.{case_key}.{function_name}: {error}" for error in case_errors)
+            continue
+        local_vars: dict[str, Any] = {"pd": pd}
+        safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
+        try:
+            exec(compile(helper_code, f"<pandas_function_case:{case_key}>", "exec"), safe_globals, local_vars)
+        except Exception as exc:
+            errors.append(f"pandas_function_cases.{case_key}.{function_name} failed to load: {exc}")
+            continue
+        helper = local_vars.get(function_name)
+        if not callable(helper):
+            errors.append(f"pandas_function_cases.{case_key} did not define callable {function_name}.")
+            continue
+        helpers[function_name] = helper
+    for item in required_helpers:
+        case_key = item.get("key") or "unknown"
+        function_name = item.get("function_name") or ""
+        if not function_name:
+            continue
+        if function_name not in used_function_names:
+            errors.append(
+                f"pandas_function_cases.{case_key}.{function_name} was selected but generated pandas code did not call it."
+            )
+        if function_name in defined_function_names:
+            errors.append(
+                f"pandas_function_cases.{case_key}.{function_name} must be provided as a registered helper; "
+                "generated pandas code must call it, not define it inline."
+            )
+        if function_name not in helpers:
+            errors.append(
+                f"pandas_function_cases.{case_key}.{function_name} implementation is missing. "
+                "Provide the helper code in 14 Pandas Prompt Builder.Pandas Function Cases or metadata function_code before running this analysis."
+            )
+    return helpers, errors
+
+
+def _manual_function_case_helpers(
+    payload: dict[str, Any],
+    required_function_names: set[str],
+    errors: list[str],
+) -> dict[str, Any]:
+    helpers: dict[str, Any] = {}
+    if not required_function_names:
+        return helpers
+    for index, block in enumerate(_manual_function_case_code_blocks(payload), start=1):
+        for function_name in sorted(required_function_names):
+            helper_code = _function_definition_code(block, function_name)
+            if not helper_code:
+                continue
+            case_errors = _check_code_safety(helper_code)
+            if case_errors:
+                errors.extend(f"pandas_function_cases_text.{function_name}: {error}" for error in case_errors)
+                continue
+            local_vars: dict[str, Any] = {"pd": pd}
+            safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
+            try:
+                exec(compile(helper_code, f"<pandas_function_cases_text:{index}:{function_name}>", "exec"), safe_globals, local_vars)
+            except Exception as exc:
+                errors.append(f"pandas_function_cases_text.{function_name} failed to load: {exc}")
+                continue
+            helper = local_vars.get(function_name)
+            if not callable(helper):
+                errors.append(f"pandas_function_cases_text did not define callable {function_name}.")
+                continue
+            helpers[function_name] = helper
+    return helpers
+
+
+def _required_function_case_helpers(
+    payload: dict[str, Any],
+    cases: dict[str, Any],
+    used_function_names: set[str],
+) -> list[dict[str, str]]:
+    required: list[dict[str, str]] = []
+    runtime = payload.get("pandas_function_case_runtime") if isinstance(payload.get("pandas_function_case_runtime"), dict) else {}
+    selected_cases = runtime.get("selected_cases") if isinstance(runtime.get("selected_cases"), list) else []
+    for item in selected_cases:
+        if isinstance(item, dict):
+            _append_function_case_requirement(required, item.get("key"), item.get("function_name"))
+
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    for item in _plan_function_case_candidates(plan):
+        if isinstance(item, str):
+            case_key, function_name = _case_key_and_function_name_from_text(item, cases)
+            _append_function_case_requirement(required, case_key, function_name)
+            continue
+        if not isinstance(item, dict):
+            continue
+        explicit_key = str(item.get("key") or item.get("case_key") or item.get("function_case_key") or "").strip()
+        explicit_function = str(item.get("function_name") or "").strip()
+        if explicit_key or explicit_function:
+            case_key, function_name = _case_key_and_function_name(explicit_key, explicit_function, cases)
+            _append_function_case_requirement(required, case_key, function_name)
+
+    for case_key, case in cases.items():
+        if not isinstance(case, dict):
+            continue
+        function_name = str(case.get("function_name") or "").strip()
+        if function_name and function_name in used_function_names:
+            _append_function_case_requirement(required, str(case_key), function_name)
+    return required
+
+
+def _plan_function_case_candidates(plan: dict[str, Any]) -> list[Any]:
+    candidates: list[Any] = []
+    for key in ("pandas_function_case", "function_case"):
+        value = plan.get(key)
+        if value not in (None, "", [], {}):
+            candidates.append(value)
+    for key in ("pandas_function_cases", "function_cases"):
+        value = plan.get(key)
+        if isinstance(value, list):
+            candidates.extend(value)
+        elif value not in (None, "", [], {}):
+            candidates.append(value)
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("operation") == "apply_pandas_function_case" or step.get("function_case_key") or step.get("function_name"):
+            candidates.append(step)
+    return candidates
+
+
+def _case_key_and_function_name_from_text(value: str, cases: dict[str, Any]) -> tuple[str, str]:
+    text = str(value or "").strip()
+    for case_key, case in cases.items():
+        if not isinstance(case, dict):
+            continue
+        function_name = str(case.get("function_name") or "").strip()
+        if text == str(case_key) or (function_name and text == function_name):
+            return str(case_key), function_name
+    return text, ""
+
+
+def _case_key_and_function_name(explicit_key: str, explicit_function: str, cases: dict[str, Any]) -> tuple[str, str]:
+    if explicit_key and explicit_function:
+        return explicit_key, explicit_function
+    if explicit_key:
+        case = cases.get(explicit_key)
+        if isinstance(case, dict):
+            return explicit_key, str(case.get("function_name") or "").strip()
+    if explicit_function:
+        for case_key, case in cases.items():
+            if isinstance(case, dict) and str(case.get("function_name") or "").strip() == explicit_function:
+                return str(case_key), explicit_function
+    return explicit_key, explicit_function
+
+
+def _append_function_case_requirement(required: list[dict[str, str]], case_key: Any, function_name: Any) -> None:
+    key_text = str(case_key or "").strip()
+    function_text = str(function_name or "").strip()
+    if not function_text:
+        return
+    item = {"key": key_text, "function_name": function_text}
+    if item not in required:
+        required.append(item)
+
+
+def _manual_function_case_code_blocks(payload: dict[str, Any]) -> list[str]:
+    runtime = payload.get("pandas_function_case_runtime") if isinstance(payload.get("pandas_function_case_runtime"), dict) else {}
+    blocks = runtime.get("manual_code_blocks") if isinstance(runtime.get("manual_code_blocks"), list) else []
+    clean_blocks = [str(block).strip() for block in blocks if str(block or "").strip()]
+    if clean_blocks:
+        return clean_blocks
+    manual = str(runtime.get("manual_text") or payload.get("pandas_function_cases_text") or "").strip()
+    if not manual:
+        return []
+    fenced_blocks = re.findall(r"```(?:python|py)?\s*(.*?)```", manual, flags=re.IGNORECASE | re.DOTALL)
+    clean_blocks = [str(block).strip() for block in fenced_blocks if str(block or "").strip()]
+    if clean_blocks:
+        return clean_blocks
+    return [manual] if "def " in manual else []
+
+
+def _function_definition_code(code: str, function_name: str) -> str:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return ""
+    lines = code.splitlines()
+    parts: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == function_name:
+            start = max((node.lineno or 1) - 1, 0)
+            end = getattr(node, "end_lineno", None) or node.lineno
+            parts.append("\n".join(lines[start:end]))
+    return "\n\n".join(part for part in parts if part.strip())
+
+
+def _defined_function_names(code: str) -> set[str]:
+    try:
+        tree = ast.parse(_strip_harmless_pandas_import(code))
+    except SyntaxError:
+        return set()
+    return {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+
+
+def _called_function_names(code: str) -> set[str]:
+    try:
+        tree = ast.parse(_strip_harmless_pandas_import(code))
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            names.add(node.func.id)
+    return names
+
+
+def _function_case_code_text(value: Any) -> str:
+    if isinstance(value, list):
+        return "\n".join(str(line) for line in value)
+    return str(value or "").strip()
 
 
 def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.DataFrame:
@@ -1708,9 +1956,22 @@ def _text(value: Any) -> str:
 
 def _payload(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
-        return deepcopy(value)
+        data = value
+        if isinstance(data.get("payload"), dict) and (
+            "prompt" in data
+            or "prompt_type" in data
+            or "pandas_function_cases" in data
+            or "pandas_function_case_runtime" in data
+        ):
+            payload = deepcopy(data["payload"])
+            if "pandas_function_case_runtime" in data and "pandas_function_case_runtime" not in payload:
+                payload["pandas_function_case_runtime"] = deepcopy(data["pandas_function_case_runtime"])
+            return payload
+        return deepcopy(data)
     data = getattr(value, "data", None)
-    return deepcopy(data) if isinstance(data, dict) else {}
+    if isinstance(data, dict):
+        return _payload(data)
+    return {}
 
 
 # 컴포넌트 설명: 15 Pandas Code Executor

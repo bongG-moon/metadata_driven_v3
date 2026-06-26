@@ -103,7 +103,7 @@ Intent LLM.Output
 14 Pandas Prompt Builder.Pandas Prompt
   -> Pandas Code LLM.Input
 
-13 Retrieval Payload Adapter.Payload
+14 Pandas Prompt Builder.Prompt Payload
   -> 15 Pandas Code Executor.Payload
 
 Pandas Code LLM.Output

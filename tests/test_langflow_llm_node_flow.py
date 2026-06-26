@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 import types
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,7 @@ def test_request_date_overrides_stale_llm_date_params_and_filters(monkeypatch: A
         request_date="20260617",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "production_wip_target_rate")
     prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
     metadata_json = prompt.split("Metadata summary:\n", 1)[1].split("\n\nPrevious state summary:", 1)[0]
     summary = json.loads(metadata_json)
@@ -203,7 +205,7 @@ def test_request_date_overrides_stale_llm_date_params_and_filters(monkeypatch: A
 
     assert jobs["production_today"]["params"]["DATE"] == "20260617"
     assert jobs["wip_today"]["params"]["DATE"] == "20260617"
-    assert jobs["target"]["params"]["DATE"] == "2026-06-17"
+    assert "DATE" not in jobs["target"]["params"]
     assert _filter_values(jobs["production_today"], "DATE") == ["20260617"]
     assert _filter_values(jobs["wip_today"], "DATE") == ["20260617"]
     assert _filter_values(jobs["target"], "DATE") == ["2026-06-17"]
@@ -216,6 +218,7 @@ def test_intent_normalizer_builds_recipe_jobs_when_llm_omits_jobs(monkeypatch: A
 
     payload = request_loader.build_request_payload("오늘 DA공정에서 재공, 생산량과 목표값 그리고 생산달성율을 보여줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "production_wip_target_rate")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "production_wip_target_rate",
@@ -257,6 +260,7 @@ def test_intent_normalizer_builds_recipe_jobs_when_llm_omits_specialized_dataset
 
     payload = request_loader.build_request_payload("오늘 생산달성율을 보여줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "production_wip_target_rate")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "production_wip_target_rate",
@@ -302,6 +306,7 @@ def test_intent_normalizer_recipe_grain_policy_uses_question_scope(monkeypatch: 
 
     payload = request_loader.build_request_payload("오늘 전체 생산달성율을 보여줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "production_wip_target_rate")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "production_wip_target_rate",
@@ -341,7 +346,7 @@ def test_intent_normalizer_adds_result_scope_columns_from_process_group(monkeypa
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
 
-    assert plan["result_scope_columns"] == [{"column": "OPER_GROUP", "value": "WB", "source_field": "OPER_NAME"}]
+    assert plan["result_scope_columns"] == [{"column": "OPER_GROUP", "value": "WB_PROCESS_GROUP", "source_field": "OPER_NAME"}]
     assert any(item.get("field") == "OPER_NAME" for item in payload["retrieval_jobs"][0]["filters"])
 
 
@@ -399,6 +404,7 @@ def test_intent_normalizer_detail_request_overrides_recipe_grouping(monkeypatch:
         "test-session",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "production_wip_target_rate")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "production_wip_target_rate",
@@ -432,6 +438,7 @@ def test_intent_normalizer_recipe_defaults_populate_plan(monkeypatch: Any) -> No
 
     payload = request_loader.build_request_payload("오늘 INPUT계획대비 D/A공정에서 생산량이 저조한 제품을 알려줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "low_output_vs_target")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "low_output_vs_target",
@@ -455,6 +462,7 @@ def test_intent_normalizer_recipe_promotes_generic_lot_quantity_plan(monkeypatch
         "test-session",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "lot_quantity_summary")
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
         "analysis_kind": "aggregate_join",
@@ -546,6 +554,7 @@ def test_intent_normalizer_recipe_aligns_history_dataset_for_date_split(monkeypa
 
     payload = request_loader.build_request_payload("어제 생산량과 오늘 생산계획의 차이수량을 제품별로 알려줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "date_split_production_plan_gap")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "date_split_production_plan_gap",
@@ -770,8 +779,8 @@ def test_intent_normalizer_applies_process_scope_per_source_alias(monkeypatch: A
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
     product_keys = payload["metadata"]["domain_items"]["product_key_columns"]
     process_groups = payload["metadata"]["domain_items"]["process_groups"]
-    dp_processes = process_groups["DP"]["processes"]
-    da_processes = process_groups["DA"]["processes"]
+    dp_processes = process_groups["DP_DP_PROCESS_GROUP"]["processes"]
+    da_processes = process_groups["DA_PROCESS_GROUP"]["processes"]
     combined_processes = [*da_processes, *dp_processes]
     llm_json = {
         "intent_type": "multi_source_analysis",
@@ -1015,6 +1024,424 @@ def test_pandas_prompt_tells_llm_to_handle_dates_without_datetime_imports() -> N
     assert "Underscores inside names such as prod_df" in prompt
 
 
+def test_pandas_prompt_includes_manual_function_case_text() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    payload = {
+        "request": {"question": "find products matching 2048G H-HBM16E"},
+        "intent_plan": {"analysis_kind": "detail_rows", "retrieval_jobs": []},
+        "runtime_sources": {},
+        "state": {},
+    }
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(
+        payload,
+        "When matching product tokens, define match_product_tokens and filter actual source rows.",
+    )
+    prompt = prompt_payload["prompt"]
+
+    assert "Specialized pandas function cases:" in prompt
+    assert "manual_text_input" in prompt
+    assert "match_product_tokens" in prompt
+    assert prompt_payload["pandas_function_cases"][0]["source"] == "pandas_function_cases_text"
+
+
+def test_pandas_prompt_selects_domain_function_case_for_product_token_lookup() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    function_code = [
+        "def match_product_tokens(input_text, frame, token_columns=None, output_order=None):",
+        "    return frame.copy()",
+    ]
+    product_case = {
+        "display_name": "Component token product lookup",
+        "aliases": ["product list lookup"],
+        "function_name": "match_product_tokens",
+        "function_code": function_code,
+        "use_when": "Use when the user asks to find products from free-form product tokens.",
+        "required_source_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+        "token_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+        "output_order": ["TECH", "DEN", "PKG_TYPE1", "LEAD", "PKG_TYPE2", "MODE", "MCP_NO"],
+    }
+    payload = {
+        "request": {"question": "find product list for 2048G H-HBM16E"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "product_grain": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+            "retrieval_jobs": [{"dataset_key": "product_catalog", "source_alias": "products"}],
+        },
+        "runtime_sources": {
+            "products": [
+                {
+                    "TECH": "TSV",
+                    "DEN": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG_TYPE1": "HBM",
+                    "PKG_TYPE2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                }
+            ]
+        },
+        "state": {},
+    }
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload)
+    prompt = prompt_payload["prompt"]
+
+    assert prompt_payload["pandas_function_cases"][0]["key"] == "component_token_product_lookup"
+    assert "metadata.domain_items.pandas_function_cases" in prompt
+    assert "match_product_tokens" in prompt
+    assert "function_code" in prompt
+    assert "loaded by the pandas executor" in prompt
+    assert "do not redefine" in prompt
+
+
+def test_pandas_prompt_selects_product_token_case_when_required_columns_are_too_strict() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    product_case = {
+        "display_name": "제품 속성 토큰 검색",
+        "aliases": ["제품 검색", "제품 찾아줘"],
+        "function_name": "match_product_tokens",
+        "use_when": "사용자가 제품의 여러 속성을 혼합하여 자유로운 형태로 제품을 검색할 때",
+        "required_source_columns": ["TECH", "DEN", "MODE", "ORG", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "DEVICE"],
+        "token_columns": [
+            "TECH",
+            "DEN",
+            "DENSITY",
+            "MODE",
+            "ORG",
+            "PKG_TYPE1",
+            "PKG1",
+            "PKG_TYPE2",
+            "PKG2",
+            "LEAD",
+            "MCP_NO",
+            "DEVICE_DESC",
+        ],
+        "pandas_code_instructions": [
+            "match_product_tokens helper를 사용하여 입력 토큰과 제품 컬럼 값을 매칭합니다."
+        ],
+    }
+    payload = {
+        "request": {"question": "A-134 512M 제품 리스트 보여줘"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "retrieval_jobs": [{"dataset_key": "product_catalog", "source_alias": "product_data"}],
+        },
+        "runtime_sources": {
+            "product_data": [
+                {
+                    "TECH": "TSV",
+                    "DEN": "2048G",
+                    "MODE": "HBM3E",
+                    "ORG": "A",
+                    "PKG_TYPE1": "HBM",
+                    "PKG_TYPE2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "DEVICE_DESC": "HBM3E 16Hi",
+                }
+            ]
+        },
+        "state": {},
+    }
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload)
+    prompt = prompt_payload["prompt"]
+
+    assert prompt_payload["pandas_function_cases"][0]["key"] == "component_token_product_lookup"
+    assert "match_product_tokens" in prompt
+    assert "Returning the full product list without token filtering is invalid" in prompt
+
+
+def test_pandas_prompt_selects_product_token_case_for_korean_product_list_question() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    product_case = {
+        "display_name": "product token lookup",
+        "function_name": "match_product_tokens",
+        "required_source_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "DEVICE"],
+        "token_columns": ["TECH", "DEN", "DENSITY", "MODE", "PKG_TYPE1", "PKG1", "PKG_TYPE2", "PKG2", "LEAD", "MCP_NO", "DEVICE_DESC"],
+    }
+    payload = {
+        "request": {"question": "A-134 512M \uc81c\ud488 \ub9ac\uc2a4\ud2b8 \ubcf4\uc5ec\uc918"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {"analysis_kind": "detail_rows", "retrieval_jobs": []},
+        "runtime_sources": {
+            "product_data": [
+                {
+                    "TECH": "TSV",
+                    "DEN": "2048G",
+                    "MODE": "HBM3E",
+                    "PKG_TYPE1": "HBM",
+                    "PKG_TYPE2": "HBM",
+                    "LEAD": "LF",
+                    "MCP_NO": "H-HBM16E",
+                    "DEVICE_DESC": "HBM3E 16Hi",
+                }
+            ]
+        },
+        "state": {},
+    }
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload)
+
+    assert prompt_payload["pandas_function_cases"][0]["key"] == "component_token_product_lookup"
+
+
+def test_pandas_executor_loads_function_case_helper_from_metadata() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    function_code = [
+        "def match_product_tokens(input_text, frame, token_columns=None, output_order=None):",
+        "    columns = token_columns or ['TECH', 'DEN', 'MODE', 'PKG_TYPE1', 'PKG_TYPE2', 'LEAD', 'MCP_NO']",
+        "    result = frame.copy()",
+        "    for token in str(input_text or '').split():",
+        "        normalized_token = str(token).strip().upper()",
+        "        if not normalized_token:",
+        "            continue",
+        "        for column in columns:",
+        "            if column not in result.columns:",
+        "                continue",
+        "            values = result[column].dropna().map(lambda value: str(value).strip().upper()).unique()",
+        "            if normalized_token in set(values):",
+        "                result = result[result[column].map(lambda value: str(value).strip().upper()) == normalized_token]",
+        "                break",
+        "    return result.reset_index(drop=True)",
+    ]
+    payload = {
+        "metadata": {
+            "domain_items": {
+                "pandas_function_cases": {
+                    "component_token_product_lookup": {
+                        "function_name": "match_product_tokens",
+                        "function_code": function_code,
+                    }
+                }
+            }
+        },
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "product_grain": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+        },
+        "runtime_sources": {
+            "products": [
+                {"TECH": "TSV", "DEN": "2048G", "MODE": "HBM3E", "PKG_TYPE1": "HBM", "PKG_TYPE2": "HBM", "LEAD": "LF", "MCP_NO": "H-HBM16E"},
+                {"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "LFBGA", "PKG_TYPE2": "POP", "LEAD": "LF", "MCP_NO": "L-269P1Q"},
+            ]
+        },
+        "state": {},
+    }
+    pandas_llm_json = {
+        "code": "result_df = match_product_tokens('2048G H-HBM16E', sources['products'])",
+        "output_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+        "reasoning_steps": ["Use registered product token helper."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["DEN"] == "2048G"
+    assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
+
+
+def test_pandas_executor_rejects_selected_function_case_without_registered_helper() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "metadata": {
+            "domain_items": {
+                "pandas_function_cases": {
+                    "lot_hold_complex_lookup": {
+                        "function_name": "match_lot_hold_conditions",
+                        "use_when": "Use for mixed Lot/Hold condition lookup.",
+                    }
+                }
+            }
+        },
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "pandas_function_case": {
+                "key": "lot_hold_complex_lookup",
+                "function_name": "match_lot_hold_conditions",
+                "input_text": "T1234567GEN1 Hold info",
+            },
+            "step_plan": [
+                {
+                    "step_id": "lot_hold_complex_lookup",
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "hold_data",
+                    "function_case_key": "lot_hold_complex_lookup",
+                    "function_name": "match_lot_hold_conditions",
+                    "input_text": "T1234567GEN1 Hold info",
+                }
+            ],
+        },
+        "runtime_sources": {"hold_data": [{"LOT_ID": "T1234567GEN1", "HOLD_CD": "QA_HOLD"}]},
+        "state": {},
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "def match_lot_hold_conditions(input_text, frame):",
+                "    return frame.copy()",
+                "result_df = match_lot_hold_conditions(plan['pandas_function_case']['input_text'], sources['hold_data'])",
+            ]
+        ),
+        "output_columns": ["LOT_ID", "HOLD_CD"],
+        "reasoning_steps": ["Incorrectly synthesize the selected helper."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "error"
+    assert result["analysis"]["executed"] is False
+    assert any("implementation is missing" in error for error in result["analysis"]["errors"])
+    assert any("must be provided as a registered helper" in error for error in result["analysis"]["errors"])
+
+
+def test_pandas_executor_loads_function_case_helper_from_prompt_payload_text() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    product_case = {
+        "display_name": "Component token product lookup",
+        "function_name": "match_product_tokens",
+        "use_when": "Use for product token lookup.",
+        "token_columns": ["DEN", "MCP_NO"],
+    }
+    payload = {
+        "request": {"question": "2048G H-HBM16E product list"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "2048G H-HBM16E product list",
+            },
+            "step_plan": [
+                {
+                    "step_id": "component_token_product_lookup",
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "products",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                    "input_text": "2048G H-HBM16E product list",
+                }
+            ],
+        },
+        "runtime_sources": {
+            "products": [
+                {"DEN": "2048G", "MCP_NO": "H-HBM16E"},
+                {"DEN": "64G", "MCP_NO": "L-269P1Q"},
+            ]
+        },
+        "state": {},
+    }
+    helper_text = "\n".join(
+        [
+            "```python",
+            "def match_product_tokens(input_text, frame):",
+            "    result = frame.copy()",
+            "    for token in str(input_text or '').split():",
+            "        normalized = token.upper()",
+            "        for column in ['DEN', 'MCP_NO']:",
+            "            if column in result.columns and normalized in set(result[column].astype(str).str.upper()):",
+            "                result = result[result[column].astype(str).str.upper() == normalized]",
+            "                break",
+            "    return result.reset_index(drop=True)",
+            "",
+            "result_df = match_product_tokens('example', sources[list(sources.keys())[0]])",
+            "```",
+        ]
+    )
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload, helper_text)
+    pandas_llm_json = {
+        "code": "result_df = match_product_tokens(plan['pandas_function_case']['input_text'], sources['products'])",
+        "output_columns": ["DEN", "MCP_NO"],
+        "reasoning_steps": ["Call the registered helper from the prompt payload."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(prompt_payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
+
+
+def test_intent_normalizer_routes_free_form_product_tokens_to_function_case(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+
+    question = "64G L-269P1Q 제품 찾아줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260626")
+    payload["state"] = {
+        "current_data": {
+            "data_ref": {"store": "mongodb", "ref_id": "previous-products"},
+            "columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+            "rows": [{"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "LFBGA", "PKG_TYPE2": "POP", "LEAD": "LF", "MCP_NO": "L-269P1Q"}],
+            "row_count": 1,
+        }
+    }
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "followup_transform",
+        "analysis_kind": "detail_rows",
+        "datasets": ["production_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "product_data",
+                "purpose": "filter product data",
+                "params": {"DATE": "20260626"},
+                "filters": [
+                    {"field": "DEN", "op": "eq", "value": "64G"},
+                    {"field": "MCP_NO", "op": "eq", "value": "L-269P1Q"},
+                    {"field": "DATE", "op": "eq", "value": "20260626"},
+                    {"field": "PRODUCT_GRAIN", "op": "from_state"},
+                ],
+            }
+        ],
+        "step_plan": [{"step_id": "filter_product_data", "operation": "filter_data", "source_alias": "product_data"}],
+        "requires_full_previous_result_restore": True,
+        "previous_result_restore_mode": "full",
+        "reasoning_steps": ["Use product tokens to find matching product rows."],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+    job = payload["retrieval_jobs"][0]
+    fields = {item.get("field") for item in job.get("filters", [])}
+
+    assert plan["intent_type"] == "detail_lookup"
+    assert plan["analysis_kind"] == "detail_rows"
+    assert plan["pandas_function_case"]["key"] == "component_token_product_lookup"
+    assert plan["pandas_function_case"]["function_name"] == "match_product_tokens"
+    assert plan["pandas_function_case"]["input_text"] == question
+    assert plan["step_plan"][0]["operation"] == "apply_pandas_function_case"
+    assert plan["step_plan"][0]["function_name"] == "match_product_tokens"
+    assert "DEN" not in fields
+    assert "MCP_NO" not in fields
+    assert "PRODUCT_GRAIN" not in fields
+    assert any(ref.get("section") == "pandas_function_cases" for ref in payload["metadata_context"]["domain_refs"])
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(
+        {
+            **payload,
+            "runtime_sources": {
+                "product_data": [
+                    {"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "LFBGA", "PKG_TYPE2": "POP", "LEAD": "LF", "MCP_NO": "L-269P1Q"}
+                ]
+            },
+        },
+        "제품 토큰 lookup은 match_product_tokens helper 형태로 result_df를 만든다.",
+    )
+
+    assert prompt_payload["pandas_function_cases"][-1]["key"] == "component_token_product_lookup"
+    assert "Apply the selected pandas function case with helper match_product_tokens" in prompt_payload["prompt"]
+
+
 def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
@@ -1022,6 +1449,7 @@ def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any
 
     payload = request_loader.build_request_payload("오늘 DA공정에서 재공, 생산량과 목표값 그리고 생산달성율을 보여줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "production_wip_target_rate")
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "production_wip_target_rate",
@@ -1067,6 +1495,11 @@ def test_intent_normalizer_uses_product_terms_for_existing_jobs(monkeypatch: Any
 
     payload = request_loader.build_request_payload("오늘 LPDDR5 W/B 공정 재공과 생산량을 보여줘", "test-session")
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    payload["metadata"]["domain_items"].setdefault("product_terms", {})["LPDDR5_PRODUCT"] = {
+        "display_name": "LPDDR5 제품",
+        "aliases": ["LPDDR5", "LPDDR5 제품"],
+        "condition": {"MODE": {"value": "LPDDR5"}},
+    }
     intent_llm_json = {
         "intent_type": "multi_source_analysis",
         "analysis_kind": "aggregate_join",
@@ -1231,7 +1664,7 @@ def test_intent_normalizer_converts_rich_product_conditions_to_filters(monkeypat
     filters = payload["retrieval_jobs"][0]["filters"]
 
     assert {"field": "MODE", "op": "starts_with", "value": "LP"} in filters
-    assert {"field": "PKG_TYPE1", "op": "in", "values": ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]} in filters
+    assert {"field": "PKG_TYP1", "op": "in", "values": ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]} in filters
     assert {"field": "MCP_NO", "op": "not_empty"} in filters
 
 
@@ -1857,6 +2290,7 @@ def test_intent_normalizer_preserves_top_wip_process_then_lot_metrics_plan(monke
         "test-session",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "top_wip_process_hold_lot_in_tat")
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
         "analysis_kind": "lot_count_by_process",
@@ -1920,6 +2354,7 @@ def test_intent_normalizer_does_not_hardcode_top_wip_process_lot_recipe(monkeypa
         "test-session",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "top_wip_process_hold_lot_in_tat")
     payload["metadata"]["domain_items"]["analysis_recipes"].pop("top_wip_process_hold_lot_in_tat", None)
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
@@ -1945,6 +2380,7 @@ def test_intent_normalizer_does_not_apply_wip_lot_recipe_to_production_equipment
         "test-session",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "top_production_products_equipment_count")
     intent_llm_json = {
         "intent_type": "multi_step_analysis",
         "analysis_kind": "rank_top_n",
@@ -1985,6 +2421,7 @@ def test_intent_normalizer_applies_top_wip_product_oldest_lot_recipe(monkeypatch
         "test-session",
     )
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    add_test_analysis_recipes(payload, "top_wip_product_oldest_lot")
     intent_llm_json = {
         "intent_type": "multi_step_analysis",
         "analysis_kind": "none",
@@ -2046,7 +2483,7 @@ def test_intent_normalizer_adds_eqpid_primary_quantity_to_equipment_columns(monk
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
-    assert payload["retrieval_jobs"][0]["required_columns"] == ["EQP_MODEL", "EQPID"]
+    assert payload["retrieval_jobs"][0]["required_columns"] == ["EQP_MODEL", "PKG1", "EQPID"]
 
 
 def test_pandas_executor_normalizes_llm_result_column_names() -> None:
@@ -3502,6 +3939,195 @@ def load_seed_metadata_payload(module: Any, payload: dict[str, Any], monkeypatch
         table_catalog_collection_name="agent_v3_table_catalog_items",
         main_flow_filter_collection_name="agent_v3_main_flow_filters",
     )
+
+
+def add_test_analysis_recipes(payload: dict[str, Any], *recipe_keys: str) -> dict[str, Any]:
+    recipes = payload["metadata"]["domain_items"].setdefault("analysis_recipes", {})
+    for recipe_key in recipe_keys:
+        recipes[recipe_key] = deepcopy(TEST_ANALYSIS_RECIPES[recipe_key])
+    return payload
+
+
+TEST_PRODUCT_KEYS = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+
+
+TEST_ANALYSIS_RECIPES: dict[str, dict[str, Any]] = {
+    "production_wip_target_rate": {
+        "display_name": "생산 재공 목표 달성률",
+        "aliases": ["생산달성율", "생산달성률", "생산량과 목표", "재공, 생산량과 목표"],
+        "default_analysis_kind": "production_wip_target_rate",
+        "required_dataset_families": ["production", "wip", "target"],
+        "source_aliases_by_family": {
+            "production": "production_data",
+            "wip": "wip_data",
+            "target": "target_data",
+        },
+        "grain_policy": "question_or_product_grain",
+    },
+    "low_output_vs_target": {
+        "display_name": "목표 대비 생산 저조",
+        "aliases": ["생산량이 부족", "목표대비 저조", "INPUT계획대비"],
+        "default_analysis_kind": "low_output_vs_target",
+        "required_dataset_families": ["production", "target"],
+        "source_aliases_by_family": {"production": "production_data", "target": "target_data"},
+        "grain_policy": "question_or_product_grain",
+        "defaults": {"production_column": "PRODUCTION", "target_column": "OUT_PLAN", "input_target_column": "INPUT_PLAN", "threshold": 1.0},
+    },
+    "lot_quantity_summary": {
+        "display_name": "LOT 수량 요약",
+        "aliases": ["lot은 몇개", "wafer가 몇개", "die수량"],
+        "default_analysis_kind": "lot_quantity_summary",
+        "required_dataset_families": ["lot"],
+        "source_aliases_by_family": {"lot": "lot_data"},
+        "grain_policy": "aggregate_total",
+        "required_columns_by_family": {"lot": ["LOT_ID", "WF_QTY", "SUB_PROD_QTY"]},
+        "override_analysis_kinds": ["aggregate_join", "aggregate"],
+    },
+    "date_split_production_plan_gap": {
+        "display_name": "일자 분리 생산 계획 차이",
+        "aliases": ["어제 생산량과 오늘 생산계획", "차이수량"],
+        "default_analysis_kind": "date_split_production_plan_gap",
+        "required_dataset_families": ["production", "target"],
+        "source_aliases_by_family": {"production": "production_data", "target": "target_data"},
+        "grain_policy": "question_or_product_grain",
+    },
+    "top_wip_process_hold_lot_in_tat": {
+        "display_name": "재공 상위 공정 HOLD LOT 평균 In TAT",
+        "aliases": ["hold LOT", "in tat", "재공이 많은 세부공정"],
+        "required_question_cues": [["hold", "HOLD"], ["tat", "TAT"]],
+        "default_analysis_kind": "top_wip_process_hold_lot_in_tat",
+        "required_dataset_families": ["wip", "lot"],
+        "source_aliases_by_family": {"wip": "wip_data", "lot": "lot_status_data"},
+        "replace_retrieval_jobs": True,
+        "replace_datasets": True,
+        "grain_policy": "recipe_step_grain",
+        "override_analysis_kinds": ["lot_count_by_process"],
+        "override_step_plan": True,
+        "top_n_policy": "question_or_default",
+        "defaults": {"top_n": 3},
+        "blocked_filter_fields": ["LOT_HOLD_STAT_CD"],
+        "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+        "required_columns_by_family": {
+            "wip": ["OPER_NAME", "WIP"],
+            "lot": ["OPER_SHORT_DESC", "LOT_ID", "LOT_HOLD_STAT_CD", "IN_TAT"],
+        },
+        "step_plan_template": [
+            {
+                "step_id": "rank_top_wip_process",
+                "operation": "rank_top_n",
+                "source_family": "wip",
+                "group_by": ["OPER_NAME"],
+                "metric": "WIP",
+                "top_n": "$top_n",
+                "rank_order": "desc",
+                "output_columns": ["OPER_NAME", "WIP"],
+            },
+            {
+                "step_id": "hold_lot_in_tat_by_process",
+                "operation": "hold_lot_in_tat_by_process",
+                "source_family": "lot",
+                "filter_from_step": "rank_top_wip_process",
+                "group_by": ["OPER_SHORT_DESC"],
+                "output_columns": ["OPER_SHORT_DESC", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+            },
+            {
+                "step_id": "join_wip_and_lot_metrics",
+                "operation": "left_join",
+                "left_step_id": "rank_top_wip_process",
+                "right_step_id": "hold_lot_in_tat_by_process",
+                "join_keys": [{"left": "OPER_NAME", "right": "OPER_SHORT_DESC"}],
+                "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+            },
+        ],
+    },
+    "top_production_products_equipment_count": {
+        "display_name": "생산 상위 제품별 장비 수",
+        "aliases": ["할당 장비", "장비 대수", "생산 상위"],
+        "question_cues": ["생산량", "상위", "장비"],
+        "default_analysis_kind": "top_production_products_equipment_count",
+        "required_dataset_families": ["production", "equipment"],
+        "source_aliases_by_family": {"production": "production_data", "equipment": "equipment_data"},
+        "replace_datasets": True,
+        "grain_policy": "question_or_product_grain",
+        "override_step_plan": True,
+        "top_n_policy": "question_or_default",
+        "override_analysis_kinds": ["rank_top_n"],
+        "required_columns_by_family": {
+            "production": [*TEST_PRODUCT_KEYS, "PRODUCTION"],
+            "equipment": [*TEST_PRODUCT_KEYS, "EQPID"],
+        },
+        "step_plan_template": [
+            {
+                "step_id": "rank_top_production_products",
+                "operation": "rank_top_n",
+                "source_family": "production",
+                "group_by": TEST_PRODUCT_KEYS,
+                "metric": "PRODUCTION",
+                "top_n": "$top_n",
+                "rank_order": "desc",
+            },
+            {
+                "step_id": "count_equipment_for_top_products",
+                "operation": "equipment_count_by_product",
+                "source_family": "equipment",
+                "filter_from_step": "rank_top_production_products",
+                "group_by": TEST_PRODUCT_KEYS,
+                "count_column": "EQPID",
+            },
+            {
+                "step_id": "join_top_products_and_equipment",
+                "operation": "left_join",
+                "left_step_id": "rank_top_production_products",
+                "right_step_id": "count_equipment_for_top_products",
+                "join_keys": TEST_PRODUCT_KEYS,
+            },
+        ],
+    },
+    "top_wip_product_oldest_lot": {
+        "display_name": "재공 최다 제품 기준 최장 In TAT LOT",
+        "aliases": ["재공이 가장 많은 제품", "IN TAT가 가장 오래된 LOT"],
+        "default_analysis_kind": "top_wip_product_oldest_lot",
+        "required_dataset_families": ["wip", "lot"],
+        "source_aliases_by_family": {"wip": "wip_data", "lot": "lot_data"},
+        "replace_datasets": True,
+        "grain_policy": "question_or_product_grain",
+        "override_step_plan": True,
+        "output_columns": [*TEST_PRODUCT_KEYS, "WIP", "LOT_ID", "IN_TAT"],
+        "required_columns_by_family": {
+            "wip": [*TEST_PRODUCT_KEYS, "WIP"],
+            "lot": [*TEST_PRODUCT_KEYS, "LOT_ID", "IN_TAT"],
+        },
+        "step_plan_template": [
+            {
+                "step_id": "rank_top_wip_product",
+                "operation": "rank_top_n",
+                "source_family": "wip",
+                "group_by": TEST_PRODUCT_KEYS,
+                "metric": "WIP",
+                "top_n": 1,
+                "rank_order": "desc",
+            },
+            {
+                "step_id": "find_oldest_lot_for_top_product",
+                "operation": "rank_top_n",
+                "source_family": "lot",
+                "filter_from_step": "rank_top_wip_product",
+                "group_by": TEST_PRODUCT_KEYS,
+                "metric": "IN_TAT",
+                "top_n": 1,
+                "rank_order": "desc",
+            },
+            {
+                "step_id": "join_top_product_and_oldest_lot",
+                "operation": "left_join",
+                "left_step_id": "rank_top_wip_product",
+                "right_step_id": "find_oldest_lot_for_top_product",
+                "join_keys": TEST_PRODUCT_KEYS,
+                "output_columns": [*TEST_PRODUCT_KEYS, "WIP", "LOT_ID", "IN_TAT"],
+            },
+        ],
+    },
+}
 
 
 def seed_metadata_docs() -> dict[str, list[dict[str, Any]]]:

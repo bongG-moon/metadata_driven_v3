@@ -4,12 +4,14 @@
 
 from __future__ import annotations
 
+import ast
 import json
+import re
 from copy import deepcopy
 from typing import Any
 
 from lfx.custom.custom_component.component import Component
-from lfx.io import DataInput, Output
+from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 from lfx.schema.message import Message
 
@@ -17,7 +19,7 @@ from lfx.schema.message import Message
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
-def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
+def build_pandas_prompt_payload(payload_value: Any, pandas_function_cases_text: Any = "") -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
         prompt = json.dumps(
@@ -35,12 +37,21 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
     runtime_sources = payload.get("runtime_sources") if isinstance(payload.get("runtime_sources"), dict) else {}
     source_summary = _source_summary(runtime_sources, plan)
     source_filters = _filters_by_source(plan)
+    function_cases = _pandas_function_cases(
+        payload,
+        plan,
+        str(request.get("question") or ""),
+        source_summary,
+        pandas_function_cases_text,
+    )
+    payload_for_executor = deepcopy(payload)
+    payload_for_executor["pandas_function_case_runtime"] = deepcopy(function_cases.get("runtime", {}))
 
     prompt = "\n".join(
         [
             "You are the pandas code generation node for a Langflow manufacturing data agent.",
             "Return one strict JSON object only. Do not wrap it in markdown.",
-            "Generate Python pandas code that uses only the provided variables: pd, sources, plan, state.",
+            "Generate Python pandas code that uses only the provided variables: pd, sources, plan, state, and helper functions loaded from Specialized pandas function cases.",
             "sources is a dict mapping source_alias to pandas DataFrame.",
             "Use only source aliases that are actual keys in sources/source summaries, normally retrieval_jobs[*].source_alias. Do not invent generic aliases.",
             "plan and state are Python dicts. Use plan['key'], plan.get('key'), state.get('key'); never use plan.key or state.key.",
@@ -96,6 +107,9 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "Source filters to apply in pandas before analysis:",
             json.dumps(source_filters, ensure_ascii=False, indent=2),
             "",
+            "Specialized pandas function cases:",
+            function_cases["prompt_text"],
+            "",
             "Previous state summary:",
             json.dumps(_state_summary(state), ensure_ascii=False, indent=2),
             "",
@@ -114,10 +128,353 @@ def build_pandas_prompt_payload(payload_value: Any) -> dict[str, Any]:
             ),
         ]
     )
-    return {"prompt": prompt, "payload": payload, "prompt_type": "pandas_code", "source_summary": source_summary, "source_filters": source_filters}
+    return {
+        "prompt": prompt,
+        "payload": payload_for_executor,
+        "prompt_type": "pandas_code",
+        "source_summary": source_summary,
+        "source_filters": source_filters,
+        "pandas_function_cases": function_cases["cases"],
+        "pandas_function_case_runtime": function_cases.get("runtime", {}),
+    }
+
+
+def _pandas_function_cases(
+    payload: dict[str, Any],
+    plan: dict[str, Any],
+    question: str,
+    source_summary: dict[str, Any],
+    manual_text: Any,
+) -> dict[str, Any]:
+    manual = _clean_text(manual_text)
+    manual_code_blocks = _extract_python_code_blocks(manual)
+    manual_function_names = sorted(_defined_function_names_from_blocks(manual_code_blocks))
+    selected_domain_cases = _matched_domain_function_cases(payload, plan, question, source_summary)
+    selected_domain_cases = [
+        _with_function_case_implementation_status(case, manual_function_names)
+        for case in selected_domain_cases
+    ]
+    cases: list[dict[str, Any]] = []
+    if manual:
+        cases.append(
+            {
+                "key": "manual_text_input",
+                "source": "pandas_function_cases_text",
+                "instructions": manual,
+                "defined_functions": manual_function_names,
+            }
+        )
+    cases.extend(selected_domain_cases)
+    runtime = {
+        "manual_text": manual,
+        "manual_code_blocks": manual_code_blocks,
+        "manual_function_names": manual_function_names,
+        "selected_cases": [
+            {
+                "key": case.get("key"),
+                "function_name": case.get("function_name"),
+                "implementation_available": case.get("implementation_available", False),
+                "implementation_source": case.get("implementation_source", ""),
+            }
+            for case in selected_domain_cases
+            if case.get("function_name")
+        ],
+        "missing_helpers": [
+            {
+                "key": case.get("key"),
+                "function_name": case.get("function_name"),
+                "message": (
+                    f"{case.get('function_name')} is selected by pandas_function_cases.{case.get('key')} "
+                    "but no executable helper implementation was provided."
+                ),
+            }
+            for case in selected_domain_cases
+            if case.get("function_name") and not case.get("implementation_available")
+        ],
+    }
+    if not cases:
+        return {
+            "cases": [],
+            "prompt_text": "No specialized pandas function cases were selected.",
+            "runtime": runtime,
+        }
+    prompt_payload = {
+        "rules": [
+            "These cases are reusable helper-function guidance. They do not add new data sources.",
+            "Metadata cases are selection hints only unless they include function_code.",
+            "Code pasted into pandas_function_cases_text is executable helper code for the selected function names.",
+            "Use the actual DataFrames in sources, not only preview_rows, when applying a function case.",
+            "If plan.pandas_function_case or a step_plan function_case_key/function_name names a case, call the selected helper function explicitly.",
+            "When a case provides function_name and function_code, that helper is loaded by the pandas executor. Call the helper directly; do not redefine it in generated code.",
+            "When a selected case provides function_name without function_code, that function must be defined in pandas_function_cases_text before analysis can proceed.",
+            "Do not synthesize, approximate, or redefine a selected helper from metadata hints alone.",
+            "If missing_helpers is not empty, return a JSON response whose code only creates an empty result_df and whose reasoning_steps explain that the selected helper implementation is missing.",
+            "For product-token lookup cases, filter the source rows by the concrete tokens from the user question. Returning the full product list without token filtering is invalid.",
+            "If a token cannot be matched to any configured token column, ignore that token for filtering instead of failing the whole analysis.",
+            "Return a real result_df from matched rows; do not print warnings or rely on print output.",
+        ],
+        "selected_cases": cases,
+        "missing_helpers": runtime["missing_helpers"],
+    }
+    return {
+        "cases": cases,
+        "prompt_text": json.dumps(prompt_payload, ensure_ascii=False, indent=2),
+        "runtime": runtime,
+    }
+
+
+def _with_function_case_implementation_status(case: dict[str, Any], manual_function_names: list[str]) -> dict[str, Any]:
+    result = deepcopy(case)
+    function_name = str(result.get("function_name") or "").strip()
+    if not function_name:
+        return result
+    if _clean_text(_function_case_code_text(result.get("function_code"))):
+        result["implementation_available"] = True
+        result["implementation_source"] = "metadata.function_code"
+    elif function_name in set(manual_function_names):
+        result["implementation_available"] = True
+        result["implementation_source"] = "pandas_function_cases_text"
+    else:
+        result["implementation_available"] = False
+        result["implementation_source"] = ""
+    return result
+
+
+def _matched_domain_function_cases(
+    payload: dict[str, Any],
+    plan: dict[str, Any],
+    question: str,
+    source_summary: dict[str, Any],
+) -> list[dict[str, Any]]:
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    raw_cases = domain.get("pandas_function_cases") if isinstance(domain.get("pandas_function_cases"), dict) else {}
+    selected: list[dict[str, Any]] = []
+    for case_key, case in raw_cases.items():
+        if not isinstance(case, dict):
+            continue
+        if _function_case_matches(str(case_key), case, question, plan, source_summary):
+            selected.append(_compact_function_case(str(case_key), case))
+    return selected
+
+
+def _function_case_matches(
+    case_key: str,
+    case: dict[str, Any],
+    question: str,
+    plan: dict[str, Any],
+    source_summary: dict[str, Any],
+) -> bool:
+    if _plan_selects_function_case(case_key, case, plan):
+        return True
+    forbidden = _as_text_list(case.get("forbidden_question_cues"))
+    if forbidden and _mentions_any_text(question, forbidden):
+        return False
+    required = _as_text_list(case.get("required_question_cues"))
+    if required and not all(_mentions_any_text(question, [cue]) for cue in required):
+        return False
+    direct_cues = _as_text_list(
+        [
+            case_key,
+            case.get("display_name"),
+            *_as_text_list(case.get("aliases")),
+            *_as_text_list(case.get("question_cues")),
+            *_as_text_list(case.get("activation_cues")),
+        ]
+    )
+    if direct_cues and _mentions_any_text(question, direct_cues):
+        return True
+    if _source_has_required_columns(source_summary, _as_text_list(case.get("required_source_columns"))):
+        return _question_looks_like_product_lookup(question, plan)
+    token_columns = _as_text_list(case.get("token_columns")) + _as_text_list(case.get("candidate_columns"))
+    if _source_column_overlap_count(source_summary, token_columns) >= 2:
+        return _question_looks_like_product_lookup(question, plan)
+    return False
+
+
+def _plan_selects_function_case(case_key: str, case: dict[str, Any], plan: dict[str, Any]) -> bool:
+    function_name = str(case.get("function_name") or "").strip()
+    candidates: list[Any] = []
+    for key in ("pandas_function_case", "function_case"):
+        value = plan.get(key)
+        if value not in (None, "", [], {}):
+            candidates.append(value)
+    for key in ("pandas_function_cases", "function_cases"):
+        value = plan.get(key)
+        if isinstance(value, list):
+            candidates.extend(value)
+        elif value not in (None, "", [], {}):
+            candidates.append(value)
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if isinstance(step, dict):
+            candidates.append(step)
+
+    for item in candidates:
+        if isinstance(item, str):
+            if item.strip() == case_key or (function_name and item.strip() == function_name):
+                return True
+            continue
+        if not isinstance(item, dict):
+            continue
+        explicit_key = str(item.get("key") or item.get("case_key") or item.get("function_case_key") or "").strip()
+        explicit_function = str(item.get("function_name") or "").strip()
+        if explicit_key == case_key:
+            return True
+        if function_name and explicit_function == function_name:
+            return True
+    return False
+
+
+def _compact_function_case(case_key: str, case: dict[str, Any]) -> dict[str, Any]:
+    result = {"key": case_key, "source": "metadata.domain_items.pandas_function_cases"}
+    for field in (
+        "display_name",
+        "function_name",
+        "use_when",
+        "input_text",
+        "required_source_columns",
+        "token_columns",
+        "candidate_columns",
+        "output_order",
+        "output_columns",
+        "calculation_rule",
+        "function_code",
+        "pandas_code_instructions",
+        "example",
+    ):
+        value = case.get(field)
+        if value not in (None, "", [], {}):
+            result[field] = deepcopy(value)
+    return result
+
+
+def _extract_python_code_blocks(text: str) -> list[str]:
+    if not text:
+        return []
+    fenced_blocks = re.findall(r"```(?:python|py)?\s*(.*?)```", text, flags=re.IGNORECASE | re.DOTALL)
+    blocks = [_clean_text(block) for block in fenced_blocks if _clean_text(block)]
+    if blocks:
+        return blocks
+    return [text] if "def " in text else []
+
+
+def _defined_function_names_from_blocks(blocks: list[str]) -> set[str]:
+    names: set[str] = set()
+    for block in blocks:
+        try:
+            tree = ast.parse(block)
+        except SyntaxError:
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.FunctionDef):
+                names.add(node.name)
+    return names
+
+
+def _function_case_code_text(value: Any) -> str:
+    if isinstance(value, list):
+        return "\n".join(str(line) for line in value)
+    return str(value or "").strip()
+
+
+def _source_has_required_columns(source_summary: dict[str, Any], required_columns: list[str]) -> bool:
+    if not required_columns:
+        return False
+    available: set[str] = set()
+    for summary in source_summary.values():
+        if not isinstance(summary, dict):
+            continue
+        available.update(str(column) for column in summary.get("columns", []) if str(column or "").strip())
+    return all(column in available for column in required_columns)
+
+
+def _source_column_overlap_count(source_summary: dict[str, Any], candidate_columns: list[str]) -> int:
+    if not candidate_columns:
+        return 0
+    available: set[str] = set()
+    for summary in source_summary.values():
+        if not isinstance(summary, dict):
+            continue
+        available.update(str(column).upper() for column in summary.get("columns", []) if str(column or "").strip())
+    candidates = {str(column).upper() for column in candidate_columns if str(column or "").strip()}
+    return len(available.intersection(candidates))
+
+
+def _question_looks_like_product_lookup(question: str, plan: dict[str, Any]) -> bool:
+    text = str(question or "")
+    korean_product = chr(0xC81C) + chr(0xD488)
+    korean_lookup = chr(0xC870) + chr(0xD68C)
+    korean_find = chr(0xCC3E)
+    korean_list = chr(0xB9AC) + chr(0xC2A4) + chr(0xD2B8)
+    if _mentions_any_text(text, [korean_product, korean_lookup, korean_find, korean_list]):
+        return True
+    if _mentions_any_text(text, ["\uc81c\ud488", "\uc870\ud68c", "\ucc3e", "\ub9ac\uc2a4\ud2b8"]):
+        return True
+    if _mentions_any_text(text, ["제품", "조회", "찾", "리스트"]):
+        return True
+    if _mentions_any_text(text, ["product", "products", "lookup", "find", "list", "match", "token", "제품", "조회", "찾", "리스트"]):
+        return True
+    plan_text = json.dumps(plan, ensure_ascii=False, default=str)
+    if _mentions_any_text(plan_text, [korean_product]):
+        return True
+    if _mentions_any_text(plan_text, ["\uc81c\ud488"]):
+        return True
+    if _mentions_any_text(plan_text, ["제품"]):
+        return True
+    return _mentions_any_text(plan_text, ["product_token_lookup", "component_token", "제품", "lookup"])
+
+
+def _mentions_any_text(text: str, aliases: list[Any]) -> bool:
+    upper = str(text or "").upper()
+    compact = _compact_match_text(text)
+    for alias in aliases:
+        value = str(alias or "").strip()
+        if not value:
+            continue
+        if value.upper() in upper:
+            return True
+        if _compact_match_text(value) and _compact_match_text(value) in compact:
+            return True
+    return False
+
+
+def _compact_match_text(value: Any) -> str:
+    return "".join(ch for ch in str(value or "").upper() if ch.isalnum())
+
+
+def _as_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    items = value if isinstance(value, list) else [value]
+    result: list[str] = []
+    for item in items:
+        text = _clean_text(item)
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    data = getattr(value, "data", None)
+    if isinstance(data, dict):
+        for key in ("text", "content", "value"):
+            if data.get(key):
+                return str(data[key]).strip()
+    return str(value).strip()
 
 
 def _analysis_instruction(plan: dict[str, Any]) -> str:
+    function_case = plan.get("pandas_function_case") if isinstance(plan.get("pandas_function_case"), dict) else {}
+    if function_case:
+        function_name = str(function_case.get("function_name") or "").strip()
+        input_text = str(function_case.get("input_text") or "").strip()
+        return (
+            f"Apply the selected pandas function case with helper {function_name or 'the named helper'} "
+            f"to the step_plan source_alias. Use input_text={input_text!r} when calling/adapting the helper, "
+            "then assign the matched rows to result_df."
+        )
     kind = plan.get("analysis_kind")
     product_keys = plan.get("product_grain", [])
     if kind == "rank_wip_then_join_production":
@@ -447,7 +804,15 @@ class PandasPromptBuilder(Component):
 
     display_name = "14 Pandas Prompt Builder"
     description = "의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다."
-    inputs = [DataInput(name="payload", display_name="Payload", required=True)]
+    inputs = [
+        DataInput(name="payload", display_name="Payload", required=True),
+        MessageTextInput(
+            name="pandas_function_cases_text",
+            display_name="Pandas Function Cases",
+            value="",
+            required=False,
+        ),
+    ]
     outputs = [
         Output(name="pandas_prompt", display_name="Pandas Prompt", method="build_prompt"),
         Output(name="prompt_payload", display_name="Prompt Payload", method="build_prompt_payload"),
@@ -457,12 +822,16 @@ class PandasPromptBuilder(Component):
     # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
-        prompt_payload = build_pandas_prompt_payload(getattr(self, "payload", None))
+        prompt_payload = build_pandas_prompt_payload(
+            getattr(self, "payload", None),
+            getattr(self, "pandas_function_cases_text", ""),
+        )
 
         self.status = {
             "prompt_type": prompt_payload.get("prompt_type", "pandas_code"),
             "chars": len(prompt_payload["prompt"]),
             "sources": list(prompt_payload.get("source_summary", {}).keys()),
+            "function_cases": len(prompt_payload.get("pandas_function_cases", [])),
         }
         return Message(text=prompt_payload["prompt"])
 
@@ -470,4 +839,9 @@ class PandasPromptBuilder(Component):
     # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt_payload(self) -> Data:
-        return Data(data=build_pandas_prompt_payload(getattr(self, "payload", None)))
+        return Data(
+            data=build_pandas_prompt_payload(
+                getattr(self, "payload", None),
+                getattr(self, "pandas_function_cases_text", ""),
+            )
+        )

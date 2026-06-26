@@ -22,6 +22,7 @@ DOMAIN_SECTIONS = {
     "metric_terms",
     "status_terms",
     "analysis_recipes",
+    "pandas_function_cases",
     "product_key_columns",
 }
 

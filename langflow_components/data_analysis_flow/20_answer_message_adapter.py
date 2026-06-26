@@ -48,6 +48,9 @@ STEP_FIELD_LABELS = {
     "rank_order": "정렬 방향",
     "join_keys": "조인 키",
     "output_alias": "출력 별칭",
+    "function_case_key": "함수 케이스",
+    "function_name": "함수",
+    "input_text": "함수 입력",
 }
 JOB_FIELD_LABELS = {
     "dataset_key": "데이터셋",
@@ -294,6 +297,9 @@ def _step_label(step: Any) -> str:
         "rank_order",
         "join_keys",
         "output_alias",
+        "function_case_key",
+        "function_name",
+        "input_text",
     ):
         value = step.get(key)
         if value not in (None, "", [], {}):

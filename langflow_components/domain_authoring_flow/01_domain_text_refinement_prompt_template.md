@@ -20,6 +20,7 @@ Allowed domain sections:
   "quantity_terms",
   "metric_terms",
   "analysis_recipes",
+  "pandas_function_cases",
   "status_terms",
   "product_key_columns"
 ]

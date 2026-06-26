@@ -57,6 +57,7 @@ DOMAIN_SECTION_LABELS = {
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",
+    "pandas_function_cases": "pandas 함수 케이스",
     "status_terms": "상태 용어",
     "product_key_columns": "제품 식별 컬럼",
 }
@@ -66,6 +67,7 @@ DOMAIN_SECTION_ALIASES = {
     "quantity_terms": ["수량 용어", "지표 용어", "수량 지표", "quantity terms", "quantity_terms"],
     "metric_terms": ["계산 지표", "계산식", "파생 지표", "metric terms", "metric_terms"],
     "analysis_recipes": ["분석 레시피", "분석 recipe", "분석 규칙", "분석 패턴", "analysis recipes", "analysis_recipes"],
+    "pandas_function_cases": ["pandas 함수 케이스", "특화 함수", "함수 케이스", "pandas function cases", "pandas_function_cases"],
     "status_terms": ["상태 용어", "상태 조건", "status terms", "status_terms"],
     "product_key_columns": ["제품 식별 컬럼", "제품 키", "product key", "product_key_columns"],
 }

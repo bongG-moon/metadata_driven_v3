@@ -29,6 +29,7 @@ DOMAIN_SECTION_LABELS = {
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",
+    "pandas_function_cases": "pandas 함수 케이스",
     "status_terms": "상태 용어",
     "product_key_columns": "제품 식별 컬럼",
 }
@@ -75,6 +76,7 @@ def build_metadata_qa_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "- metadata.domain_items.quantity_terms[TERM_KEY] maps business quantities such as 생산량, 재공, 목표, 장비 대수 to dataset_family or dataset_key, quantity_column, aggregation, and output_column.",
             "- metadata.domain_items.metric_terms[TERM_KEY] defines calculated metrics such as 달성률. formula, required_quantity_terms, and output_column explain how the metric is derived.",
             "- metadata.domain_items.analysis_recipes[RECIPE_KEY] defines reusable analysis patterns. aliases/question_cues indicate when the recipe applies, required_dataset_families says which data families are needed, and grain_policy explains aggregation grain.",
+            "- metadata.domain_items.pandas_function_cases[CASE_KEY] defines reusable pandas helper-function guidance for cases too specific or procedural to express as ordinary intent fields.",
             "- metadata.domain_items.status_terms[TERM_KEY] defines status aliases and conditions such as HOLD or 작업대기.",
             "- metadata.domain_items.product_key_columns lists the standard product grain columns used to identify products across datasets.",
             "- metadata.main_flow_filters[FIELD_KEY] lists common field concepts and possible physical column names across sources.",

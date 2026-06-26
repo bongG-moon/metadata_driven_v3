@@ -19,6 +19,7 @@ DOMAIN_SECTION_LABELS = {
     "quantity_terms": "수량/지표 용어",
     "metric_terms": "계산 지표",
     "analysis_recipes": "분석 레시피",
+    "pandas_function_cases": "pandas 함수 케이스",
     "status_terms": "상태 용어",
     "product_key_columns": "제품 식별 컬럼",
 }

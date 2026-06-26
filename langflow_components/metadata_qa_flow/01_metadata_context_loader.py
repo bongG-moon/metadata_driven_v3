@@ -22,6 +22,7 @@ CORE_DOMAIN_SECTIONS = {
     "metric_terms",
     "status_terms",
     "analysis_recipes",
+    "pandas_function_cases",
 }
 
 DEFAULT_COLLECTIONS = {
@@ -174,6 +175,7 @@ def _empty_metadata() -> dict[str, Any]:
             "metric_terms": {},
             "status_terms": {},
             "analysis_recipes": {},
+            "pandas_function_cases": {},
             "product_key_columns": [],
         },
         "table_catalog": {"datasets": {}},
@@ -190,6 +192,7 @@ def _metadata_counts(metadata: dict[str, Any]) -> dict[str, int]:
         "metric_terms": len(domain.get("metric_terms", {})),
         "status_terms": len(domain.get("status_terms", {})),
         "analysis_recipes": len(domain.get("analysis_recipes", {})),
+        "pandas_function_cases": len(domain.get("pandas_function_cases", {})),
         "product_key_columns": len(domain.get("product_key_columns", [])),
         "datasets": len((metadata.get("table_catalog", {}) or {}).get("datasets", {})),
         "main_flow_filters": len(metadata.get("main_flow_filters", {})),

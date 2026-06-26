@@ -96,6 +96,32 @@ def test_chat_metadata_summary_helpers_render_korean_descriptions() -> None:
     assert any("출력 컬럼" in line for line in pandas_lines)
 
 
+def test_intent_summary_renders_pandas_function_case() -> None:
+    lines = app.intent_plan_summary_lines(
+        {
+            "intent_type": "detail_lookup",
+            "analysis_kind": "detail_rows",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "64G L-269P1Q 제품 찾아줘",
+            },
+            "step_plan": [
+                {
+                    "step_id": "component_token_product_lookup",
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "product_data",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                }
+            ],
+        }
+    )
+
+    assert any("pandas 함수 케이스" in line for line in lines)
+    assert any("match_product_tokens" in line for line in lines)
+
+
 def test_result_display_helpers_keep_full_rows_and_csv_bytes() -> None:
     rows = [
         {"B": 2, "A": "제품1"},

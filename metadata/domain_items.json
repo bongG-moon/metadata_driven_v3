@@ -34,7 +34,30 @@
       "display_name": "D/A 공정 그룹",
       "aliases": [
         "D/A 공정 그룹",
-        "DA 공정 그룹"
+        "DA 공정 그룹",
+        "D/A공정",
+        "DA공정",
+        "D/A",
+        "DA"
+      ],
+      "processes": [
+        "D/A1",
+        "D/A2",
+        "D/A3",
+        "D/A4",
+        "D/A5",
+        "D/A6"
+      ]
+    },
+    "DA": {
+      "display_name": "D/A 공정 그룹",
+      "aliases": [
+        "D/A 공정 그룹",
+        "DA 공정 그룹",
+        "D/A공정",
+        "DA공정",
+        "D/A",
+        "DA"
       ],
       "processes": [
         "D/A1",
@@ -74,7 +97,68 @@
       "display_name": "DP 또는 D/P 공정 그룹",
       "aliases": [
         "DP 공정 그룹",
-        "D/P 공정 그룹"
+        "D/P 공정 그룹",
+        "DP공정",
+        "D/P공정",
+        "DP",
+        "D/P"
+      ],
+      "processes": [
+        "WET1",
+        "WET2",
+        "L/T1",
+        "L/T2",
+        "B/G1",
+        "B/G2",
+        "H/S1",
+        "H/S2",
+        "W/S1",
+        "W/S2",
+        "WSD1",
+        "WSD2",
+        "WEC1",
+        "WEC2",
+        "WLS1",
+        "WLS2",
+        "WVI",
+        "UV",
+        "C/C1"
+      ],
+      "condition": {
+        "OPER_NAME": {
+          "$in": [
+            "WET1",
+            "WET2",
+            "L/T1",
+            "L/T2",
+            "B/G1",
+            "B/G2",
+            "H/S1",
+            "H/S2",
+            "W/S1",
+            "W/S2",
+            "WSD1",
+            "WSD2",
+            "WEC1",
+            "WEC2",
+            "WLS1",
+            "WLS2",
+            "WVI",
+            "UV",
+            "C/C1"
+          ]
+        }
+      }
+    },
+    "DP": {
+      "display_name": "DP 또는 D/P 공정 그룹",
+      "aliases": [
+        "DP 공정 그룹",
+        "D/P 공정 그룹",
+        "DP공정",
+        "D/P공정",
+        "DP",
+        "D/P"
       ],
       "processes": [
         "WET1",
@@ -272,7 +356,30 @@
       "display_name": "W/B 공정 그룹",
       "aliases": [
         "W/B 공정 그룹",
-        "WB 공정 그룹"
+        "WB 공정 그룹",
+        "W/B공정",
+        "WB공정",
+        "W/B",
+        "WB"
+      ],
+      "processes": [
+        "W/B1",
+        "W/B2",
+        "W/B3",
+        "W/B4",
+        "W/B5",
+        "W/B6"
+      ]
+    },
+    "WB": {
+      "display_name": "W/B 공정 그룹",
+      "aliases": [
+        "W/B 공정 그룹",
+        "WB 공정 그룹",
+        "W/B공정",
+        "WB공정",
+        "W/B",
+        "WB"
       ],
       "processes": [
         "W/B1",
@@ -454,8 +561,11 @@
     "HBM_3DS_TSV_PRODUCT": {
       "display_name": "HBM/3DS/TSV 제품",
       "aliases": [
+        "HBM",
         "HBM 제품",
+        "3DS",
         "3DS 제품",
+        "TSV",
         "TSV 제품"
       ],
       "condition": {
@@ -466,11 +576,19 @@
             ""
           ]
         }
+      },
+      "condition_by_family": {
+        "equipment": {
+          "PKG_TYPE1": {
+            "value": "HBM"
+          }
+        }
       }
     },
     "MOBILE_PRODUCT": {
       "display_name": "MOBILE 제품",
       "aliases": [
+        "MOBILE",
         "MOBILE 제품"
       ],
       "condition": {
@@ -497,6 +615,7 @@
     "POP_PRODUCT": {
       "display_name": "POP 제품",
       "aliases": [
+        "POP",
         "POP 제품"
       ],
       "condition_by_dataset": {
@@ -769,6 +888,23 @@
         "EQP_COUNT"
       ]
     },
+    "lot_count": {
+      "display_name": "Lot 수량",
+      "aliases": [
+        "Lot 수량",
+        "LOT 수량",
+        "lot count"
+      ],
+      "dataset_key": "lot_status",
+      "dataset_family": "lot",
+      "quantity_column": "LOT_ID",
+      "aggregation": "nunique",
+      "output_column": "LOT_COUNT",
+      "source_columns": [
+        "LOT_ID",
+        "LOT_COUNT"
+      ]
+    },
     "INPUT_QUANTITY": {
       "display_name": "투입량",
       "aliases": [
@@ -927,6 +1063,86 @@
         "When NETDIE_300_CNT is 0 or null, set WAFER_OUT_QTY to 0 or null according to answer needs and put PRODUCTION into FAIL_UNIT_QTY.",
         "Aggregate WAFER_OUT_QTY and FAIL_UNIT_QTY by the question grain."
       ]
+    }
+  },
+  "pandas_function_cases": {
+    "component_token_product_lookup": {
+      "display_name": "Component token product lookup",
+      "aliases": [
+        "component token lookup",
+        "product token lookup",
+        "free-form product lookup",
+        "product list lookup",
+        "제품 토큰 매칭",
+        "제품 찾기",
+        "제품 리스트"
+      ],
+      "required_question_cues": [
+        "제품"
+      ],
+      "question_cues": [
+        "lookup",
+        "find",
+        "list",
+        "match",
+        "token",
+        "조회",
+        "찾",
+        "리스트"
+      ],
+      "function_name": "match_product_tokens",
+      "use_when": "Use when the user asks to find or list products from free-form product tokens such as density, technology, package, lead, organization, or MCP number, and ordinary product_terms do not already define the product class.",
+      "input_text": "Use the user question or the product expression in the question.",
+      "required_source_columns": [
+        "TECH",
+        "DEN",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG_TYPE2",
+        "LEAD",
+        "MCP_NO"
+      ],
+      "token_columns": [
+        "TECH",
+        "DEN",
+        "DENSITY",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG1",
+        "PKG_TYPE2",
+        "PKG2",
+        "LEAD",
+        "ORG",
+        "MCP_NO"
+      ],
+      "output_order": [
+        "TECH",
+        "DEN",
+        "PKG_TYPE1",
+        "LEAD",
+        "PKG_TYPE2",
+        "MODE",
+        "ORG",
+        "MCP_NO"
+      ],
+      "output_columns": [
+        "TECH",
+        "DEN",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG_TYPE2",
+        "LEAD",
+        "ORG",
+        "MCP_NO"
+      ],
+      "example": {
+        "input_text": "2048G H-HBM16E",
+        "matched_conditions": [
+          "DEN or DENSITY = 2048G",
+          "MCP_NO = H-HBM16E"
+        ],
+        "result": "distinct product rows matching both tokens"
+      }
     }
   },
   "analysis_recipes": {

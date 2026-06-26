@@ -792,6 +792,15 @@ def intent_plan_summary_lines(intent: dict[str, Any]) -> list[str]:
     datasets = _string_values(intent.get("datasets"))
     if datasets:
         lines.append(f"- 계획에서 사용하는 데이터셋은 {_inline_list(datasets)}입니다.")
+    function_case = intent.get("pandas_function_case") if isinstance(intent.get("pandas_function_case"), dict) else {}
+    if function_case:
+        case_key = _clean_text(function_case.get("key"))
+        function_name = _clean_text(function_case.get("function_name"))
+        input_text = _clean_text(function_case.get("input_text"))
+        detail = f" 함수 `{function_name}`" if function_name else ""
+        if input_text:
+            detail += f", 입력 `{input_text}`"
+        lines.append(f"- pandas 함수 케이스 `{case_key or '-'}`를 사용합니다.{detail}")
     reasoning_steps = _string_values(intent.get("reasoning_steps"))
     for step in reasoning_steps:
         lines.append(f"- 판단 근거: {step}")
@@ -819,6 +828,12 @@ def intent_plan_summary_lines(intent: dict[str, Any]) -> list[str]:
             details.append(f"기준 지표 `{metric}`")
         if step.get("top_n"):
             details.append(f"상위 {step.get('top_n')}개")
+        function_name = _clean_text(step.get("function_name"))
+        if function_name:
+            details.append(f"함수 `{function_name}`")
+        function_case_key = _clean_text(step.get("function_case_key"))
+        if function_case_key:
+            details.append(f"함수 케이스 `{function_case_key}`")
         suffix = f" ({', '.join(details)})" if details else ""
         lines.append(f"- 분석 단계 {index}: `{step_id or '-'}`에서 `{operation or '-'}` 작업을 수행합니다. source는 `{source or '-'}`입니다{suffix}.")
     if not lines:

@@ -286,6 +286,7 @@ def export_domain_collection_to_json(mongo_uri: str, database: str, collection: 
         "quantity_terms": {},
         "metric_terms": {},
         "analysis_recipes": {},
+        "pandas_function_cases": {},
         "status_terms": {},
         "product_key_columns": [],
     }

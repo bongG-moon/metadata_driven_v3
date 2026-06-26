@@ -124,7 +124,15 @@ def read_json(relative_path: str) -> Any:
 def domain_items_from_current_metadata() -> list[dict[str, Any]]:
     data = read_json("metadata/domain_items.json")
     items: list[dict[str, Any]] = []
-    for section in ["process_groups", "product_terms", "quantity_terms", "metric_terms", "analysis_recipes", "status_terms"]:
+    for section in [
+        "process_groups",
+        "product_terms",
+        "quantity_terms",
+        "metric_terms",
+        "analysis_recipes",
+        "pandas_function_cases",
+        "status_terms",
+    ]:
         for key, payload in data[section].items():
             items.append({"section": section, "key": key, "payload": payload, "confidence": "high"})
     items.append(
@@ -416,6 +424,7 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "domain:analysis_recipes:PRODUCT_INPUT_CHANGE_ANALYSIS",
         "domain:analysis_recipes:input_lt_out_analysis",
         "domain:analysis_recipes:da_wb_process_analysis",
+        "domain:pandas_function_cases:component_token_product_lookup",
         "domain:status_terms:SHIFT_A",
     }
     assert docs["domain:process_groups:DP_DP_PROCESS_GROUP"]["payload"]["processes"] == ["WET1", "WET2", "L/T1", "L/T2", "B/G1", "B/G2", "H/S1", "H/S2", "W/S1", "W/S2", "WSD1", "WSD2", "WEC1", "WEC2", "WLS1", "WLS2", "WVI", "UV", "C/C1"]
@@ -443,6 +452,11 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "PRODUCTION_QTY",
         "WIP_QTY",
     ]
+    product_lookup_case = docs["domain:pandas_function_cases:component_token_product_lookup"]["payload"]
+    assert product_lookup_case["function_name"] == "match_product_tokens"
+    assert "MCP_NO" in product_lookup_case["token_columns"]
+    assert "function_code" not in product_lookup_case
+    assert "pandas_code_instructions" not in product_lookup_case
     assert docs["domain:status_terms:SHIFT_A"]["payload"]["condition"] == {"SHIFT": "1"}
 
 

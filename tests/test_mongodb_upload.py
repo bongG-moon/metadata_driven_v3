@@ -41,7 +41,10 @@ def test_mongodb_upload_default_batches_include_only_core_metadata():
         "factory_table_catalog_metadata",
         "factory_filter_metadata",
     ]
-    assert "domain:analysis_recipes:production_wip_target_rate" in {
+    assert "domain:analysis_recipes:AGGREGATE_TOTAL" in {
+        doc["_id"] for doc in batches["factory_domain_metadata"]
+    }
+    assert "domain:pandas_function_cases:component_token_product_lookup" in {
         doc["_id"] for doc in batches["factory_domain_metadata"]
     }
 
@@ -51,7 +54,7 @@ def test_mongodb_upload_can_select_domain_only():
     batches = module.build_upload_batches(ROOT, metadata_kinds=["domain"])
 
     assert list(batches) == ["agent_v3_domain_items"]
-    assert "domain:process_groups:DA" in {doc["_id"] for doc in batches["agent_v3_domain_items"]}
+    assert "domain:process_groups:DA_PROCESS_GROUP" in {doc["_id"] for doc in batches["agent_v3_domain_items"]}
 
 
 def test_mongodb_upload_can_select_multiple_metadata_kinds_with_aliases():
@@ -86,10 +89,10 @@ def test_mongodb_upload_docs_use_lean_metadata_shape():
         main_flow_filter_collection_name="factory_filter_metadata",
     )
 
-    domain_doc = next(doc for doc in batches["factory_domain_metadata"] if doc["_id"] == "domain:process_groups:DA")
+    domain_doc = next(doc for doc in batches["factory_domain_metadata"] if doc["_id"] == "domain:process_groups:DA_PROCESS_GROUP")
     assert not (FORBIDDEN_STORAGE_FIELDS & set(domain_doc))
     assert domain_doc["section"] == "process_groups"
-    assert domain_doc["key"] == "DA"
+    assert domain_doc["key"] == "DA_PROCESS_GROUP"
     assert domain_doc["status"] == "active"
     assert "payload" in domain_doc
 
