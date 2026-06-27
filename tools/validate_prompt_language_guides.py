@@ -152,7 +152,7 @@ def _validate_component_question_contracts() -> tuple[int, list[str]]:
         _check_product_token_detail(request_loader, normalizer, metadata),
         _check_product_token_metric(request_loader, normalizer, metadata),
         _check_product_terms_priority(request_loader, normalizer, metadata),
-        _check_missing_function_case_helper_guard(executor),
+        _check_inline_function_case_helper_allowed(executor),
     ]
     failures = [message for passed, message in checks if not passed]
     return len(checks) - len(failures), failures
@@ -283,7 +283,7 @@ def _check_product_terms_priority(request_loader, normalizer, metadata: dict) ->
     return passed, "component case failed: HBM product_terms should not use product-token function case"
 
 
-def _check_missing_function_case_helper_guard(executor) -> tuple[bool, str]:
+def _check_inline_function_case_helper_allowed(executor) -> tuple[bool, str]:
     payload = {
         "metadata": {
             "domain_items": {
@@ -325,12 +325,16 @@ def _check_missing_function_case_helper_guard(executor) -> tuple[bool, str]:
             ]
         ),
         "output_columns": ["LOT_ID", "HOLD_CD"],
-        "reasoning_steps": ["Incorrectly synthesize the selected helper."],
+        "reasoning_steps": ["Define the selected helper inline and call it."],
     }
     result = executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
-    errors = result.get("analysis", {}).get("errors", [])
-    passed = result.get("analysis", {}).get("status") == "error" and any("implementation is missing" in error for error in errors)
-    return passed, "component case failed: missing function-case helper should stop execution"
+    rows = result.get("analysis", {}).get("rows", [])
+    passed = (
+        result.get("analysis", {}).get("status") == "ok"
+        and rows
+        and rows[0].get("LOT_ID") == "T1234567GEN1"
+    )
+    return passed, "component case failed: inline function-case helper should execute"
 
 
 def _job_filter_fields(job: dict) -> set[str]:

@@ -87,15 +87,16 @@ def test_specialized_product_helper_uses_mcp_prefix_and_ignores_org() -> None:
 
     products = pd.DataFrame(
         [
-            {"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "LFBGA", "MCP_NO": "L-269P1Q", "ORG": "ASSY"},
-            {"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "UFBGA", "MCP_NO": "L-55XM2Q", "ORG": "TEST"},
+            {"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "LFBGA", "MCP_NO": "L-269P1Q", "ORG": "ASSY", "PRODUCTION": 10},
+            {"TECH": "FC", "DEN": "64G", "MODE": "LPDDR5", "PKG_TYPE1": "UFBGA", "MCP_NO": "L-55XM2Q", "ORG": "TEST", "PRODUCTION": 20},
         ]
     )
 
-    result = namespace["match_product_tokens"]("64G L-269 ASSY", products)
+    result = namespace["match_product_tokens"]("64G L-269제품 ASSY", source_df=products)
     org_only = namespace["match_product_tokens"]("ASSY", products)
 
     assert result["MCP_NO"].tolist() == ["L-269P1Q"]
+    assert result["PRODUCTION"].tolist() == [10]
     assert "ORG" not in result.columns
     assert org_only.empty
 

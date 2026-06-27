@@ -1,9 +1,33 @@
-이 파일의 함수 코드를 14 Pandas Prompt Builder의 `Specialized Functions` 입력에 넣고, 14 Pandas Prompt Builder의 `Prompt Payload`를 15 Pandas Code Executor의 `Payload`로 연결해. 선택된 function case의 함수 구현이 이 입력 또는 metadata `function_code`에 없으면 pandas 분석은 진행하지 않는다.
+# Specialized Functions 입력 가이드
 
-제품 토큰으로 제품 리스트를 찾는 질문이면, 아래 참고 함수 형태를 기준으로 pandas 코드를 작성해. 조회된 제품 데이터에서 TECH, DEN/DENSITY, MODE, PKG1/PKG_TYPE1, PKG2/PKG_TYPE2, LEAD, MCP_NO 컬럼 값을 입력 토큰과 비교해서 일치하는 제품 행을 반환해. MCP_NO는 사용자가 `L-269`처럼 앞부분만 입력해도 실제 `L-269P1Q` 같은 값과 startswith로 매칭한다. 아래 코드는 참고 예시이므로, 실제 sources alias와 존재하는 컬럼에 맞게 조정해서 result_df를 만들어.
+이 파일은 14 Pandas Prompt Builder와 15 Pandas Code Executor의 `Specialized Functions` 입력에 같은 내용으로 넣는다.
+
+- 14번 입력은 pandas code LLM에게 어떤 helper를 호출해야 하는지 알려준다.
+- 15번 입력은 실제 실행 시점에 helper 함수를 로드한다.
+- 15번의 `Payload`는 13 Retrieval Payload Adapter의 `Payload`를 직접 연결한다.
+- 선택된 function case의 함수 구현이 15번 입력 또는 metadata `function_code`에 없으면 pandas 분석은 진행하지 않는다.
+- 14번은 이 입력 안의 자연어 설명과 Python 함수 예시를 LLM에게 그대로 보여주고, LLM은 이를 참고해서 최종 pandas code를 작성한다.
+- 생성된 pandas code가 helper 함수를 inline으로 정의한 뒤 호출해도 되고, helper 호출만 남기는 경우에는 15번에도 같은 Specialized Functions 입력을 연결해 실행 환경에서 로드되게 한다.
+
+작업자가 처음 작성할 때는 너무 엄격한 JSON이나 긴 스키마를 쓰지 말고, 아래처럼 자연어 설명과 Python helper 함수만 작성하면 된다.
+
+```text
+제품 토큰으로 제품 리스트나 제품 조건 기반 metric을 찾는 질문에서는 match_product_tokens helper를 사용한다.
+이 helper는 조회된 제품 데이터에서 TECH, DEN/DENSITY, MODE, PKG1/PKG_TYPE1, PKG2/PKG_TYPE2, LEAD, MCP_NO 값을 입력 토큰과 비교해서 일치하는 행을 반환한다.
+MCP_NO는 사용자가 L-269처럼 앞부분만 입력해도 실제 L-269P1Q 같은 값과 startswith로 매칭한다.
+G-777제품처럼 제품 토큰 뒤에 한국어 명사/동사가 붙어도 G-777 token으로 정리해서 매칭한다.
+pandas 생성 코드는 이 함수를 재정의하지 말고 match_product_tokens(input_text, sources[source_alias])처럼 positional argument로 호출한다.
+```
+
+아래 Python 코드블록은 실행 환경에 로드되는 helper 정의다. 이 코드블록은 14번, 첫 번째 15번, 두 번째 15번의 `Specialized Functions` 입력에 같은 내용으로 넣는다.
 
 ```python
-def match_product_tokens(input_text, products_df):
+def match_product_tokens(input_text, products_df=None, source_df=None, frame=None):
+    products_df = products_df if products_df is not None else source_df
+    products_df = products_df if products_df is not None else frame
+    if products_df is None:
+        return pd.DataFrame()
+
     token_columns = [
         "TECH",
         "DEN",
@@ -45,11 +69,46 @@ def match_product_tokens(input_text, products_df):
             digit_prefix += character
         return bool(left.isalpha() and len(digit_prefix) >= 2)
 
+    def input_tokens(text):
+        cleaned = str(text or "")
+        for separator in [",", "\n", "\t", "(", ")", "[", "]", "{", "}", ":", ";"]:
+            cleaned = cleaned.replace(separator, " ")
+        suffixes = [
+            "제품의",
+            "제품",
+            "생산량",
+            "수량",
+            "실적",
+            "리스트",
+            "목록",
+            "조회",
+            "찾아줘",
+            "보여줘",
+            "알려줘",
+            "찾아",
+            "보여",
+            "알려",
+        ]
+        normalized_suffixes = [normalize_token(suffix) for suffix in suffixes]
+        for raw_token in cleaned.split():
+            token = normalize_token(raw_token)
+            changed = True
+            while token and changed:
+                changed = False
+                for suffix in normalized_suffixes:
+                    if token == suffix:
+                        token = ""
+                        changed = True
+                        break
+                    if token.endswith(suffix):
+                        token = token[: -len(suffix)].strip()
+                        changed = True
+                        break
+            if token:
+                yield token
+
     matched_conditions = []
-    for token in str(input_text or "").split():
-        normalized_token = normalize_token(token)
-        if not normalized_token:
-            continue
+    for normalized_token in input_tokens(input_text):
         for column in token_columns:
             if column not in result.columns:
                 continue
@@ -73,17 +132,26 @@ def match_product_tokens(input_text, products_df):
         return products_df.head(0).copy()
 
     selected_columns = [column for column in output_columns if column in result.columns]
+    extra_columns = [column for column in products_df.columns if column not in selected_columns and column != "ORG"]
     if selected_columns:
-        result = result[selected_columns]
+        result = result[[*selected_columns, *extra_columns]]
     return result.drop_duplicates().reset_index(drop=True)
-
-source_alias = list(sources.keys())[0]
-result_df = match_product_tokens("64G L-269", sources[source_alias])
 ```
 
 ---
 
-Lot Hold 또는 Lot 상태를 복합 조건으로 찾는 질문이면, 아래 참고 함수 형태를 기준으로 pandas 코드를 작성해. 사용자가 "작업대기 Hold 사유 ABN IN_TAT 24시간 이상 Lot 보여줘"처럼 상태, 사유, 공정, Lot ID, TAT 조건을 섞어서 입력하면 조회된 Lot/Hold 데이터의 실제 컬럼 값과 매칭해서 일치하는 row를 반환해. 아래 코드는 참고 예시이므로, 실제 sources alias와 존재하는 컬럼에 맞게 조정해서 result_df를 만들어.
+## Lot Hold 복합 조건 helper 예시
+
+작업자가 처음 작성할 때는 아래 정도의 자연어 설명이면 충분하다.
+
+```text
+Lot Hold 또는 Lot 상태를 복합 조건으로 찾는 질문에서는 match_lot_hold_conditions helper를 사용한다.
+사용자가 작업대기, Hold 사유, 공정명, Lot ID, IN_TAT/HOLD_TM 조건을 섞어서 입력하면 조회된 Lot/Hold 데이터의 실제 컬럼 값과 매칭해서 일치하는 row를 반환한다.
+상태/사유/공정/Lot token은 가능한 컬럼에서 찾고, 24시간 이상처럼 숫자와 이상/이하 표현이 있으면 TAT 계열 컬럼에 조건을 적용한다.
+pandas 생성 코드는 이 함수를 재정의하지 말고 match_lot_hold_conditions(input_text, sources[source_alias])처럼 호출한다.
+```
+
+아래 Python 코드블록은 실행 환경에 로드되는 helper 정의다.
 
 ```python
 def match_lot_hold_conditions(input_text, lot_df, current_date=None):

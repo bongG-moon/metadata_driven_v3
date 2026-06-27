@@ -151,6 +151,7 @@ def _pandas_function_cases(
     manual = _clean_text(manual_text)
     manual_code_blocks = _extract_python_code_blocks(manual)
     manual_function_names = sorted(_defined_function_names_from_blocks(manual_code_blocks))
+    manual_signatures = _function_signatures_from_blocks(manual_code_blocks)
     selected_domain_cases = _matched_domain_function_cases(payload, plan, question, source_summary)
     selected_domain_cases = [
         _with_function_case_implementation_status(case, manual_function_names)
@@ -164,6 +165,11 @@ def _pandas_function_cases(
                 "source": "specialized_functions_text",
                 "instructions": manual,
                 "defined_functions": manual_function_names,
+                "helper_signatures": manual_signatures,
+                "implementation_note": (
+                    "Use this text as a reference for generating pandas code. "
+                    "The generated code may define this helper inline or call it when the executor has the same helper loaded."
+                ),
             }
         )
     cases.extend(selected_domain_cases)
@@ -204,13 +210,12 @@ def _pandas_function_cases(
         "rules": [
             "이 case들은 재사용 helper-function 안내입니다. 새 data source를 추가하지 않습니다.",
             "metadata case는 function_code가 포함된 경우를 제외하면 선택 힌트입니다.",
-            "Specialized Functions에 붙여넣은 code는 선택된 function_name에 대한 실행 가능한 helper code입니다.",
+            "Specialized Functions에 붙여넣은 code와 설명은 pandas code 작성을 위한 reference입니다.",
+            "필요하면 Specialized Functions의 helper 함수를 generated code 안에 정의한 뒤 호출해도 됩니다.",
             "function case를 적용할 때 preview_rows가 아니라 sources의 실제 DataFrame을 사용하세요.",
-            "plan.pandas_function_case 또는 step_plan의 function_case_key/function_name이 case를 지정하면 선택된 helper function을 명시적으로 호출하세요.",
-            "case가 function_name과 function_code를 제공하면 pandas executor가 해당 helper를 로드합니다. generated code에서는 helper를 직접 호출하고 재정의하지 마세요.",
-            "선택된 case가 function_name만 제공하고 function_code가 없으면 분석 전에 Specialized Functions에 해당 function이 정의되어 있어야 합니다.",
-            "metadata hint만 보고 선택된 helper를 합성, 근사 구현, 재정의하지 마세요.",
-            "missing_helpers가 비어 있지 않으면 code가 빈 result_df만 만들고 reasoning_steps에 선택된 helper 구현이 없다고 설명하는 JSON response를 반환하세요.",
+            "plan.pandas_function_case 또는 step_plan의 function_case_key/function_name이 case를 지정하면 Specialized Functions의 의도를 반영해 pandas code를 작성하세요.",
+            "helper function을 호출할 때는 가능한 한 positional arguments를 사용하세요. 예: match_product_tokens(input_text, sources[source_alias]).",
+            "helper function을 호출만 하고 generated code 안에 정의하지 않는 경우에는 15 Pandas Code Executor에도 같은 Specialized Functions가 연결되어 있어야 합니다.",
             "product-token lookup case에서는 사용자 질문의 concrete token으로 source row를 filter하세요. token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과입니다.",
             "token이 설정된 token column 어디에도 match되지 않으면 전체 분석을 실패시키지 말고 해당 token만 filtering에서 제외하세요.",
             "matched row로 실제 result_df를 반환하세요. print warning이나 print output에 의존하지 마세요.",
@@ -373,6 +378,18 @@ def _defined_function_names_from_blocks(blocks: list[str]) -> set[str]:
     return names
 
 
+def _function_signatures_from_blocks(blocks: list[str]) -> list[str]:
+    signatures: list[str] = []
+    for block in blocks:
+        for match in re.finditer(r"^\s*def\s+(\w+)\s*\(([^)]*)\)\s*:", block, flags=re.MULTILINE):
+            function_name = match.group(1)
+            arguments = " ".join(match.group(2).strip().split())
+            signature = f"{function_name}({arguments})"
+            if signature not in signatures:
+                signatures.append(signature)
+    return signatures
+
+
 def _function_case_code_text(value: Any) -> str:
     if isinstance(value, list):
         return "\n".join(str(line) for line in value)
@@ -459,11 +476,16 @@ def _as_text_list(value: Any) -> list[str]:
 def _clean_text(value: Any) -> str:
     if value is None:
         return ""
+    if isinstance(value, str):
+        return value.strip()
     data = getattr(value, "data", None)
     if isinstance(data, dict):
         for key in ("text", "content", "value"):
             if data.get(key):
                 return str(data[key]).strip()
+    for attr in ("text", "content"):
+        if getattr(value, attr, None):
+            return str(getattr(value, attr)).strip()
     return str(value).strip()
 
 
@@ -845,6 +867,8 @@ class PandasPromptBuilder(Component):
             "chars": len(prompt_payload["prompt"]),
             "sources": list(prompt_payload.get("source_summary", {}).keys()),
             "function_cases": len(prompt_payload.get("pandas_function_cases", [])),
+            "helper_functions": (prompt_payload.get("pandas_function_case_runtime") or {}).get("manual_function_names", []),
+            "missing_helpers": (prompt_payload.get("pandas_function_case_runtime") or {}).get("missing_helpers", []),
         }
         return Message(text=prompt_payload["prompt"])
 

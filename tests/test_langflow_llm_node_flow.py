@@ -1057,6 +1057,58 @@ def test_pandas_prompt_includes_manual_function_case_text() -> None:
     assert prompt_payload["pandas_function_cases"][0]["source"] == "specialized_functions_text"
 
 
+def test_pandas_prompt_recognizes_raw_specialized_function_definition_without_markdown_fence() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    product_case = {
+        "display_name": "Component token product lookup",
+        "function_name": "match_product_tokens",
+        "use_when": "Use for product token lookup.",
+    }
+    payload = {
+        "request": {"question": "오늘 512G G-777제품 생산량 알려줘"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "오늘 512G G-777제품 생산량 알려줘",
+            },
+            "retrieval_jobs": [{"dataset_key": "production_today", "source_alias": "production_data"}],
+            "step_plan": [
+                {
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "production_data",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                    "input_text": "오늘 512G G-777제품 생산량 알려줘",
+                }
+            ],
+        },
+        "runtime_sources": {"production_data": [{"DEN": "512G", "MCP_NO": "G-777A2I", "PRODUCTION": 3}]},
+        "state": {},
+    }
+    helper_text = "\n".join(
+        [
+            "def match_product_tokens(input_text, products_df=None, source_df=None, frame=None):",
+            "    products_df = products_df if products_df is not None else source_df",
+            "    products_df = products_df if products_df is not None else frame",
+            "    return products_df.copy()",
+        ]
+    )
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload, helper_text)
+    runtime = prompt_payload["pandas_function_case_runtime"]
+
+    assert runtime["manual_function_names"] == ["match_product_tokens"]
+    assert runtime["missing_helpers"] == []
+    assert "missing_helpers" in prompt_payload["prompt"]
+    assert "match_product_tokens" in prompt_payload["prompt"]
+    assert "match_product_tokens(input_text, products_df=None, source_df=None, frame=None)" in prompt_payload["prompt"]
+    assert "def match_product_tokens" in prompt_payload["prompt"]
+    assert "return products_df.copy()" in prompt_payload["prompt"]
+
+
 def test_intent_prompt_includes_specialized_prompt_text_input() -> None:
     intent_prompt_builder = load_component("langflow_components/data_analysis_flow/02_intent_prompt_builder.py")
     payload = {
@@ -1121,8 +1173,8 @@ def test_pandas_prompt_selects_domain_function_case_for_product_token_lookup() -
     assert "metadata.domain_items.pandas_function_cases" in prompt
     assert "match_product_tokens" in prompt
     assert "function_code" in prompt
-    assert "pandas executor가 해당 helper를 로드" in prompt
-    assert "재정의하지 마세요" in prompt
+    assert "Specialized Functions에 붙여넣은 code와 설명은 pandas code 작성을 위한 reference" in prompt
+    assert "helper 함수를 generated code 안에 정의한 뒤 호출" in prompt
 
 
 def test_pandas_prompt_selects_product_token_case_when_required_columns_are_too_strict() -> None:
@@ -1274,7 +1326,7 @@ def test_pandas_executor_loads_function_case_helper_from_metadata() -> None:
     assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
 
 
-def test_pandas_executor_rejects_selected_function_case_without_registered_helper() -> None:
+def test_pandas_executor_allows_inline_selected_function_case_helper() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
         "metadata": {
@@ -1317,15 +1369,15 @@ def test_pandas_executor_rejects_selected_function_case_without_registered_helpe
             ]
         ),
         "output_columns": ["LOT_ID", "HOLD_CD"],
-        "reasoning_steps": ["Incorrectly synthesize the selected helper."],
+        "reasoning_steps": ["Define the specialized helper inline and call it."],
     }
 
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
-    assert result["analysis"]["status"] == "error"
-    assert result["analysis"]["executed"] is False
-    assert any("implementation is missing" in error for error in result["analysis"]["errors"])
-    assert any("must be provided as a registered helper" in error for error in result["analysis"]["errors"])
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["executed"] is True
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["LOT_ID"] == "T1234567GEN1"
 
 
 def test_pandas_executor_loads_function_case_helper_from_prompt_payload_text() -> None:
@@ -1387,7 +1439,7 @@ def test_pandas_executor_loads_function_case_helper_from_prompt_payload_text() -
     pandas_llm_json = {
         "code": "result_df = match_product_tokens(plan['pandas_function_case']['input_text'], sources['products'])",
         "output_columns": ["DEN", "MCP_NO"],
-        "reasoning_steps": ["Call the registered helper from the prompt payload."],
+        "reasoning_steps": ["Call the specialized helper from the prompt payload."],
     }
 
     result = pandas_executor.execute_pandas_from_llm(prompt_payload, json.dumps(pandas_llm_json, ensure_ascii=False))
@@ -1395,6 +1447,143 @@ def test_pandas_executor_loads_function_case_helper_from_prompt_payload_text() -
     assert result["analysis"]["status"] == "ok"
     assert result["analysis"]["row_count"] == 1
     assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
+
+
+def test_pandas_executor_loads_function_case_helper_from_direct_specialized_functions_input() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    product_case = {
+        "display_name": "Component token product lookup",
+        "function_name": "match_product_tokens",
+        "use_when": "Use for product token lookup.",
+        "token_columns": ["DEN", "MCP_NO"],
+    }
+    payload = {
+        "request": {"question": "2048G H-HBM16E product list"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "2048G H-HBM16E product list",
+            },
+            "step_plan": [
+                {
+                    "step_id": "component_token_product_lookup",
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "products",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                    "input_text": "2048G H-HBM16E product list",
+                }
+            ],
+        },
+        "runtime_sources": {
+            "products": [
+                {"DEN": "2048G", "MCP_NO": "H-HBM16E"},
+                {"DEN": "64G", "MCP_NO": "L-269P1Q"},
+            ]
+        },
+        "state": {},
+    }
+    helper_text = "\n".join(
+        [
+            "```python",
+            "def match_product_tokens(input_text, frame):",
+            "    result = frame.copy()",
+            "    for token in str(input_text or '').split():",
+            "        normalized = token.upper()",
+            "        for column in ['DEN', 'MCP_NO']:",
+            "            if column in result.columns and normalized in set(result[column].astype(str).str.upper()):",
+            "                result = result[result[column].astype(str).str.upper() == normalized]",
+            "                break",
+            "    return result.reset_index(drop=True)",
+            "```",
+        ]
+    )
+    pandas_llm_json = {
+        "code": "result_df = match_product_tokens(plan['pandas_function_case']['input_text'], sources['products'])",
+        "output_columns": ["DEN", "MCP_NO"],
+        "reasoning_steps": ["Call the helper loaded from the executor input."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False), helper_text)
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
+
+
+def test_pandas_executor_loads_function_case_helper_from_text_input_message_object() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+
+    class TextInputMessage:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    payload = {
+        "metadata": {
+            "domain_items": {
+                "pandas_function_cases": {
+                    "component_token_product_lookup": {"function_name": "match_product_tokens"}
+                }
+            }
+        },
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "512G G-777",
+            },
+            "step_plan": [
+                {
+                    "operation": "apply_pandas_function_case",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                    "source_alias": "production_data",
+                    "input_text": "512G G-777",
+                }
+            ],
+        },
+        "runtime_sources": {
+            "production_data": [
+                {"DEN": "512G", "MCP_NO": "G-777A2I", "PRODUCTION": 3},
+                {"DEN": "512G", "MCP_NO": "G-888", "PRODUCTION": 10},
+            ]
+        },
+        "state": {},
+    }
+    helper_text = "\n".join(
+        [
+            "```python",
+            "def match_product_tokens(input_text, products_df=None, source_df=None, frame=None):",
+            "    products_df = products_df if products_df is not None else source_df",
+            "    products_df = products_df if products_df is not None else frame",
+            "    result = products_df.copy()",
+            "    return result[result['MCP_NO'].astype(str).str.startswith('G-777')].reset_index(drop=True)",
+            "```",
+        ]
+    )
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "match_product_df = match_product_tokens(input_text='512G G-777', source_df=sources['production_data'])",
+                "total_production = match_product_df['PRODUCTION'].sum()",
+                "result_df = pd.DataFrame([{'PRODUCTION': total_production}])",
+            ]
+        ),
+        "output_columns": ["PRODUCTION"],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(
+        payload,
+        json.dumps(pandas_llm_json, ensure_ascii=False),
+        TextInputMessage(helper_text),
+    )
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["rows"] == [{"PRODUCTION": 3}]
 
 
 def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(monkeypatch: Any) -> None:
@@ -3448,6 +3637,67 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     assert "result_df = pd.DataFrame([])" not in retry_exceeded_prompt["prompt"]
     assert retry_exceeded_passthrough["analysis"]["status"] == "error"
     assert retry_exceeded_passthrough["analysis"]["analysis_code"] == failed["analysis"]["analysis_code"]
+
+
+def test_pandas_repair_prompt_preserves_selected_function_case_helper_call() -> None:
+    repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
+    repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
+    failed = {
+        "request": {"question": "오늘 512G G-777제품 생산량 알려줘"},
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "오늘 512G G-777제품 생산량 알려줘",
+            },
+            "retrieval_jobs": [{"dataset_key": "production_today", "source_alias": "today_production"}],
+            "step_plan": [
+                {
+                    "step_id": "component_token_product_lookup",
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "today_production",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                    "input_text": "오늘 512G G-777제품 생산량 알려줘",
+                },
+                {
+                    "step_id": "aggregate_production",
+                    "operation": "aggregate_sum",
+                    "source_alias": "today_production",
+                    "input_step_id": "component_token_product_lookup",
+                    "metric": "PRODUCTION",
+                },
+            ],
+        },
+        "runtime_sources": {"today_production": [{"DEN": "512G", "MCP_NO": "G-777A2I", "PRODUCTION": 10}]},
+        "analysis": {
+            "status": "error",
+            "analysis_code": "result_df = sources['today_production'][sources['today_production']['DEN'] == '512G']",
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+            "errors": [
+                "pandas_function_cases.component_token_product_lookup.match_product_tokens was selected but generated pandas code did not call it."
+            ],
+            "pandas_code_json": {
+                "code": "result_df = sources['today_production'][sources['today_production']['DEN'] == '512G']",
+                "output_columns": [],
+            },
+        },
+    }
+
+    repair_payload = repair_payload_builder.build_pandas_repair_payload(failed)
+    prompt_payload = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
+    prompt = prompt_payload["prompt"]
+
+    assert "Function-case repair rules" in prompt
+    assert "use the Specialized Functions intent and helper shape" in prompt
+    assert "function_name(input_text, sources[source_alias])" in prompt
+    assert "define the helper inline" in prompt
+    assert "Do not bypass a selected function case with unrelated simple filters" in prompt
+    assert "match_product_tokens" in prompt
+    assert "component_token_product_lookup" in prompt
 
 
 def test_pandas_repair_prompt_distinguishes_mapped_and_physical_only_columns() -> None:

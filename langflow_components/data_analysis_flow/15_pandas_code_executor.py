@@ -58,8 +58,12 @@ AGGREGATE_STEP_OPERATIONS = {
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
-def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any) -> dict[str, Any]:
+def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any, specialized_functions_text: Any = "") -> dict[str, Any]:
     payload = _payload(payload_value)
+    manual_helper_text = _text(specialized_functions_text).strip()
+    if manual_helper_text:
+        payload = dict(payload)
+        payload["specialized_functions_text"] = manual_helper_text
     if payload.get("direct_response_ready"):
         return payload
     if _should_pass_through_repair_payload(payload):
@@ -216,7 +220,6 @@ def _function_case_helpers(payload: dict[str, Any], generated_code: Any = "") ->
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     cases = domain.get("pandas_function_cases") if isinstance(domain.get("pandas_function_cases"), dict) else {}
     used_function_names = _called_function_names(str(generated_code or ""))
-    defined_function_names = _defined_function_names(str(generated_code or ""))
     required_helpers = _required_function_case_helpers(payload, cases, used_function_names)
     required_function_names = {item["function_name"] for item in required_helpers if item.get("function_name")}
     helpers: dict[str, Any] = {}
@@ -248,25 +251,6 @@ def _function_case_helpers(payload: dict[str, Any], generated_code: Any = "") ->
             errors.append(f"pandas_function_cases.{case_key} did not define callable {function_name}.")
             continue
         helpers[function_name] = helper
-    for item in required_helpers:
-        case_key = item.get("key") or "unknown"
-        function_name = item.get("function_name") or ""
-        if not function_name:
-            continue
-        if function_name not in used_function_names:
-            errors.append(
-                f"pandas_function_cases.{case_key}.{function_name} was selected but generated pandas code did not call it."
-            )
-        if function_name in defined_function_names:
-            errors.append(
-                f"pandas_function_cases.{case_key}.{function_name} must be provided as a registered helper; "
-                "generated pandas code must call it, not define it inline."
-            )
-        if function_name not in helpers:
-            errors.append(
-                f"pandas_function_cases.{case_key}.{function_name} implementation is missing. "
-                "Provide the helper code in 14 Pandas Prompt Builder.Specialized Functions or metadata function_code before running this analysis."
-            )
     return helpers, errors
 
 
@@ -422,14 +406,6 @@ def _function_definition_code(code: str, function_name: str) -> str:
             end = getattr(node, "end_lineno", None) or node.lineno
             parts.append("\n".join(lines[start:end]))
     return "\n\n".join(part for part in parts if part.strip())
-
-
-def _defined_function_names(code: str) -> set[str]:
-    try:
-        tree = ast.parse(_strip_harmless_pandas_import(code))
-    except SyntaxError:
-        return set()
-    return {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
 
 
 def _called_function_names(code: str) -> set[str]:
@@ -1983,6 +1959,12 @@ class PandasCodeExecutor(Component):
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(name="llm_response", display_name="LLM Response", required=True),
+        MessageTextInput(
+            name="specialized_functions_text",
+            display_name="Specialized Functions",
+            value="",
+            required=False,
+        ),
     ]
     outputs = [
         Output(name="payload_out", display_name="Payload", method="build_payload"),
@@ -2002,7 +1984,11 @@ class PandasCodeExecutor(Component):
         cached = getattr(self, "_cached_result", None)
         if isinstance(cached, dict):
             return cached
-        result = execute_pandas_from_llm(getattr(self, "payload", None), getattr(self, "llm_response", ""))
+        result = execute_pandas_from_llm(
+            getattr(self, "payload", None),
+            getattr(self, "llm_response", ""),
+            getattr(self, "specialized_functions_text", ""),
+        )
         self._cached_result = result
         self._set_status(result)
         return result
