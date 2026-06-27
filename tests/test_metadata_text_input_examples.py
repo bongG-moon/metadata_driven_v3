@@ -454,7 +454,8 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
     ]
     product_lookup_case = docs["domain:pandas_function_cases:component_token_product_lookup"]["payload"]
     assert product_lookup_case["function_name"] == "match_product_tokens"
-    assert "MCP_NO" in product_lookup_case["token_columns"]
+    assert "token_columns" not in product_lookup_case
+    assert "output_columns" not in product_lookup_case
     assert "function_code" not in product_lookup_case
     assert "pandas_code_instructions" not in product_lookup_case
     assert docs["domain:status_terms:SHIFT_A"]["payload"]["condition"] == {"SHIFT": "1"}

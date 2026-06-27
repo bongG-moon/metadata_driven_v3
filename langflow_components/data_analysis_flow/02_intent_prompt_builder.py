@@ -11,7 +11,7 @@ from importlib import import_module
 from typing import Any
 
 from lfx.custom.custom_component.component import Component
-from lfx.io import DataInput, Output
+from lfx.io import DataInput, MessageTextInput, Output
 from lfx.schema.data import Data
 from lfx.schema.message import Message
 
@@ -38,7 +38,7 @@ SUPPORTED_ANALYSIS_KINDS = [
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
-def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
+def build_intent_prompt_payload(payload_value: Any, specialized_prompt_text: Any = "") -> dict[str, Any]:
     payload = _payload(payload_value)
     if _direct_response_ready(payload):
         prompt = json.dumps(
@@ -50,7 +50,7 @@ def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
                 "route": (payload.get("intent_plan") or {}).get("route", "metadata_qa")
                 if isinstance(payload.get("intent_plan"), dict)
                 else "metadata_qa",
-                "reasoning_steps": ["Direct metadata response already prepared; downstream normalizer should pass through."],
+                "reasoning_steps": ["메타데이터 직접 응답이 이미 준비되어 있으므로 downstream normalizer는 그대로 통과시키면 됩니다."],
             },
             ensure_ascii=False,
         )
@@ -59,89 +59,92 @@ def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
     metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     request_date = _request_date(payload)
+    specialized_prompt = _specialized_prompt(specialized_prompt_text)
     prompt = "\n".join(
         [
-            "You are the intent planning node for a metadata-driven manufacturing data agent.",
-            "This prompt will be sent to a Langflow Gemini/LLM node, and that node must return the intent JSON.",
-            "Return one strict JSON object only. Do not wrap it in markdown.",
-            "Think like a manufacturing analyst: split complex questions into ordered data/analysis steps.",
-            "Use the provided metadata. Do not invent dataset keys or filter fields.",
-            "Resolve product/status words through domain metadata product_terms/status_terms before choosing filters.",
-            "Resolve metric words through domain metadata metric_terms and quantity_terms before choosing datasets.",
-            "Use domain metadata analysis_recipes when the question matches a known analysis pattern.",
+            "당신은 metadata-driven 제조 데이터 에이전트의 intent planning 노드입니다.",
+            "이 프롬프트는 Langflow Gemini/LLM 노드로 전달되며, 해당 노드는 intent JSON을 반환해야 합니다.",
+            "반드시 하나의 엄격한 JSON object만 반환하세요. markdown 코드블록으로 감싸지 마세요.",
+            "제조 분석가처럼 생각해서 복잡한 질문을 순서가 있는 data/analysis step으로 나누세요.",
+            "제공된 metadata만 사용하세요. dataset key나 filter field를 임의로 만들지 마세요.",
+            "dataset, filter, metric, helper case를 선택하기 전에 사용자 표현을 domain metadata로 먼저 해석하세요.",
+            "질문이 알려진 분석 패턴과 맞으면 domain metadata의 recipe와 extension rule을 계획 근거로 사용하세요.",
             "",
-            "Current date parameter:",
+            "현재 날짜 파라미터:",
             request_date,
             "",
-            "Supported analysis_kind values:",
+            "지원하는 analysis_kind 값:",
             json.dumps(SUPPORTED_ANALYSIS_KINDS, ensure_ascii=False),
             "",
-            "Metadata summary:",
+            "메타데이터 요약:",
             json.dumps(_metadata_summary(metadata, request_date), ensure_ascii=False, indent=2),
             "",
-            "Previous state summary:",
+            "이전 state 요약:",
             json.dumps(_state_summary(state), ensure_ascii=False, indent=2),
             "",
-            "User question:",
+            "사용자 질문:",
             question,
             "",
-            "Required JSON schema:",
+            "추가 Specialized Prompt:",
+            specialized_prompt,
+            "",
+            "필수 JSON schema:",
             json.dumps(
                 {
                     "intent_type": "single_retrieval_analysis | multi_source_analysis | multi_step_analysis | detail_lookup | followup_transform | finish",
-                    "analysis_kind": "one supported analysis_kind",
+                    "analysis_kind": "지원되는 analysis_kind 중 하나",
                     "datasets": ["dataset_key"],
                     "params_by_dataset": {
                         "dataset_key": {
-                            "DATE": "copy metadata.datasets[dataset_key].date_param_value_for_current_request exactly",
+                            "DATE": "metadata.datasets[dataset_key].date_param_value_for_current_request 값을 정확히 복사",
                             "LOT_ID": "optional",
                         }
                     },
-                    "filters": [{"field": "metadata filter field", "op": "eq|in|not_in|not_empty|empty|starts_with|last_char_in|tuple_in", "value": "optional", "values": []}],
-                    "product_grain": ["columns used for product/process grouping, or [] for total/detail rows"],
-                    "metric": "standard metric column for ranking/aggregation, such as WIP or PRODUCTION",
-                    "top_n": "positive integer for top/rank questions",
+                    "filters": [{"field": "metadata의 filter field", "op": "eq|in|not_in|not_empty|empty|starts_with|last_char_in|tuple_in", "value": "optional", "values": []}],
+                    "product_grain": ["entity grouping에 사용할 standard column, total/detail rows이면 []"],
+                    "metric": "ranking/aggregation에 사용할 standard metric column",
+                    "top_n": "top/rank 질문의 양의 정수",
                     "rank_order": "desc | asc",
-                    "analysis_output_columns": ["standard result columns expected after pandas, optional"],
+                    "analysis_output_columns": ["pandas 이후 기대되는 standard result column, optional"],
                     "pandas_function_case": {
                         "key": "optional key from metadata.domain_items.pandas_function_cases",
-                        "function_name": "optional helper function name, e.g. match_product_tokens",
-                        "input_text": "exact user text or product-token expression to pass to the helper",
+                        "function_name": "optional helper function name",
+                        "input_text": "helper에 전달할 사용자 원문 또는 표현",
                     },
                     "retrieval_jobs": [
                         {
                             "dataset_key": "dataset key from metadata",
                             "source_alias": "short unique alias",
-                            "purpose": "why this data is needed",
+                            "purpose": "이 데이터가 필요한 이유",
                             "source_scope": {
                                 "date_scope": "today | yesterday | concrete date | all/none, optional but recommended",
-                                "process_scope": "process/group label for only this source, optional",
-                                "status_scope": "status/shift/scope label for only this source, optional",
+                                "process_scope": "이 source에만 적용되는 process/group label, optional",
+                                "status_scope": "이 source에만 적용되는 status/shift/scope label, optional",
                             },
                             "params": {},
                             "filters": [],
-                            "required_columns": ["dataset physical/source columns needed for retrieval"],
+                            "required_columns": ["retrieval에 필요한 dataset physical/source column"],
                             "required_param_mappings": {"DATE": ["physical column copied from metadata"]},
                             "filter_mappings": {"standard logical column": ["dataset physical/source columns copied from metadata"]},
                             "standard_column_aliases": {"standard logical column": ["dataset physical/source columns copied from metadata"]},
-                            "date_format": "copy metadata.datasets[dataset_key].date_format when present",
+                            "date_format": "metadata.datasets[dataset_key].date_format이 있으면 복사",
                             "pandas_preprocessing": {"standardize_columns": True},
                         }
                     ],
                     "step_plan": [
                         {
-                            "step_id": "short id",
+                            "step_id": "짧은 id",
                             "operation": "analysis operation",
                             "source_alias": "source alias",
                             "metric": "optional metric column",
                             "top_n": "optional positive integer",
                             "rank_order": "optional desc|asc",
                             "grain": "optional semantic grain such as product, process, lot, device, total, or detail",
-                            "rank_groups": [{"label": "requested group label", "field": "metadata-backed source/filter field", "values": ["source values included in this group"]}],
-                            "rank_group_output_column": "optional final output column for rank group labels, e.g. OPER_GROUP when grouping OPER_NAME-derived process groups",
+                            "rank_groups": [{"label": "사용자가 요청한 group label", "field": "metadata 기반 source/filter field", "values": ["이 group에 포함되는 source value"]}],
+                            "rank_group_output_column": "optional final output column for rank group labels",
                             "function_case_key": "optional pandas_function_cases key when this step applies a helper case",
                             "function_name": "optional helper function name when this step applies a helper case",
-                            "input_text": "optional helper input text copied from the user question",
+                            "input_text": "사용자 질문에서 복사한 optional helper input text",
                             "group_by": ["optional grouping columns"],
                             "output_columns": ["optional standard result columns"],
                         }
@@ -149,90 +152,68 @@ def build_intent_prompt_payload(payload_value: Any) -> dict[str, Any]:
                     "depends_on_state": False,
                     "requires_full_previous_result_restore": False,
                     "previous_result_restore_mode": "summary | full",
-                    "reasoning_steps": ["short Korean or English reasoning step"],
+                    "reasoning_steps": ["짧은 reasoning step"],
                 },
                 ensure_ascii=False,
                 indent=2,
             ),
             "",
-            "Rules:",
-            "- Use intent_type=detail_lookup for detail row requests such as a specific LOT hold history or hold lot list.",
-            "- If the user asks for 상세 데이터, 세부 데이터, 원본 row, 전체 row, or says not to aggregate/group, preserve source rows with analysis_kind=detail_rows instead of forcing group_by.",
-            "- Do not confuse 전체 수량/전체 실적/총/합계 with 전체 데이터. 전체 데이터/raw/original/detail asks for detail_rows, but 전체 수량/전체 실적/총/합계 asks for one aggregated total row.",
-            "- For metric or quantity questions without 별/별로/per/by/rank/detail/raw wording, default to aggregate total: group_by=[], one result row, and sum every additive output metric.",
-            "- For 제품별/product-by questions, group by product_grain. For 차수별/공정 차수별 questions, group by OPER_NUM. For 세부공정별/세부 공정별/process-step questions, group by OPER_NAME.",
-            "- If a metric term defines derived output_columns such as WAFER_OUT_QTY and FAIL_UNIT_QTY, compute those row-level columns first and then aggregate them at the requested grain. Do not return row-level derived values unless detail_rows was explicitly requested.",
-            "- Use intent_type=single_retrieval_analysis for one-dataset aggregation/ranking questions.",
-            "- Use intent_type=multi_source_analysis for questions that need multiple datasets.",
-            "- Use intent_type=multi_step_analysis when one step creates keys that the next step must reuse.",
-            "- If analysis_kind=rank_wip_then_join_production, intent_type must be multi_step_analysis.",
-            "- Always return retrieval_jobs for every dataset in datasets unless intent_type=finish. Do not return only datasets/params/filters.",
-            "- Always return step_plan for analysis requests unless intent_type=finish. The step_plan must say which operation uses which source_alias.",
-            "- step_plan[].source_alias and step_plan[].source_aliases must exactly match retrieval_jobs[].source_alias values. Do not invent generic aliases that are not present in retrieval_jobs.",
-            "- When a matching metadata.domain_items.pandas_function_cases item should handle procedural filtering/parsing, set pandas_function_case and add a step_plan item with operation='apply_pandas_function_case', function_case_key, function_name, and input_text.",
-            "- For free-form product-token lookup questions such as '64G L-269P1Q 제품 찾아줘', use pandas_function_cases.component_token_product_lookup / match_product_tokens to apply the product filter in pandas. Use ordinary product_terms filters only for registered product classes such as POP, MOBILE, or HBM.",
-            "- For product-token function cases, retrieval_jobs should fetch the product-bearing source columns needed by the helper; do not express the token match only as retrieval_jobs[].filters.",
-            "- DATE params are dataset-specific execution parameters. Add retrieval_jobs[].params.DATE only when that dataset metadata has DATE in required_params/required_param_mappings.",
-            "- If DATE exists only in table_catalog.filter_mappings, treat it as an optional filter. Add retrieval_jobs[].filters DATE only when the user explicitly asks a date-scoped question such as today/yesterday/current/a concrete date.",
-            "- Do not add DATE params or DATE filters for a raw/detail dataset lookup that does not ask for a date.",
-            "- When DATE is required or explicitly requested as a filter, read metadata.datasets[dataset_key].date_format and date_param_value_for_current_request. Use that exact dataset-specific format.",
-            f"- If a dataset date_format is YYYYMMDD, DATE must look like {_date_param_value_for_dataset(request_date, {'date_format': 'YYYYMMDD'})}. Do not output {_date_param_value_for_dataset(request_date, {'date_format': 'YYYY-MM-DD'})} for that dataset.",
-            f"- If a dataset date_format is YYYY-MM-DD, DATE must look like {_date_param_value_for_dataset(request_date, {'date_format': 'YYYY-MM-DD'})}. Do not output {_date_param_value_for_dataset(request_date, {'date_format': 'YYYYMMDD'})} for that dataset.",
-            "- Never copy target's YYYY-MM-DD format to production_today, wip_today, or other datasets unless that dataset's own metadata says YYYY-MM-DD.",
-            "- When a retrieval job contains DATE params, also copy required_param_mappings and date_format from the dataset metadata into that retrieval_jobs item when present.",
-            "- Keep product_grain, step_plan[].group_by, step_plan[].join_keys, and final output_columns in standard logical column names from metadata. Do not replace them with dataset-specific physical names such as PKG1, PKG2, DENSITY, or MCPSALENO.",
-            "- In retrieval_jobs[].required_columns, request the dataset's physical/source columns from table_catalog.columns/filter_mappings/standard_column_aliases. The pandas stage standardizes source DataFrames before joins, grouping, ranking, and output shaping.",
-            "- Copy table_catalog.filter_mappings and standard_column_aliases into each retrieval job when present, so physical columns such as PKG1/PKG2/MCPSALENO can be standardized to PKG_TYPE1/PKG_TYPE2/MCP_NO for pandas.",
-            "- Use intent_type=followup_transform when the question says 이 제품/그 제품/해당 제품/이때/그때/방금 결과 and needs previous state.",
-            "- For follow-up equipment questions, use only equipment_status unless the user explicitly asks for Lot, Hold, wafer, or die data.",
-            "- For follow-up 장비 현황/설비 현황 questions, use analysis_kind=equipment_for_previous_products and return equipment detail rows.",
-            "- For follow-up 장비 대수/설비 대수/몇 대 questions, use analysis_kind=equipment_count_for_previous_products and calculate EQP_COUNT as EQPID.nunique().",
-            "- For follow-up 장비 대수/설비 대수/몇 대 questions, intent_type must be followup_transform, datasets must be exactly ['equipment_status'], and retrieval_jobs must contain only equipment_status. Do not use capacity for assigned equipment count.",
-            "- For 장비 보유 현황/설비 보유 현황 by EQP_MODEL/model별 questions, use intent_type=single_retrieval_analysis, dataset equipment_status, and analysis_kind=equipment_by_model. Calculate EQP_COUNT as EQPID.nunique() and PRESS_CNT as sum(PRESS_CNT); do not use detail_rows unless the user asks for list/detail rows.",
-            "- For follow-up questions that recalculate, filter, sort, regroup, or show detail rows from the previous result itself, set requires_full_previous_result_restore=true and previous_result_restore_mode=full.",
-            "- For follow-up questions that ask to break down the same previous data by another dimension such as DEVICE/공정/제품, do not create new retrieval_jobs; set reuse_previous_runtime_sources=true, requires_full_previous_result_restore=true, previous_result_restore_mode=full, and use analysis_kind=aggregate_previous_source when a metric should be summed.",
-            "- For follow-up questions that only need previous product keys for a new retrieval, keep previous_result_restore_mode=summary.",
-            "- For 오늘/현재, prefer datasets whose metadata date_scope is current_day unless the question asks for history.",
-            "- For 목표/계획, use dataset families and quantity/metric terms from metadata, and preserve each dataset's date_format.",
-            "- For status or detail requests, use status_terms and table_catalog metadata instead of hardcoded status codes.",
-            "- status_terms are ordinary metadata-backed filters. If a status_terms item maps to a column such as SHIFT, add that field to the matching retrieval job filters and required_columns when the dataset catalog supports it.",
-            "- Time-window aliases in status_terms such as 07:00~15:00 must be treated the same as their shift/status label aliases, even if the user writes spaces around the range separator.",
-            "- For 작업대기/작업중 Lot 수량 questions, use lot_status with the matching status_terms value and calculate LOT_COUNT as LOT_ID.nunique().",
-            "- If a question asks lot count plus wafer count plus die quantity for a process group such as DA or WB, use lot_status with that process group's metadata filters and analysis_kind=lot_quantity_summary.",
-            "- If a question asks LPDDR5 or another product condition plus DA/WB production and WIP together, use production_today and wip_today with the process group filters and analysis_kind=aggregate_join.",
-            "- If a question asks production/실적/생산량 and WIP/재공 together by product/product별 for a process group, and it does not ask for top/rank/상위/가장 or target/목표/계획/달성률, use production_today + wip_today with analysis_kind=aggregate_join and group by product_grain.",
-            "- For top/bottom/rank questions, do not return a nested rank object. Put ranking values in top-level metric/top_n/rank_order and repeat them in the rank step_plan item.",
-            "- For 가장 많은/most/highest/top questions without an explicit count, use top_n=1 and rank_order=desc.",
-            "- For top/bottom/rank questions followed by a dependent lookup, express rank first and dependent retrieval/analysis steps second.",
-            "- Separate filter scope from grouping grain. A column used only to select rows must stay in retrieval_jobs[].filters or rank_groups[].field, not in group_by/output_columns.",
-            "- Filter scope columns such as date, shift, process group, process name, or status may appear in result_scope_columns or final output as labels when they help identify the filtered result.",
-            "- However, do not use filter-only scope columns as group_by/join_keys unless the user explicitly asks for that raw breakdown axis, such as 조별, 일자별, 공정별, 상태별, or raw/detail rows.",
-            "- For total questions over a filtered scope, set step_plan[].group_by=[] and join_keys=[]; show scope labels with result_scope_columns/output_columns instead of joining/grouping by DATE, SHIFT, OPER_NAME, or other filter-only columns.",
-            "- Choose group_by from the entity being ranked or aggregated: product questions use product_grain, raw process/operation columns only when the user explicitly asks for raw process/step breakdown, and total questions use an empty group_by.",
-            "- When the user compares A versus B scopes, such as INPUT versus B/G1 or DA versus WB, create separate source-specific retrieval_jobs filters and step_plan outputs for each scope. Do not put the B scope filter on the A source or merge both scopes into one ambiguous OPER_NAME IN filter.",
-            "- For sequential questions such as 'find the top product in yesterday DP, then show today's DA WIP', the first retrieval job gets only the DP/yesterday filters and the second retrieval job gets only the DA/today filters. Never add the union of all mentioned process groups to every retrieval job.",
-            "- Source-specific scopes override the global question wording. For example, in '전일 ... 금일 ...', the yesterday source must use yesterday/history scope and the today source must use today/current scope, even though both words appear in the full question.",
-            "- Put source-local hints such as today_input, yesterday_input, DA production, WB wip, input source, comparison source, all-process wip in retrieval_jobs[].source_scope and reflect them in that job's params/filters only.",
-            "- Do not copy a top-level DATE, OPER_NAME, SHIFT, status, or process filter into every retrieval job when the question assigns different scopes to different sources. Keep the filter only on the job whose source_scope matches it.",
-            "- When a question asks the same measures for multiple process groups, aggregate each process-group scope separately and return user-facing columns such as DA_PRODUCTION, DA_WIP, WB_PRODUCTION, WB_WIP rather than a single combined PRODUCTION/WIP pair.",
-            "- When the user says 전 공정/전체 공정/all process for one metric source, do not apply a process filter to that source. Keep process filters only on the source aliases whose scope explicitly names that process.",
-            "- Product terms such as HBM, MOBILE, or AUTO향 are filter conditions. Keep their raw condition fields in filters only, and add a user-facing PRODUCT_GROUP result label instead of outputting raw condition values such as TSV_DIE_TYP=NOT_EMPTY.",
-            "- If the ranked or aggregated entity is DEVICE, group/rank by DEVICE. Do not replace DEVICE with product_grain just because a product filter such as MOBILE is present.",
-            "- If the user asks top/rank results for each requested group/scope (각각, 각, 별로, per each), express that grouping intent with step_plan[].rank_groups.",
-            "- For per-group product ranking, group/rank by the user-facing group label plus product_grain; do not rank separately by the raw condition field unless the user requested that raw field as the breakdown axis.",
-            "- For rank_groups, use the raw metadata-backed field only in rank_groups[].field and retrieval filters. Do not include that raw field in final output_columns unless the user explicitly asks to break down by that raw field.",
-            "- Give rank group labels a user-facing final column via rank_group_output_column/output_columns. For example, if rank_groups[].field is OPER_NAME but the user asks for DA/WB groups, use OPER_GROUP in final output_columns rather than OPER_NAME.",
-            "- For top/rank questions followed by a dependent lookup, count, detail, or oldest/longest selection, prefer a matching metadata analysis_recipes item and express the rank step before the dependent step.",
-            "- For dependent counts, preserve the count source and count_column from metadata instead of substituting another dataset.",
-            "- Do not use loose top-level group_by/output_columns as substitutes for step_plan. Use product_grain and analysis_output_columns, and include group_by/output_columns inside the relevant step when needed.",
-            "- Use aggregate_wip_total only for one-dataset total/sum questions that metadata identifies as WIP/current quantity work.",
-            "- Use aggregate_join only for a simple multi-source join when no matching analysis_recipes item gives a more specific plan.",
-            "- If an analysis_recipes item matches the question, use its required_quantity_terms, required_dataset_families, metric_terms, grain_policy, source_aliases_by_family, defaults, and output_columns as planning evidence.",
-            "- grain_policy decides grouping: aggregate_total means one total row; question_or_product_grain means use the grain explicitly requested by the question, otherwise use the product grain only when product-level rows are natural.",
-            "- If a required dataset, filter, formula, or value mapping is not present in metadata, do not hardcode it. Return the closest metadata-backed plan and explain the missing item in reasoning_steps.",
+            "규칙:",
+            "- 사용자가 계산 요약이 아니라 source/detail row를 요청하면 intent_type=detail_lookup을 사용하세요.",
+            "- 사용자가 상세 데이터, raw data, 원본 row, 전체 row를 요청하거나 집계/grouping하지 말라고 하면 group_by를 강제하지 말고 analysis_kind=detail_rows로 source row를 보존하세요.",
+            "- total/summary quantity 요청과 raw/detail data 요청을 혼동하지 마세요. total/summary quantity는 하나의 집계 결과 row를 요구하고, raw/detail data는 detail_rows를 요구합니다.",
+            "- 명시적인 grouping, ranking, detail, raw 표현이 없는 metric/quantity 질문은 기본적으로 aggregate total로 처리하세요: group_by=[], 결과 row 1개, additive output metric 합계.",
+            "- 하나의 dataset만 필요한 aggregation/ranking 질문에는 intent_type=single_retrieval_analysis를 사용하세요.",
+            "- 여러 dataset이 필요한 질문에는 intent_type=multi_source_analysis를 사용하세요.",
+            "- 한 step이 만든 key를 다음 step에서 재사용해야 하면 intent_type=multi_step_analysis를 사용하세요.",
+            "- 질문이 previous state에 의존하면 intent_type=followup_transform을 사용하세요.",
+            "- intent_type=finish가 아니면 datasets의 모든 dataset에 대해 반드시 retrieval_jobs를 반환하세요. datasets/params/filters만 반환하지 마세요.",
+            "- intent_type=finish가 아닌 analysis request에는 반드시 step_plan을 반환하세요. step_plan에는 어떤 operation이 어떤 source_alias를 쓰는지 드러나야 합니다.",
+            "- step_plan[].source_alias와 step_plan[].source_aliases는 retrieval_jobs[].source_alias 값과 정확히 일치해야 합니다. retrieval_jobs에 없는 generic alias를 만들지 마세요.",
+            "- 절차적 filtering/parsing을 metadata.domain_items.pandas_function_cases 항목이 처리해야 하는 경우 pandas_function_case를 설정하고 operation='apply_pandas_function_case', function_case_key, function_name, input_text가 있는 step_plan item을 추가하세요.",
+            "- DATE params는 dataset별 실행 parameter입니다. 해당 dataset metadata의 required_params/required_param_mappings에 DATE가 있을 때만 retrieval_jobs[].params.DATE를 추가하세요.",
+            "- DATE가 table_catalog.filter_mappings에만 있으면 optional filter로 취급하세요. 사용자가 today/yesterday/current/구체 날짜처럼 date-scoped 질문을 명시한 경우에만 retrieval_jobs[].filters DATE를 추가하세요.",
+            "- 날짜를 묻지 않는 raw/detail dataset lookup에는 DATE params나 DATE filter를 추가하지 마세요.",
+            "- DATE가 required이거나 명시적으로 filter로 요청되면 metadata.datasets[dataset_key].date_format과 date_param_value_for_current_request를 읽고, 그 dataset 전용 format을 정확히 사용하세요.",
+            f"- dataset date_format이 YYYYMMDD이면 DATE는 {_date_param_value_for_dataset(request_date, {'date_format': 'YYYYMMDD'})} 형태여야 합니다. 이 dataset에 {_date_param_value_for_dataset(request_date, {'date_format': 'YYYY-MM-DD'})}를 출력하지 마세요.",
+            f"- dataset date_format이 YYYY-MM-DD이면 DATE는 {_date_param_value_for_dataset(request_date, {'date_format': 'YYYY-MM-DD'})} 형태여야 합니다. 이 dataset에 {_date_param_value_for_dataset(request_date, {'date_format': 'YYYYMMDD'})}를 출력하지 마세요.",
+            "- dataset 자체 metadata가 그렇게 지시하지 않는 한, 한 dataset의 date format을 다른 dataset에 복사하지 마세요.",
+            "- retrieval job에 DATE params가 있으면, 가능할 때 dataset metadata의 required_param_mappings와 date_format도 해당 retrieval_jobs item에 복사하세요.",
+            "- product_grain, step_plan[].group_by, step_plan[].join_keys, final output_columns는 metadata의 standard logical column name으로 유지하세요. dataset별 physical name으로 바꾸지 마세요.",
+            "- retrieval_jobs[].required_columns에는 table_catalog.columns/filter_mappings/standard_column_aliases에서 확인한 dataset physical/source column을 요청하세요. pandas 단계가 join, grouping, ranking, output shaping 전에 source DataFrame을 standardize합니다.",
+            "- physical column을 pandas에서 standardize할 수 있도록 table_catalog.filter_mappings와 standard_column_aliases가 있으면 각 retrieval job에 복사하세요.",
+            "- 이전 결과 자체를 재계산, filtering, sort, regroup하거나 detail row로 보여주는 follow-up 질문은 requires_full_previous_result_restore=true와 previous_result_restore_mode=full을 설정하세요.",
+            "- 같은 previous data를 다른 dimension으로 breakdown하는 follow-up 질문은 새 retrieval_jobs를 만들지 마세요. reuse_previous_runtime_sources=true, requires_full_previous_result_restore=true, previous_result_restore_mode=full을 설정하고, metric 합계가 필요하면 적절한 previous-source analysis kind를 사용하세요.",
+            "- previous product key만 새 retrieval에 필요한 follow-up 질문은 previous_result_restore_mode=summary를 유지하세요.",
+            "- current 또는 relative-date 질문은 history를 명시하지 않는 한 요청한 time scope와 metadata date_scope가 맞는 dataset을 우선하세요.",
+            "- status, category, detail 요청은 hardcoded value 대신 domain metadata와 table_catalog metadata를 사용하세요.",
+            "- top/bottom/rank 질문에는 nested rank object를 반환하지 마세요. ranking 값은 top-level metric/top_n/rank_order에 두고 rank step_plan item에도 반복하세요.",
+            "- 가장 많은/most/highest/top 질문에서 명시적인 개수가 없으면 top_n=1, rank_order=desc를 사용하세요.",
+            "- top/bottom/rank 질문 뒤에 dependent lookup이 있으면 rank step을 먼저, dependent retrieval/analysis step을 나중에 표현하세요.",
+            "- filter scope와 grouping grain을 분리하세요. row selection에만 쓰는 column은 group_by/output_columns가 아니라 retrieval_jobs[].filters 또는 rank_groups[].field에 두세요.",
+            "- filtered result를 식별하는 데 도움이 되는 경우 filter scope column은 result_scope_columns 또는 final output의 label로 나타날 수 있습니다.",
+            "- 다만 사용자가 raw breakdown axis나 raw/detail row를 명시적으로 요청하지 않는 한 filter-only scope column을 group_by/join_keys로 사용하지 마세요.",
+            "- filtered scope의 total 질문은 step_plan[].group_by=[]와 join_keys=[]로 설정하세요. filter-only column으로 join/grouping하지 말고 result_scope_columns/output_columns로 scope label을 보여주세요.",
+            "- group_by는 ranking 또는 aggregation 대상 entity에서 선택하고, total 질문에는 empty group_by를 사용하세요.",
+            "- 사용자가 여러 scope를 비교하면 scope별로 별도의 source-specific retrieval_jobs filters와 step_plan output을 만드세요. 서로 다른 scope filter를 하나의 애매한 filter로 합치지 말고 각 source에만 유지하세요.",
+            "- source-specific scope는 global question wording보다 우선합니다.",
+            "- source-local hint는 retrieval_jobs[].source_scope에 넣고, 해당 job의 params/filters에만 반영하세요.",
+            "- 질문이 source별로 다른 scope를 지정하면 top-level filters를 모든 retrieval job에 복사하지 마세요. 각 filter는 source_scope가 맞는 job에만 유지하세요.",
+            "- 질문이 여러 scope에 대해 같은 measure를 요구하면 각 scope를 별도로 aggregate하고, 하나의 애매한 metric column 대신 user-facing scope-labeled column을 반환하세요.",
+            "- 사용자가 한 metric source에 대해 all/overall scope를 요청하면, 명시적으로 요청하지 않는 한 더 좁은 scope filter를 적용하지 마세요.",
+            "- 사용자가 요청한 group/scope 각각에 대해 top/rank 결과를 요청하면(각각, 각, 별로, per each), 그 grouping intent를 step_plan[].rank_groups로 표현하세요.",
+            "- per-group ranking은 user-facing group label과 ranked entity grain으로 group/rank하세요. 사용자가 raw field를 breakdown axis로 요청하지 않았다면 raw condition field별로 따로 rank하지 마세요.",
+            "- rank_groups에서는 raw metadata-backed field를 rank_groups[].field와 retrieval filters에만 사용하세요. 사용자가 raw field별 breakdown을 명시적으로 요청하지 않는 한 final output_columns에 그 raw field를 포함하지 마세요.",
+            "- rank group label은 rank_group_output_column/output_columns를 통해 user-facing final column으로 제공하세요.",
+            "- top/rank 질문 뒤에 dependent lookup, count, detail, oldest/longest selection이 있으면 matching metadata analysis_recipes 항목을 우선하고 rank step을 dependent step보다 먼저 표현하세요.",
+            "- dependent count에는 다른 dataset으로 대체하지 말고 metadata의 count source와 count_column을 보존하세요.",
+            "- loose top-level group_by/output_columns를 step_plan 대체물로 쓰지 마세요. product_grain과 analysis_output_columns를 사용하고, 필요하면 관련 step 안에 group_by/output_columns를 포함하세요.",
+            "- analysis_recipes 항목이 질문과 맞으면 required_quantity_terms, required_dataset_families, metric_terms, grain_policy, source_aliases_by_family, defaults, output_columns를 planning evidence로 사용하세요.",
+            "- grain_policy가 grouping을 결정합니다. aggregate_total은 하나의 total row이고, question_or_product_grain은 질문이 명시한 grain을 쓰되 product-level row가 자연스러울 때만 product grain을 사용한다는 뜻입니다.",
+            "- 필요한 dataset, filter, formula, value mapping이 metadata에 없으면 hardcode하지 마세요. 가능한 metadata-backed plan을 반환하고 누락 항목은 reasoning_steps에 설명하세요.",
         ]
     )
-    return {"prompt": prompt, "payload": payload, "prompt_type": "intent"}
+    return {"prompt": prompt, "payload": payload, "prompt_type": "intent", "specialized_prompt": specialized_prompt}
 
 
 def _metadata_summary(metadata: dict[str, Any], request_date: str) -> dict[str, Any]:
@@ -343,6 +324,22 @@ def _list_preview(value: Any, limit: int) -> list[Any]:
     return deepcopy(value[:limit]) if isinstance(value, list) else []
 
 
+def _specialized_prompt(value: Any) -> str:
+    text = _clean_text(value)
+    return text or "추가 Specialized Prompt가 제공되지 않았습니다."
+
+
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    data = getattr(value, "data", None)
+    if isinstance(data, dict):
+        for key in ("text", "content", "value"):
+            if data.get(key):
+                return str(data[key]).strip()
+    return str(value).strip()
+
+
 def _payload(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -360,7 +357,15 @@ class IntentPromptBuilder(Component):
 
     display_name = "02 Intent Prompt Builder"
     description = "질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다."
-    inputs = [DataInput(name="payload", display_name="Payload", required=True)]
+    inputs = [
+        DataInput(name="payload", display_name="Payload", required=True),
+        MessageTextInput(
+            name="specialized_prompt_text",
+            display_name="Specialized Prompt",
+            value="",
+            required=False,
+        ),
+    ]
     outputs = [
         Output(name="intent_prompt", display_name="Intent Prompt", method="build_prompt"),
         Output(name="prompt_payload", display_name="Prompt Payload", method="build_prompt_payload"),
@@ -370,13 +375,25 @@ class IntentPromptBuilder(Component):
     # 처리 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt(self) -> Message:
-        prompt_payload = build_intent_prompt_payload(getattr(self, "payload", None))
+        prompt_payload = build_intent_prompt_payload(
+            getattr(self, "payload", None),
+            getattr(self, "specialized_prompt_text", ""),
+        )
 
-        self.status = {"prompt_type": prompt_payload.get("prompt_type", "intent"), "chars": len(prompt_payload["prompt"])}
+        self.status = {
+            "prompt_type": prompt_payload.get("prompt_type", "intent"),
+            "chars": len(prompt_payload["prompt"]),
+            "has_specialized_prompt": bool(_clean_text(getattr(self, "specialized_prompt_text", ""))),
+        }
         return Message(text=prompt_payload["prompt"])
 
     # 함수 설명: Langflow output 포트가 호출하는 메서드입니다.
     # 처리 역할: 질문, 메타데이터, 이전 state를 바탕으로 의도 분석 LLM에 보낼 프롬프트와 context payload를 만듭니다.
     # 반환 값은 다음 노드가 받을 수 있도록 Data 또는 Message 형태로 감쌉니다.
     def build_prompt_payload(self) -> Data:
-        return Data(data=build_intent_prompt_payload(getattr(self, "payload", None)))
+        return Data(
+            data=build_intent_prompt_payload(
+                getattr(self, "payload", None),
+                getattr(self, "specialized_prompt_text", ""),
+            )
+        )

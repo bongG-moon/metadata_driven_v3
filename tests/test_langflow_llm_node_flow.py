@@ -43,11 +43,11 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
 
     intent_prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
-    assert "Langflow Gemini/LLM node" in intent_prompt
-    assert "Required JSON schema" in intent_prompt
-    assert "step_plan[].source_alias and step_plan[].source_aliases must exactly match retrieval_jobs[].source_alias" in intent_prompt
-    assert "For total questions over a filtered scope" in intent_prompt
-    assert "may appear in result_scope_columns or final output as labels" in intent_prompt
+    assert "Langflow Gemini/LLM 노드" in intent_prompt
+    assert "필수 JSON schema" in intent_prompt
+    assert "step_plan[].source_alias와 step_plan[].source_aliases는 retrieval_jobs[].source_alias 값과 정확히 일치" in intent_prompt
+    assert "filtered scope의 total 질문" in intent_prompt
+    assert "filter scope column은 result_scope_columns 또는 final output의 label" in intent_prompt
 
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
@@ -81,7 +81,7 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     pandas_prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
     assert "result_df" in pandas_prompt
     assert "aggregate_wip_total" in pandas_prompt
-    assert "Do not use .to_frame()" in pandas_prompt
+    assert ".to_frame()을 사용하지 마세요" in pandas_prompt
 
     pandas_llm_json = {
         "code": "\n".join(
@@ -101,7 +101,7 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
 
     payload = data_store.store_payload_in_mongodb(payload, enabled="false")
     answer_prompt = answer_prompt_builder.build_answer_prompt_payload(payload)["prompt"]
-    assert "Answer in Korean" in answer_prompt
+    assert "한국어로 답변하세요" in answer_prompt
     assert "wip_today" in answer_prompt
 
     answer_llm_json = {"answer_message": "오늘 전체 재공 수량은 계산 결과 기준으로 확인되었습니다."}
@@ -140,7 +140,7 @@ def test_intent_prompt_exposes_dataset_specific_date_formats(monkeypatch: Any) -
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
 
     prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
-    metadata_json = prompt.split("Metadata summary:\n", 1)[1].split("\n\nPrevious state summary:", 1)[0]
+    metadata_json = prompt.split("메타데이터 요약:\n", 1)[1].split("\n\n이전 state 요약:", 1)[0]
     summary = json.loads(metadata_json)
 
     production = summary["datasets"]["production_today"]
@@ -150,8 +150,8 @@ def test_intent_prompt_exposes_dataset_specific_date_formats(monkeypatch: Any) -
     assert production["date_param_value_for_current_request"] == "20260612"
     assert target["date_format"] == "YYYY-MM-DD"
     assert target["date_param_value_for_current_request"] == "2026-06-12"
-    assert "Do not output 2026-06-12 for that dataset" in prompt
-    assert "Never copy target's YYYY-MM-DD format to production_today" in prompt
+    assert "이 dataset에 2026-06-12를 출력하지 마세요" in prompt
+    assert "한 dataset의 date format을 다른 dataset에 복사하지 마세요" in prompt
 
 
 def test_request_date_overrides_stale_llm_date_params_and_filters(monkeypatch: Any) -> None:
@@ -168,7 +168,7 @@ def test_request_date_overrides_stale_llm_date_params_and_filters(monkeypatch: A
     payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
     add_test_analysis_recipes(payload, "production_wip_target_rate")
     prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
-    metadata_json = prompt.split("Metadata summary:\n", 1)[1].split("\n\nPrevious state summary:", 1)[0]
+    metadata_json = prompt.split("메타데이터 요약:\n", 1)[1].split("\n\n이전 state 요약:", 1)[0]
     summary = json.loads(metadata_json)
     assert summary["datasets"]["production_today"]["date_param_value_for_current_request"] == "20260617"
     assert summary["datasets"]["target"]["date_param_value_for_current_request"] == "2026-06-17"
@@ -677,17 +677,23 @@ def test_intent_prompt_tells_llm_to_use_group_label_not_raw_rank_field(monkeypat
 
     assert "rank_group_output_column" in prompt
     assert '"grain": "optional semantic grain' in prompt
-    assert "Separate filter scope from grouping grain" in prompt
-    assert "Choose group_by from the entity being ranked or aggregated" in prompt
+    assert "filter scope와 grouping grain을 분리" in prompt
+    assert "group_by는 ranking 또는 aggregation 대상 entity" in prompt
     assert "rank_groups[].field" in prompt
-    assert "Do not include that raw field in final output_columns" in prompt
-    assert "use OPER_GROUP in final output_columns rather than OPER_NAME" in prompt
-    assert "Keep product_grain, step_plan[].group_by, step_plan[].join_keys" in prompt
-    assert "retrieval_jobs[].required_columns, request the dataset's physical/source columns" in prompt
+    assert "final output_columns에 그 raw field를 포함하지 마세요" in prompt
+    assert "product_grain, step_plan[].group_by, step_plan[].join_keys" in prompt
+    assert "retrieval_jobs[].required_columns에는" in prompt
+    assert "dataset physical/source column을 요청하세요" in prompt
     assert "standard_column_aliases" in prompt
-    assert "전체 수량/전체 실적/총/합계" in prompt
-    assert "For metric or quantity questions without 별/별로/per/by/rank/detail/raw wording" in prompt
-    assert "For 차수별/공정 차수별 questions, group by OPER_NUM" in prompt
+    assert "total/summary quantity 요청" in prompt
+    assert "명시적인 grouping, ranking, detail, raw 표현이 없는 metric/quantity 질문" in prompt
+    assert "For 차수별/공정 차수별 questions, group by OPER_NUM" not in prompt
+
+    specialized_prompt = (
+        ROOT / "langflow_components" / "data_analysis_flow" / "prompts" / "02_SPECIALIZED_INTENT_PROMPT.md"
+    ).read_text(encoding="utf-8")
+    assert "rank_group_output_column/output_columns에 OPER_GROUP" in specialized_prompt
+    assert "차수별/공정 차수별 질문은 OPER_NUM" in specialized_prompt
 
 
 def test_intent_prompt_tells_llm_to_separate_comparison_scopes(monkeypatch: Any) -> None:
@@ -703,11 +709,17 @@ def test_intent_prompt_tells_llm_to_separate_comparison_scopes(monkeypatch: Any)
 
     prompt = intent_prompt_builder.build_intent_prompt_payload(payload)["prompt"]
 
-    assert "When the user compares A versus B scopes" in prompt
+    assert "사용자가 여러 scope를 비교" in prompt
     assert "source-specific retrieval_jobs filters" in prompt
-    assert "Do not put the B scope filter on the A source" in prompt
-    assert "all process" in prompt
-    assert "PRODUCT_GROUP" in prompt
+    assert "Do not put the B scope filter on the A source" not in prompt
+    assert "all process" not in prompt
+    assert "PRODUCT_GROUP" not in prompt
+
+    specialized_prompt = (
+        ROOT / "langflow_components" / "data_analysis_flow" / "prompts" / "02_SPECIALIZED_INTENT_PROMPT.md"
+    ).read_text(encoding="utf-8")
+    assert "전 공정/전체 공정/all process" in specialized_prompt
+    assert "PRODUCT_GROUP" in specialized_prompt
 
 
 def test_intent_normalizer_keeps_source_specific_process_filters(monkeypatch: Any) -> None:
@@ -1016,12 +1028,12 @@ def test_pandas_prompt_tells_llm_to_handle_dates_without_datetime_imports() -> N
 
     prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
 
-    assert "For date/date-format handling" in prompt
-    assert "do not import datetime/date/timedelta" in prompt
+    assert "date/date-format 처리는" in prompt
+    assert "datetime/date/timedelta를 import하지 마세요" in prompt
     assert "pd.to_datetime(..., errors='coerce')" in prompt
-    assert "prefer using that string value directly" in prompt
-    assert "Do not create or reference local variable names that start with an underscore" in prompt
-    assert "Underscores inside names such as prod_df" in prompt
+    assert "string value를 직접 사용하는 것을 우선" in prompt
+    assert "underscore로 시작하는 local variable name" in prompt
+    assert "이름 안의 underscore는 허용" in prompt
 
 
 def test_pandas_prompt_includes_manual_function_case_text() -> None:
@@ -1039,10 +1051,27 @@ def test_pandas_prompt_includes_manual_function_case_text() -> None:
     )
     prompt = prompt_payload["prompt"]
 
-    assert "Specialized pandas function cases:" in prompt
+    assert "Specialized Functions:" in prompt
     assert "manual_text_input" in prompt
     assert "match_product_tokens" in prompt
-    assert prompt_payload["pandas_function_cases"][0]["source"] == "pandas_function_cases_text"
+    assert prompt_payload["pandas_function_cases"][0]["source"] == "specialized_functions_text"
+
+
+def test_intent_prompt_includes_specialized_prompt_text_input() -> None:
+    intent_prompt_builder = load_component("langflow_components/data_analysis_flow/02_intent_prompt_builder.py")
+    payload = {
+        "request": {"question": "오늘 DA 공정 생산량 알려줘", "request_date": "20260627"},
+        "metadata": {"domain_items": {}, "table_catalog": {"datasets": {}}},
+        "state": {},
+    }
+    specialized_prompt = "공정 질문에서는 공정 그룹 metadata를 먼저 확인하고 source별 scope를 분리한다."
+
+    prompt_payload = intent_prompt_builder.build_intent_prompt_payload(payload, specialized_prompt)
+    prompt = prompt_payload["prompt"]
+
+    assert "추가 Specialized Prompt:" in prompt
+    assert specialized_prompt in prompt
+    assert prompt_payload["specialized_prompt"] == specialized_prompt
 
 
 def test_pandas_prompt_selects_domain_function_case_for_product_token_lookup() -> None:
@@ -1056,7 +1085,7 @@ def test_pandas_prompt_selects_domain_function_case_for_product_token_lookup() -
         "aliases": ["product list lookup"],
         "function_name": "match_product_tokens",
         "function_code": function_code,
-        "use_when": "Use when the user asks to find products from free-form product tokens.",
+        "use_when": "Use when the user asks to find products from unregistered product attribute tokens.",
         "required_source_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
         "token_columns": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
         "output_order": ["TECH", "DEN", "PKG_TYPE1", "LEAD", "PKG_TYPE2", "MODE", "MCP_NO"],
@@ -1092,8 +1121,8 @@ def test_pandas_prompt_selects_domain_function_case_for_product_token_lookup() -
     assert "metadata.domain_items.pandas_function_cases" in prompt
     assert "match_product_tokens" in prompt
     assert "function_code" in prompt
-    assert "loaded by the pandas executor" in prompt
-    assert "do not redefine" in prompt
+    assert "pandas executor가 해당 helper를 로드" in prompt
+    assert "재정의하지 마세요" in prompt
 
 
 def test_pandas_prompt_selects_product_token_case_when_required_columns_are_too_strict() -> None:
@@ -1152,7 +1181,7 @@ def test_pandas_prompt_selects_product_token_case_when_required_columns_are_too_
 
     assert prompt_payload["pandas_function_cases"][0]["key"] == "component_token_product_lookup"
     assert "match_product_tokens" in prompt
-    assert "Returning the full product list without token filtering is invalid" in prompt
+    assert "token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과" in prompt
 
 
 def test_pandas_prompt_selects_product_token_case_for_korean_product_list_question() -> None:
@@ -1368,7 +1397,7 @@ def test_pandas_executor_loads_function_case_helper_from_prompt_payload_text() -
     assert result["analysis"]["rows"][0]["MCP_NO"] == "H-HBM16E"
 
 
-def test_intent_normalizer_routes_free_form_product_tokens_to_function_case(monkeypatch: Any) -> None:
+def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
@@ -1439,7 +1468,126 @@ def test_intent_normalizer_routes_free_form_product_tokens_to_function_case(monk
     )
 
     assert prompt_payload["pandas_function_cases"][-1]["key"] == "component_token_product_lookup"
-    assert "Apply the selected pandas function case with helper match_product_tokens" in prompt_payload["prompt"]
+    assert "선택된 pandas function case를 helper match_product_tokens" in prompt_payload["prompt"]
+
+
+def test_intent_normalizer_routes_product_token_metric_filters_to_function_case(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+
+    question = "오늘 lpddr4 lc 64g 제품 생산량 알려줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260627")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_total",
+        "datasets": ["production_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "purpose": "Retrieve today's production quantity for LPDDR4 LC 64G product.",
+                "params": {"DATE": "20260627"},
+                "filters": [
+                    {"field": "MODE", "op": "eq", "value": "LPDDR4"},
+                    {"field": "DEN", "op": "eq", "value": "64G"},
+                    {"field": "PKG_TYPE1", "op": "eq", "value": "LC"},
+                    {"field": "DATE", "op": "eq", "value": "20260627"},
+                ],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "total_production",
+                "operation": "aggregate_data",
+                "source_alias": "production_data",
+                "metric": "PRODUCTION",
+                "group_by": [],
+            }
+        ],
+        "reasoning_steps": [
+            "Map lpddr4 to MODE='LPDDR4'.",
+            "Map 64g to DEN='64G'.",
+            "Map lc to PKG_TYPE1='LC'.",
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+    job = payload["retrieval_jobs"][0]
+    fields = {item.get("field") for item in job.get("filters", [])}
+
+    assert plan["intent_type"] == "single_retrieval_analysis"
+    assert plan["analysis_kind"] == "aggregate_total"
+    assert plan["pandas_function_case"]["key"] == "component_token_product_lookup"
+    assert plan["pandas_function_case"]["function_name"] == "match_product_tokens"
+    assert plan["step_plan"][0]["operation"] == "apply_pandas_function_case"
+    assert plan["step_plan"][0]["source_alias"] == "production_data"
+    assert plan["step_plan"][1]["operation"] == "aggregate_data"
+    assert plan["step_plan"][1]["input_step_id"] == "component_token_product_lookup"
+    assert "MODE" not in fields
+    assert "DEN" not in fields
+    assert "PKG_TYPE1" not in fields
+    assert "DATE" in fields
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(
+        {
+            **payload,
+            "runtime_sources": {
+                "production_data": [
+                    {"DATE": "20260627", "MODE": "LPDDR4", "DEN": "64G", "PKG_TYPE1": "LC", "PRODUCTION": 10}
+                ]
+            },
+        },
+        "```python\ndef match_product_tokens(input_text, frame):\n    return frame.copy()\n```",
+    )
+
+    assert "먼저 선택된 pandas function case를 적용하세요" in prompt_payload["prompt"]
+    assert "remaining step_plan step" in prompt_payload["prompt"]
+
+
+def test_intent_normalizer_keeps_registered_product_terms_out_of_function_case(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    question = "오늘 POP 제품 생산량 알려줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260627")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_total",
+        "datasets": ["production_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "params": {"DATE": "20260627"},
+                "filters": [{"field": "DATE", "op": "eq", "value": "20260627"}],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "total_production",
+                "operation": "aggregate_data",
+                "source_alias": "production_data",
+                "metric": "PRODUCTION",
+                "group_by": [],
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+    job = payload["retrieval_jobs"][0]
+
+    assert "pandas_function_case" not in plan
+    assert plan["step_plan"][0]["operation"] == "aggregate_data"
+    assert _filter_values(job, "MODE") == ["LP"]
+    assert _filter_values(job, "PKG_TYP1") == ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]
+    assert not any(item.get("section") == "pandas_function_cases" for item in payload["metadata_context"]["domain_refs"])
 
 
 def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any) -> None:
@@ -2339,7 +2487,7 @@ def test_intent_normalizer_preserves_top_wip_process_then_lot_metrics_plan(monke
     assert any("분석 recipe 'top_wip_process_hold_lot_in_tat'" in item for item in payload["info"])
 
     prompt = pandas_prompt_builder.build_pandas_prompt_payload({**payload, "runtime_sources": {"wip_data": [], "lot_status_data": []}})["prompt"]
-    assert "implement every step in order" in prompt
+    assert "모든 step을 순서대로 구현" in prompt
     assert "HOLD_LOT_COUNT" in prompt
     assert "AVG_IN_TAT" in prompt
 
@@ -2932,15 +3080,15 @@ def test_pandas_prompt_tells_llm_not_to_output_rank_group_source_field() -> None
 
     prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
 
-    assert "Do not include raw source/filter condition columns in result_df" in prompt
-    assert "use the standard analysis column names from plan" in prompt
-    assert "Maintain a local dict named step_outputs" in prompt
-    assert "aggregate the rank metric at the intended grain before sorting" in prompt
-    assert "rank separately within each group label" in prompt
-    assert "restrict the later source to the ranked entity keys from step_outputs" in prompt
-    assert "compute the derived row-level output columns first" in prompt
-    assert "For aggregate steps with empty group_by, return one total row" in prompt
-    assert "Use plan.rank_group_output_column as the final group label column" in prompt
+    assert "raw source/filter condition column이 rank_groups" in prompt
+    assert "plan의 standard analysis column name" in prompt
+    assert "step_outputs라는 local dict" in prompt
+    assert "rank metric을 먼저 aggregate" in prompt
+    assert "각 group label 안에서 따로 rank" in prompt
+    assert "step_outputs의 ranked entity key" in prompt
+    assert "derived row-level output column을 먼저 계산" in prompt
+    assert "empty group_by가 있는 aggregate step은 one total row" in prompt
+    assert "plan.rank_group_output_column이 있으면 final group label column" in prompt
     assert "OPER_GROUP" in prompt
 
 
@@ -3798,8 +3946,8 @@ def test_answer_prompt_tells_llm_not_to_render_result_tables() -> None:
 
     prompt = answer_prompt_builder.build_answer_prompt_payload(payload)["prompt"]
 
-    assert "Do not include Markdown tables" in prompt
-    assert "answer_message must be narrative text only" in prompt
+    assert "Markdown table, tab-separated table" in prompt
+    assert "answer_message는 narrative text만 포함" in prompt
 
 
 def test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract() -> None:
@@ -3830,8 +3978,8 @@ def test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract() -
     prompt_payload = answer_prompt_builder.build_answer_prompt_payload(payload)
     prompt = prompt_payload["prompt"]
 
-    assert "Column-name rule" in prompt
-    assert "do not ask the user to modify metadata just because the source used the physical names" in prompt
+    assert "컬럼명 규칙" in prompt
+    assert "source가 physical name을 썼다는 이유만으로 사용자에게 metadata 수정을 요청하지 마세요" in prompt
     assert prompt_payload["answer_context"]["column_standardization"][0]["mappings"]["PKG_TYPE1"] == ["PKG1"]
 
 

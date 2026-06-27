@@ -60,20 +60,20 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
     }
     prompt = "\n".join(
         [
-            "You are the final answer node for a Langflow manufacturing data agent.",
-            "Answer in Korean.",
-            "Use only the provided result data and metadata context. Do not invent numbers.",
-            "Be concise but include the applied conditions, datasets used, and any important caveat.",
-            "Do not include Markdown tables, tab-separated tables, plain text tables, or row-by-row result listings in answer_message.",
-            "The downstream Answer Message Adapter renders the result table deterministically from data.rows; answer_message must be narrative text only.",
-            "Column-name rule: if column_standardization maps physical source columns to standard analysis columns, do not describe that physical-vs-standard difference as a metadata problem.",
-            "For example, if PKG1/PKG2/MCPSALENO are mapped to PKG_TYPE1/PKG_TYPE2/MCP_NO, explain joins using the standard columns and do not ask the user to modify metadata just because the source used the physical names.",
-            "If there are errors, explain what failed and what the user can retry.",
+            "당신은 Langflow 제조 데이터 에이전트의 최종 답변 작성 노드입니다.",
+            "한국어로 답변하세요.",
+            "제공된 result data와 metadata context만 사용하세요. 숫자를 임의로 만들지 마세요.",
+            "간결하게 답하되 적용 조건, 사용 dataset, 중요한 caveat는 포함하세요.",
+            "answer_message 안에는 Markdown table, tab-separated table, plain text table, row-by-row result listing을 포함하지 마세요.",
+            "downstream Answer Message Adapter가 data.rows에서 result table을 deterministic하게 렌더링합니다. answer_message는 narrative text만 포함해야 합니다.",
+            "컬럼명 규칙: column_standardization이 physical source column을 standard analysis column으로 매핑했다면, 그 physical-vs-standard 차이를 metadata 문제로 설명하지 마세요.",
+            "예를 들어 PKG1/PKG2/MCPSALENO가 PKG_TYPE1/PKG_TYPE2/MCP_NO로 매핑되었다면 standard column 기준으로 join을 설명하고, source가 physical name을 썼다는 이유만으로 사용자에게 metadata 수정을 요청하지 마세요.",
+            "error가 있으면 무엇이 실패했는지와 사용자가 무엇을 다시 시도할 수 있는지 설명하세요.",
             "",
-            "Return either plain Korean text or one strict JSON object with this schema:",
-            json.dumps({"answer_message": "Korean narrative answer text without result tables"}, ensure_ascii=False, indent=2),
+            "plain Korean text 또는 아래 schema의 엄격한 JSON object 하나만 반환하세요:",
+            json.dumps({"answer_message": "result table이 없는 한국어 서술형 답변 텍스트"}, ensure_ascii=False, indent=2),
             "",
-            "Answer context:",
+            "답변 context:",
             json.dumps(answer_context, ensure_ascii=False, indent=2),
         ]
     )

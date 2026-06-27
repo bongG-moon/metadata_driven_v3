@@ -1,6 +1,6 @@
-이 파일의 함수 코드를 14 Pandas Prompt Builder의 `Pandas Function Cases` 입력에 넣고, 14 Pandas Prompt Builder의 `Prompt Payload`를 15 Pandas Code Executor의 `Payload`로 연결해. 선택된 function case의 함수 구현이 이 입력 또는 metadata `function_code`에 없으면 pandas 분석은 진행하지 않는다.
+이 파일의 함수 코드를 14 Pandas Prompt Builder의 `Specialized Functions` 입력에 넣고, 14 Pandas Prompt Builder의 `Prompt Payload`를 15 Pandas Code Executor의 `Payload`로 연결해. 선택된 function case의 함수 구현이 이 입력 또는 metadata `function_code`에 없으면 pandas 분석은 진행하지 않는다.
 
-제품 토큰으로 제품 리스트를 찾는 질문이면, 아래 참고 함수 형태를 기준으로 pandas 코드를 작성해. 조회된 제품 데이터에서 TECH, DEN/DENSITY, MODE, ORG, PKG1/PKG_TYPE1, PKG2/PKG_TYPE2, LEAD, MCP_NO 컬럼 값을 입력 토큰과 비교해서 일치하는 제품 행을 반환해. 아래 코드는 참고 예시이므로, 실제 sources alias와 존재하는 컬럼에 맞게 조정해서 result_df를 만들어.
+제품 토큰으로 제품 리스트를 찾는 질문이면, 아래 참고 함수 형태를 기준으로 pandas 코드를 작성해. 조회된 제품 데이터에서 TECH, DEN/DENSITY, MODE, PKG1/PKG_TYPE1, PKG2/PKG_TYPE2, LEAD, MCP_NO 컬럼 값을 입력 토큰과 비교해서 일치하는 제품 행을 반환해. MCP_NO는 사용자가 `L-269`처럼 앞부분만 입력해도 실제 `L-269P1Q` 같은 값과 startswith로 매칭한다. 아래 코드는 참고 예시이므로, 실제 sources alias와 존재하는 컬럼에 맞게 조정해서 result_df를 만들어.
 
 ```python
 def match_product_tokens(input_text, products_df):
@@ -9,7 +9,6 @@ def match_product_tokens(input_text, products_df):
         "DEN",
         "DENSITY",
         "MODE",
-        "ORG",
         "PKG_TYPE1",
         "PKG1",
         "PKG_TYPE2",
@@ -27,7 +26,6 @@ def match_product_tokens(input_text, products_df):
         "PKG_TYPE2",
         "PKG2",
         "MODE",
-        "ORG",
         "MCP_NO",
     ]
 
@@ -35,6 +33,17 @@ def match_product_tokens(input_text, products_df):
 
     def normalize_token(value):
         return str(value or "").strip().upper()
+
+    def looks_like_mcp_prefix(value):
+        if "-" not in value:
+            return False
+        left, right = value.split("-", 1)
+        digit_prefix = ""
+        for character in right:
+            if not character.isdigit():
+                break
+            digit_prefix += character
+        return bool(left.isalpha() and len(digit_prefix) >= 2)
 
     matched_conditions = []
     for token in str(input_text or "").split():
@@ -45,12 +54,20 @@ def match_product_tokens(input_text, products_df):
             if column not in result.columns:
                 continue
             column_values = result[column].dropna().map(normalize_token)
-            if normalized_token in set(column_values):
-                matched_conditions.append((column, normalized_token))
+            if column == "MCP_NO" and looks_like_mcp_prefix(normalized_token):
+                if column_values.str.startswith(normalized_token, na=False).any():
+                    matched_conditions.append((column, normalized_token, "startswith"))
+                    break
+            elif normalized_token in set(column_values):
+                matched_conditions.append((column, normalized_token, "eq"))
                 break
 
-    for column, normalized_token in matched_conditions:
-        result = result[result[column].map(normalize_token) == normalized_token]
+    for column, normalized_token, match_type in matched_conditions:
+        values = result[column].map(normalize_token)
+        if match_type == "startswith":
+            result = result[values.str.startswith(normalized_token, na=False)]
+        else:
+            result = result[values == normalized_token]
 
     if not matched_conditions:
         return products_df.head(0).copy()
@@ -61,7 +78,7 @@ def match_product_tokens(input_text, products_df):
     return result.drop_duplicates().reset_index(drop=True)
 
 source_alias = list(sources.keys())[0]
-result_df = match_product_tokens("2048G H-HBM16E", sources[source_alias])
+result_df = match_product_tokens("64G L-269", sources[source_alias])
 ```
 
 ---

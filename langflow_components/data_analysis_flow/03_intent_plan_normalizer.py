@@ -2170,7 +2170,10 @@ def _matched_pandas_function_case(plan: dict[str, Any], metadata: dict[str, Any]
             if isinstance(case, dict) and str(case.get("function_name") or "").strip() == explicit_name:
                 return str(case_key), case
 
-    if not _question_looks_like_product_token_lookup(question, metadata):
+    if not (
+        _question_looks_like_product_token_lookup(question, metadata)
+        or _plan_has_unregistered_product_attribute_filters(plan, question, metadata)
+    ):
         return "", {}
     for case_key, case in cases.items():
         if isinstance(case, dict) and _is_product_token_function_case(str(case_key), case):
@@ -2226,7 +2229,32 @@ def _question_looks_like_product_token_lookup(question: str, metadata: dict[str,
         return False
     if not _mentions_any(text, ["제품", "product"]):
         return False
-    if not _mentions_any(text, ["찾", "조회", "리스트", "목록", "보여", "find", "lookup", "list", "show", "match"]):
+    if not _mentions_any(
+        text,
+        [
+            "찾",
+            "조회",
+            "리스트",
+            "목록",
+            "보여",
+            "알려",
+            "생산량",
+            "실적",
+            "재공",
+            "수량",
+            "합계",
+            "총",
+            "find",
+            "lookup",
+            "list",
+            "show",
+            "match",
+            "production",
+            "wip",
+            "quantity",
+            "total",
+        ],
+    ):
         return False
     metric_terms = [
         "생산량",
@@ -2242,7 +2270,55 @@ def _question_looks_like_product_token_lookup(question: str, metadata: dict[str,
         "합계",
         "총",
     ]
-    return not _mentions_any(text, metric_terms)
+    if _mentions_any(text, metric_terms):
+        return False
+    return True
+
+
+def _plan_has_unregistered_product_attribute_filters(
+    plan: dict[str, Any],
+    question: str,
+    metadata: dict[str, Any],
+) -> bool:
+    text = str(question or "")
+    if _explicit_previous_reference_requested(text):
+        return False
+    if _mentions_any(text, ["장비", "설비", "EQP", "equipment", "Equipment"]):
+        return False
+    if _matches_registered_product_term(text, metadata):
+        return False
+    token_columns = {
+        "TECH",
+        "DEN",
+        "DENSITY",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG1",
+        "PKG_TYPE2",
+        "PKG2",
+        "LEAD",
+        "MCP_NO",
+        "DEVICE",
+        "DEVICE_DESC",
+    }
+    for condition in _all_plan_filter_conditions(plan):
+        field = str(condition.get("field") or "").strip().upper()
+        if field in token_columns and _filter_value_appears_in_question(condition, question):
+            return True
+    return False
+
+
+def _all_plan_filter_conditions(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    conditions: list[dict[str, Any]] = []
+    filters = plan.get("filters") if isinstance(plan.get("filters"), list) else []
+    conditions.extend(item for item in filters if isinstance(item, dict))
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        job_filters = job.get("filters") if isinstance(job.get("filters"), list) else []
+        conditions.extend(item for item in job_filters if isinstance(item, dict))
+    return conditions
 
 
 def _matches_registered_product_term(question: str, metadata: dict[str, Any]) -> bool:
@@ -2280,15 +2356,17 @@ def _normalize_product_token_lookup_plan(
     function_case: dict[str, Any],
     question: str,
 ) -> None:
-    plan["analysis_kind"] = "detail_rows"
-    plan["product_grain"] = []
+    detail_lookup = _product_token_case_should_return_detail(plan, question)
     output_columns = _unique(
         [str(column) for column in case.get("output_columns", []) if str(column or "").strip()]
         or [str(column) for column in case.get("output_order", []) if str(column or "").strip()]
     )
-    if output_columns:
+    if detail_lookup:
+        plan["analysis_kind"] = "detail_rows"
+        plan["product_grain"] = []
+    if detail_lookup and output_columns:
         plan["analysis_output_columns"] = output_columns
-    if not _explicit_previous_reference_requested(question):
+    if detail_lookup and not _explicit_previous_reference_requested(question):
         plan["intent_type"] = "detail_lookup"
         plan.pop("state_product_keys", None)
         plan["depends_on_state"] = False
@@ -2314,6 +2392,7 @@ def _normalize_product_token_lookup_plan(
                 *[str(column) for column in case.get("required_source_columns", []) if str(column or "").strip()],
                 *[str(column) for column in case.get("token_columns", []) if str(column or "").strip()],
                 *[str(column) for column in case.get("output_columns", []) if str(column or "").strip()],
+                *sorted(token_columns),
             ]
         )
     _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
@@ -2321,8 +2400,9 @@ def _normalize_product_token_lookup_plan(
 
 def _ensure_pandas_function_case_step(plan: dict[str, Any], raw_jobs: list[Any], function_case: dict[str, Any]) -> None:
     source_alias = _first_source_alias(raw_jobs, plan)
+    step_id = str(function_case.get("key") or "apply_pandas_function_case")
     step = {
-        "step_id": str(function_case.get("key") or "apply_pandas_function_case"),
+        "step_id": step_id,
         "operation": "apply_pandas_function_case",
         "source_alias": source_alias,
         "function_case_key": function_case.get("key"),
@@ -2341,8 +2421,55 @@ def _ensure_pandas_function_case_step(plan: dict[str, Any], raw_jobs: list[Any],
         operation = str(existing.get("operation") or "").strip()
         if operation in {"filter_data", "detail_rows", "apply_pandas_function_case"}:
             continue
-        kept_steps.append(deepcopy(existing))
+        next_step = deepcopy(existing)
+        if source_alias and str(next_step.get("source_alias") or "").strip() == source_alias:
+            next_step.setdefault("input_step_id", step_id)
+        kept_steps.append(next_step)
     plan["step_plan"] = [step, *kept_steps]
+
+
+def _product_token_case_should_return_detail(plan: dict[str, Any], question: str) -> bool:
+    analysis_kind = str(plan.get("analysis_kind") or "").strip()
+    intent_type = str(plan.get("intent_type") or "").strip()
+    if analysis_kind in {"detail_rows", "detail_lookup"} or intent_type == "detail_lookup":
+        return True
+    metric_cues = [
+        "생산량",
+        "실적",
+        "재공",
+        "wip",
+        "production",
+        "target",
+        "목표",
+        "계획",
+        "달성률",
+        "수량",
+        "합계",
+        "총",
+    ]
+    if _mentions_any(question, metric_cues):
+        return False
+    aggregate_kinds = {
+        "aggregate_total",
+        "aggregate_join",
+        "aggregate_by_group",
+        "rank_top_n",
+        "single_retrieval_analysis",
+        "multi_source_analysis",
+        "multi_step_analysis",
+    }
+    if analysis_kind in aggregate_kinds or intent_type in aggregate_kinds:
+        return False
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        operation = str(step.get("operation") or "").strip()
+        if operation.startswith("aggregate") or operation in {"rank_top_n", "sum_by_group"}:
+            return False
+        if step.get("metric") or step.get("metrics"):
+            return False
+    return True
 
 
 def _first_source_alias(raw_jobs: list[Any], plan: dict[str, Any]) -> str:
@@ -2366,7 +2493,26 @@ def _case_token_columns(case: dict[str, Any]) -> set[str]:
         value = case.get(field)
         if isinstance(value, list):
             columns.update(str(column).strip().upper() for column in value if str(column or "").strip())
+    if not columns and str(case.get("function_name") or "").strip() == "match_product_tokens":
+        columns.update(_default_product_token_columns())
     return columns
+
+
+def _default_product_token_columns() -> list[str]:
+    return [
+        "TECH",
+        "DEN",
+        "DENSITY",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG1",
+        "PKG_TYPE2",
+        "PKG2",
+        "LEAD",
+        "MCP_NO",
+        "DEVICE",
+        "DEVICE_DESC",
+    ]
 
 
 def _remove_product_token_filters(filters: Any, token_columns: set[str], question: str) -> list[dict[str, Any]]:

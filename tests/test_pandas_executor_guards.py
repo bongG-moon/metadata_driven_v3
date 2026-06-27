@@ -649,8 +649,8 @@ def test_pandas_prompt_tells_llm_to_apply_retrieval_filters_in_pandas() -> None:
 
     result = prompt_builder.build_pandas_prompt_payload(payload)
 
-    assert "Source retrieval applies only required source parameters" in result["prompt"]
-    assert "Source filters to apply in pandas before analysis" in result["prompt"]
+    assert "Source retrieval은 DATE 또는 LOT_ID 같은 required source parameter만 적용" in result["prompt"]
+    assert "분석 전에 pandas에서 적용할 source filter" in result["prompt"]
     assert "W/B1" in result["prompt"]
     assert result["source_filters"] == {"wip_data": [{"field": "OPER_NAME", "op": "in", "values": ["W/B1", "W/B2"]}]}
 

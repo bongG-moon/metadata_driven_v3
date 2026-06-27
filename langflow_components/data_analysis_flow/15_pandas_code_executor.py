@@ -265,7 +265,7 @@ def _function_case_helpers(payload: dict[str, Any], generated_code: Any = "") ->
         if function_name not in helpers:
             errors.append(
                 f"pandas_function_cases.{case_key}.{function_name} implementation is missing. "
-                "Provide the helper code in 14 Pandas Prompt Builder.Pandas Function Cases or metadata function_code before running this analysis."
+                "Provide the helper code in 14 Pandas Prompt Builder.Specialized Functions or metadata function_code before running this analysis."
             )
     return helpers, errors
 
@@ -285,18 +285,18 @@ def _manual_function_case_helpers(
                 continue
             case_errors = _check_code_safety(helper_code)
             if case_errors:
-                errors.extend(f"pandas_function_cases_text.{function_name}: {error}" for error in case_errors)
+                errors.extend(f"specialized_functions_text.{function_name}: {error}" for error in case_errors)
                 continue
             local_vars: dict[str, Any] = {"pd": pd}
             safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
             try:
-                exec(compile(helper_code, f"<pandas_function_cases_text:{index}:{function_name}>", "exec"), safe_globals, local_vars)
+                exec(compile(helper_code, f"<specialized_functions_text:{index}:{function_name}>", "exec"), safe_globals, local_vars)
             except Exception as exc:
-                errors.append(f"pandas_function_cases_text.{function_name} failed to load: {exc}")
+                errors.append(f"specialized_functions_text.{function_name} failed to load: {exc}")
                 continue
             helper = local_vars.get(function_name)
             if not callable(helper):
-                errors.append(f"pandas_function_cases_text did not define callable {function_name}.")
+                errors.append(f"specialized_functions_text did not define callable {function_name}.")
                 continue
             helpers[function_name] = helper
     return helpers
@@ -399,7 +399,7 @@ def _manual_function_case_code_blocks(payload: dict[str, Any]) -> list[str]:
     clean_blocks = [str(block).strip() for block in blocks if str(block or "").strip()]
     if clean_blocks:
         return clean_blocks
-    manual = str(runtime.get("manual_text") or payload.get("pandas_function_cases_text") or "").strip()
+    manual = str(runtime.get("manual_text") or payload.get("specialized_functions_text") or "").strip()
     if not manual:
         return []
     fenced_blocks = re.findall(r"```(?:python|py)?\s*(.*?)```", manual, flags=re.IGNORECASE | re.DOTALL)

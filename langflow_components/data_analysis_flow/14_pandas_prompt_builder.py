@@ -19,14 +19,14 @@ from lfx.schema.message import Message
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: 의도 계획과 source preview를 바탕으로 pandas 코드 생성 LLM에 보낼 프롬프트를 만듭니다.
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
-def build_pandas_prompt_payload(payload_value: Any, pandas_function_cases_text: Any = "") -> dict[str, Any]:
+def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: Any = "") -> dict[str, Any]:
     payload = _payload(payload_value)
     if payload.get("direct_response_ready"):
         prompt = json.dumps(
             {
                 "code": "result_df = pd.DataFrame([])",
                 "output_columns": [],
-                "reasoning_steps": ["Direct metadata response already prepared; pandas execution should pass through."],
+                "reasoning_steps": ["메타데이터 직접 응답이 이미 준비되어 있으므로 pandas 실행은 그대로 통과시키면 됩니다."],
             },
             ensure_ascii=False,
         )
@@ -42,86 +42,88 @@ def build_pandas_prompt_payload(payload_value: Any, pandas_function_cases_text: 
         plan,
         str(request.get("question") or ""),
         source_summary,
-        pandas_function_cases_text,
+        specialized_functions_text,
     )
     payload_for_executor = deepcopy(payload)
     payload_for_executor["pandas_function_case_runtime"] = deepcopy(function_cases.get("runtime", {}))
 
     prompt = "\n".join(
         [
-            "You are the pandas code generation node for a Langflow manufacturing data agent.",
-            "Return one strict JSON object only. Do not wrap it in markdown.",
-            "Generate Python pandas code that uses only the provided variables: pd, sources, plan, state, and helper functions loaded from Specialized pandas function cases.",
-            "sources is a dict mapping source_alias to pandas DataFrame.",
-            "Use only source aliases that are actual keys in sources/source summaries, normally retrieval_jobs[*].source_alias. Do not invent generic aliases.",
-            "plan and state are Python dicts. Use plan['key'], plan.get('key'), state.get('key'); never use plan.key or state.key.",
-            "The code must assign the final pandas DataFrame to result_df.",
-            "Final result columns must use the standard contract names requested by the normalized plan.",
-            "Before this code runs, each source DataFrame is converted to a standardized pandas analysis view.",
-            "Physical source columns listed in table_catalog.filter_mappings/required_param_mappings/standard_column_aliases are renamed to the standard names used by the plan.",
-            "For joins, grouping, ranking, and output shaping, use the standard analysis column names from plan.",
-            "Do not expect both a physical column and its standard alias to remain in sources; use standard names from product_grain, group_by, join_keys, and analysis_output_columns.",
-            "Use physical source column names only when the source summary shows that column and the plan explicitly asks for a source-only measure/detail column with no standard alias.",
-            "Do not translate measure columns to Korean labels, and do not keep temporary names such as PRODUCTION_sum, WIP_sum, OUT_PLAN_sum, or lowercase rank in result_df.",
-            "Do not create or reference local variable names that start with an underscore, such as _prod_df or _filtered_df. Underscores inside names such as prod_df, wip_today_df, or WAFER_OUT_QTY are allowed.",
-            "Do not import modules. Do not read/write files. Do not use network, OS, eval, exec, open, or subprocess.",
-            "Do not use numpy, np, or np.where. Use pandas Series operations such as div, fillna, where, mask, and boolean comparisons.",
-            "Do not use pd.inf, float('inf'), or infinity replacement. Avoid division by zero with boolean masks before dividing.",
-            "For date/date-format handling, do not import datetime/date/timedelta. Use pandas only: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, or direct string comparison with the DATE values already present in plan filters/params.",
-            "If a dataset already received a DATE param/filter from metadata, prefer using that string value directly instead of recomputing dates inside pandas code.",
-            "Do not use .to_frame() in generated code. For one total row with multiple metrics, build result_df with pd.DataFrame([{...}]).",
-            "Do not use DataFrame.agg(named_metric=(column, func)).to_frame().T; DataFrame.agg can already return a DataFrame and then to_frame will fail.",
-            "When combining scalar totals from multiple sources with no group_by, create one DataFrame row directly instead of merging DataFrames with no common key.",
-            "If the generated code contains any import statement, the safety check will fail.",
+            "당신은 Langflow 제조 데이터 에이전트의 pandas code generation 노드입니다.",
+            "반드시 하나의 엄격한 JSON object만 반환하세요. markdown 코드블록으로 감싸지 마세요.",
+            "제공된 변수 pd, sources, plan, state와 Specialized Functions에서 로드된 helper function만 사용해서 Python pandas 코드를 생성하세요.",
+            "sources는 source_alias를 pandas DataFrame에 매핑하는 dict입니다.",
+            "source alias는 sources/source summary의 실제 key만 사용하세요. 보통 retrieval_jobs[*].source_alias입니다. generic alias를 임의로 만들지 마세요.",
+            "plan과 state는 Python dict입니다. plan['key'], plan.get('key'), state.get('key')를 사용하고 plan.key 또는 state.key는 절대 사용하지 마세요.",
+            "생성 코드는 최종 pandas DataFrame을 반드시 result_df에 할당해야 합니다.",
+            "최종 result column은 normalized plan이 요청한 standard contract name을 사용해야 합니다.",
+            "이 코드가 실행되기 전에 각 source DataFrame은 표준화된 pandas analysis view로 변환됩니다.",
+            "table_catalog.filter_mappings/required_param_mappings/standard_column_aliases에 있는 physical source column은 plan에서 사용하는 standard name으로 rename됩니다.",
+            "join, grouping, ranking, output shaping에는 plan의 standard analysis column name을 사용하세요.",
+            "sources에 physical column과 standard alias가 둘 다 남아 있을 것이라고 기대하지 마세요. product_grain, group_by, join_keys, analysis_output_columns의 standard name을 사용하세요.",
+            "source summary에 해당 physical column이 보이고 plan이 standard alias 없는 source-only measure/detail column을 명시적으로 요구할 때만 physical source column name을 사용하세요.",
+            "measure column을 한글 label로 번역하지 말고, PRODUCTION_sum, WIP_sum, OUT_PLAN_sum, lowercase rank 같은 임시 이름을 result_df에 남기지 마세요.",
+            "_prod_df 또는 _filtered_df처럼 underscore로 시작하는 local variable name을 만들거나 참조하지 마세요. prod_df, wip_today_df, WAFER_OUT_QTY처럼 이름 안의 underscore는 허용됩니다.",
+            "module을 import하지 마세요. 파일 read/write, network, OS, eval, exec, open, subprocess를 사용하지 마세요.",
+            "numpy, np, np.where를 사용하지 마세요. div, fillna, where, mask, boolean comparison 같은 pandas Series operation을 사용하세요.",
+            "pd.inf, float('inf'), infinity replacement를 사용하지 마세요. 나누기 전에 boolean mask로 division by zero를 피하세요.",
+            "date/date-format 처리는 datetime/date/timedelta를 import하지 마세요. pandas만 사용하세요: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, 또는 plan filters/params에 이미 있는 DATE value와 직접 string comparison.",
+            "metadata에서 이미 DATE param/filter를 받은 dataset은 pandas 코드 안에서 날짜를 다시 계산하지 말고 그 string value를 직접 사용하는 것을 우선하세요.",
+            "생성 코드에서 .to_frame()을 사용하지 마세요. 여러 metric의 one total row는 pd.DataFrame([{...}])로 result_df를 만드세요.",
+            "DataFrame.agg(named_metric=(column, func)).to_frame().T를 사용하지 마세요. DataFrame.agg는 이미 DataFrame을 반환할 수 있고, 이후 to_frame은 실패할 수 있습니다.",
+            "group_by가 없는 여러 source의 scalar total을 결합할 때는 공통 key 없는 DataFrame merge 대신 DataFrame row 하나를 직접 만드세요.",
+            "생성 코드에 import statement가 포함되면 safety check가 실패합니다.",
             "",
-            "Sequential plan execution rules:",
-            "- Source retrieval applies only required source parameters such as DATE or LOT_ID. Apply every retrieval_jobs[*].filters condition inside the pandas code before aggregation/ranking/joining.",
-            "- For filters, use the source_alias matching the retrieval job. Support op='eq', op='in', op='not_in', op='not_empty'/'exists', op='empty', op='starts_with', op='last_char_in', and numeric comparisons such as op='gte'/'gt'/'lte'/'lt'; ignore only PRODUCT_GRAIN/from_state filters that are explicitly state-driven.",
-            "- Read plan['step_plan'] and implement every step in order; do not collapse a multi-step plan into only the easiest count or groupby.",
-            "- Maintain a local dict named step_outputs. After every step, store the step DataFrame as step_outputs[step_id], and read previous steps from step_outputs for downstream filtering/joining.",
-            "- Preserve intermediate DataFrames for ranked/filtering steps, then use them in later filtering, aggregation, and join steps.",
-            "- If a step ranks top_n rows, perform that ranking before downstream metrics that depend on the ranked scope.",
-            "- Treat step_plan operations as reusable primitives: aggregate_sum/aggregate_by_group groups by step.group_by and aggregates step.metric or step.metrics; rank_top_n groups/sorts by step fields; equipment_count_by_product counts step.count_column.nunique by group_by; hold_lot_in_tat_by_process calculates metrics from step fields; left_join joins named previous steps by join_key/join_keys.",
-            "- For any rank step, aggregate the rank metric at the intended grain before sorting. Use step.group_by when present; if group_by is absent and step.grain is product, use plan['product_grain']; if the intent is total rank, use no group_by.",
-            "- Do not add retrieval filter fields to group_by just because those columns exist in the source. Filter fields are grouping columns only when the user explicitly asked for that raw breakdown axis.",
-            "- For rank_groups/per-group ranking, build the group label from step.rank_groups, aggregate by that group label plus the target entity grain, rank separately within each group label, and keep only the planned user-facing label/output columns in result_df.",
-            "- For dependent lookup/aggregate steps after a rank step, restrict the later source to the ranked entity keys from step_outputs instead of re-ranking or grouping by filter columns.",
-            "- Apply step.rename_columns when present before a later step references those renamed columns.",
-            "- If the question or plan asks for multiple metrics, compute all of them and include every plan['analysis_output_columns'] column in result_df when source data exists.",
-            "- If plan.matched_metric_terms or plan.metric_definitions contains formula/pandas_code_instructions, compute the derived row-level output columns first, then aggregate those output columns by step.group_by or total according to the aggregate step.",
-            "- For aggregate steps with empty group_by, return one total row. For aggregate steps with group_by, return one row per requested group. Do not return row-level details for aggregate plans.",
-            "- If plan.result_scope_columns exists, add each listed constant scope column to result_df unless result_df already has that column. These columns make aggregate rows self-describing, for example process group or product filter scope.",
-            "- Do not include raw source/filter condition columns in result_df when they are only used to build rank_groups or filters. Use plan.rank_group_output_column/RANK_GROUP and result_scope columns as the user-facing group labels instead.",
-            "- Do not use dotted source-qualified names such as sbm_wip.WIP or prod_today.PRODUCTION as final result column names. Use plain user-facing metric columns such as WIP, PRODUCTION, INPUT_QTY, TODAY_INPUT_QTY, or scope-prefixed names such as SBM_WIP and SG_WIP when two scopes with the same metric must both be shown.",
-            "- If generated output is missing required plan columns, the executor may replace it with a deterministic fallback.",
+            "순차 step_plan 실행 규칙:",
+            "- Source retrieval은 DATE 또는 LOT_ID 같은 required source parameter만 적용합니다. aggregation/ranking/joining 전에 retrieval_jobs[*].filters 조건은 pandas 코드 안에서 모두 적용하세요.",
+            "- filter에는 retrieval job과 일치하는 source_alias를 사용하세요. op='eq', op='in', op='not_in', op='not_empty'/'exists', op='empty', op='starts_with', op='last_char_in', op='gte'/'gt'/'lte'/'lt' 같은 numeric comparison을 지원하세요. 명시적으로 state-driven인 PRODUCT_GRAIN/from_state filter만 무시하세요.",
+            "- plan['step_plan']을 읽고 모든 step을 순서대로 구현하세요. multi-step plan을 쉬운 count나 groupby 하나로 축약하지 마세요.",
+            "- step_outputs라는 local dict를 유지하세요. 모든 step 이후 step DataFrame을 step_outputs[step_id]에 저장하고, downstream filtering/joining에는 step_outputs의 이전 step을 읽어 사용하세요.",
+            "- step에 input_step_id가 있으면 sources[source_alias]를 다시 읽지 말고 step_outputs[input_step_id]를 해당 step의 input DataFrame으로 사용하세요.",
+            "- apply_pandas_function_case step 이후 같은 source_alias에 대한 aggregate/rank/detail step이 이어지면 function-case output을 이후 step의 filtered source로 취급하세요.",
+            "- ranking/filtering step의 intermediate DataFrame을 보존하고, 나중의 filtering, aggregation, join step에서 사용하세요.",
+            "- step이 top_n row를 ranking하면 ranked scope에 의존하는 downstream metric보다 먼저 그 ranking을 수행하세요.",
+            "- step_plan operation은 재사용 primitive로 취급하세요: aggregate_sum/aggregate_by_group은 step.group_by로 group하고 step.metric 또는 step.metrics를 aggregate합니다. rank_top_n은 step field로 group/sort합니다. equipment_count_by_product는 group_by별 step.count_column.nunique를 계산합니다. hold_lot_in_tat_by_process는 step field에서 metric을 계산합니다. left_join은 이름이 있는 이전 step을 join_key/join_keys로 join합니다.",
+            "- 모든 rank step은 sorting 전에 intended grain에서 rank metric을 먼저 aggregate하세요. step.group_by가 있으면 그것을 사용하고, group_by가 없고 step.grain이 product이면 plan['product_grain']을 사용하세요. total rank 의도이면 group_by를 사용하지 마세요.",
+            "- retrieval filter field가 source에 존재한다는 이유만으로 group_by에 추가하지 마세요. filter field는 사용자가 raw breakdown axis를 명시적으로 요청한 경우에만 grouping column입니다.",
+            "- rank_groups/per-group ranking은 step.rank_groups로 group label을 만들고, 그 group label과 target entity grain으로 aggregate한 뒤, 각 group label 안에서 따로 rank하고, 계획된 user-facing label/output column만 result_df에 남기세요.",
+            "- rank step 이후 dependent lookup/aggregate step은 다시 ranking하거나 filter column으로 grouping하지 말고, step_outputs의 ranked entity key로 later source를 제한하세요.",
+            "- later step이 renamed column을 참조하기 전에 step.rename_columns가 있으면 먼저 적용하세요.",
+            "- 질문이나 plan이 여러 metric을 요구하면 모두 계산하고, source data가 있을 때 plan['analysis_output_columns']의 모든 column을 result_df에 포함하세요.",
+            "- plan.matched_metric_terms 또는 plan.metric_definitions에 formula/pandas_code_instructions가 있으면 derived row-level output column을 먼저 계산한 뒤 aggregate step에 따라 step.group_by 또는 total로 그 output column을 aggregate하세요.",
+            "- empty group_by가 있는 aggregate step은 one total row를 반환하세요. group_by가 있는 aggregate step은 요청한 group별 row를 반환하세요. aggregate plan에서 row-level detail을 반환하지 마세요.",
+            "- plan.result_scope_columns가 있으면 result_df에 이미 해당 column이 없는 한 각 scope column을 constant column으로 추가하세요. 이 column은 process group 또는 product filter scope처럼 aggregate row를 스스로 설명하게 합니다.",
+            "- raw source/filter condition column이 rank_groups 또는 filter를 만드는 데만 쓰이면 result_df에 포함하지 마세요. user-facing group label에는 plan.rank_group_output_column/RANK_GROUP과 result_scope column을 사용하세요.",
+            "- sbm_wip.WIP 또는 prod_today.PRODUCTION 같은 dotted source-qualified name을 final result column name으로 사용하지 마세요. WIP, PRODUCTION, INPUT_QTY, TODAY_INPUT_QTY 같은 plain user-facing metric column을 사용하고, 동일 metric의 두 scope를 함께 보여야 할 때만 SBM_WIP, SG_WIP 같은 scope-prefixed name을 사용하세요.",
+            "- generated output에 필요한 plan column이 빠지면 executor가 deterministic fallback으로 대체할 수 있습니다.",
             "",
-            "User question:",
+            "사용자 질문:",
             str(request.get("question") or ""),
             "",
-            "Normalized intent plan:",
+            "정규화된 intent plan:",
             json.dumps(plan, ensure_ascii=False, indent=2),
             "",
-            "Available source DataFrames:",
+            "사용 가능한 source DataFrame:",
             json.dumps(source_summary, ensure_ascii=False, indent=2),
             "",
-            "Source filters to apply in pandas before analysis:",
+            "분석 전에 pandas에서 적용할 source filter:",
             json.dumps(source_filters, ensure_ascii=False, indent=2),
             "",
-            "Specialized pandas function cases:",
+            "Specialized Functions:",
             function_cases["prompt_text"],
             "",
-            "Previous state summary:",
+            "이전 state 요약:",
             json.dumps(_state_summary(state), ensure_ascii=False, indent=2),
             "",
-            "Analysis instruction:",
+            "분석 지시:",
             _analysis_instruction(plan),
             "",
-            "Required JSON schema:",
+            "필수 JSON schema:",
             json.dumps(
                 {
-                    "code": "Python code. It must set result_df.",
-                    "output_columns": ["column names expected in result_df"],
-                    "reasoning_steps": ["short reasoning steps"],
+                    "code": "Python code. 반드시 result_df를 설정해야 합니다.",
+                    "output_columns": ["result_df에 예상되는 column name"],
+                    "reasoning_steps": ["짧은 reasoning step"],
                 },
                 ensure_ascii=False,
                 indent=2,
@@ -159,7 +161,7 @@ def _pandas_function_cases(
         cases.append(
             {
                 "key": "manual_text_input",
-                "source": "pandas_function_cases_text",
+                "source": "specialized_functions_text",
                 "instructions": manual,
                 "defined_functions": manual_function_names,
             }
@@ -184,8 +186,8 @@ def _pandas_function_cases(
                 "key": case.get("key"),
                 "function_name": case.get("function_name"),
                 "message": (
-                    f"{case.get('function_name')} is selected by pandas_function_cases.{case.get('key')} "
-                    "but no executable helper implementation was provided."
+                    f"pandas_function_cases.{case.get('key')}가 {case.get('function_name')} helper를 선택했지만 "
+                    "실행 가능한 helper 구현이 제공되지 않았습니다."
                 ),
             }
             for case in selected_domain_cases
@@ -195,23 +197,23 @@ def _pandas_function_cases(
     if not cases:
         return {
             "cases": [],
-            "prompt_text": "No specialized pandas function cases were selected.",
+            "prompt_text": "선택된 specialized pandas function case가 없습니다.",
             "runtime": runtime,
         }
     prompt_payload = {
         "rules": [
-            "These cases are reusable helper-function guidance. They do not add new data sources.",
-            "Metadata cases are selection hints only unless they include function_code.",
-            "Code pasted into pandas_function_cases_text is executable helper code for the selected function names.",
-            "Use the actual DataFrames in sources, not only preview_rows, when applying a function case.",
-            "If plan.pandas_function_case or a step_plan function_case_key/function_name names a case, call the selected helper function explicitly.",
-            "When a case provides function_name and function_code, that helper is loaded by the pandas executor. Call the helper directly; do not redefine it in generated code.",
-            "When a selected case provides function_name without function_code, that function must be defined in pandas_function_cases_text before analysis can proceed.",
-            "Do not synthesize, approximate, or redefine a selected helper from metadata hints alone.",
-            "If missing_helpers is not empty, return a JSON response whose code only creates an empty result_df and whose reasoning_steps explain that the selected helper implementation is missing.",
-            "For product-token lookup cases, filter the source rows by the concrete tokens from the user question. Returning the full product list without token filtering is invalid.",
-            "If a token cannot be matched to any configured token column, ignore that token for filtering instead of failing the whole analysis.",
-            "Return a real result_df from matched rows; do not print warnings or rely on print output.",
+            "이 case들은 재사용 helper-function 안내입니다. 새 data source를 추가하지 않습니다.",
+            "metadata case는 function_code가 포함된 경우를 제외하면 선택 힌트입니다.",
+            "Specialized Functions에 붙여넣은 code는 선택된 function_name에 대한 실행 가능한 helper code입니다.",
+            "function case를 적용할 때 preview_rows가 아니라 sources의 실제 DataFrame을 사용하세요.",
+            "plan.pandas_function_case 또는 step_plan의 function_case_key/function_name이 case를 지정하면 선택된 helper function을 명시적으로 호출하세요.",
+            "case가 function_name과 function_code를 제공하면 pandas executor가 해당 helper를 로드합니다. generated code에서는 helper를 직접 호출하고 재정의하지 마세요.",
+            "선택된 case가 function_name만 제공하고 function_code가 없으면 분석 전에 Specialized Functions에 해당 function이 정의되어 있어야 합니다.",
+            "metadata hint만 보고 선택된 helper를 합성, 근사 구현, 재정의하지 마세요.",
+            "missing_helpers가 비어 있지 않으면 code가 빈 result_df만 만들고 reasoning_steps에 선택된 helper 구현이 없다고 설명하는 JSON response를 반환하세요.",
+            "product-token lookup case에서는 사용자 질문의 concrete token으로 source row를 filter하세요. token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과입니다.",
+            "token이 설정된 token column 어디에도 match되지 않으면 전체 분석을 실패시키지 말고 해당 token만 filtering에서 제외하세요.",
+            "matched row로 실제 result_df를 반환하세요. print warning이나 print output에 의존하지 마세요.",
         ],
         "selected_cases": cases,
         "missing_helpers": runtime["missing_helpers"],
@@ -233,7 +235,7 @@ def _with_function_case_implementation_status(case: dict[str, Any], manual_funct
         result["implementation_source"] = "metadata.function_code"
     elif function_name in set(manual_function_names):
         result["implementation_available"] = True
-        result["implementation_source"] = "pandas_function_cases_text"
+        result["implementation_source"] = "specialized_functions_text"
     else:
         result["implementation_available"] = False
         result["implementation_source"] = ""
@@ -470,120 +472,131 @@ def _analysis_instruction(plan: dict[str, Any]) -> str:
     if function_case:
         function_name = str(function_case.get("function_name") or "").strip()
         input_text = str(function_case.get("input_text") or "").strip()
+        steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+        later_steps = [
+            step
+            for step in steps[1:]
+            if isinstance(step, dict) and str(step.get("operation") or "").strip() != "apply_pandas_function_case"
+        ]
+        if later_steps:
+            return (
+                f"먼저 선택된 pandas function case를 적용하세요. {function_name or 'the named helper'}를 "
+                f"input_text={input_text!r}와 planned source DataFrame으로 호출합니다. matched row를 "
+                "function-case step_id로 step_outputs에 저장하세요. 그 다음 remaining step_plan step을 순서대로 실행하고, "
+                "downstream aggregation, ranking, detail output에는 step.input_step_id 또는 function-case output을 filtered input으로 사용하세요. "
+                "최종 result_df는 helper output만이 아니라 전체 plan을 반영해야 합니다."
+            )
         return (
-            f"Apply the selected pandas function case with helper {function_name or 'the named helper'} "
-            f"to the step_plan source_alias. Use input_text={input_text!r} when calling/adapting the helper, "
-            "then assign the matched rows to result_df."
+            f"선택된 pandas function case를 helper {function_name or 'the named helper'}로 step_plan source_alias에 적용하세요. "
+            f"helper 호출 시 input_text={input_text!r}를 사용하고, matched row를 result_df에 할당하세요."
         )
     kind = plan.get("analysis_kind")
     product_keys = plan.get("product_grain", [])
     if kind == "rank_wip_then_join_production":
         return (
-            "Assign a user-facing group label from step_plan[0].rank_groups, aggregate WIP by that group label and product_grain, "
-            "rank separately inside each group label, keep top_n, aggregate PRODUCTION for the ranked product keys, then left join. "
-            "This is a multi-step question: first identify ranked products from WIP, then retrieve/aggregate production for those products. "
-            "Use plan.rank_group_output_column as the final group label column when present, otherwise use RANK_GROUP. "
-            "The raw rank_groups field is only for assigning labels and filtering; do not include it in the final result unless it is explicitly in analysis_output_columns. "
-            f"The final result_df columns must be exactly [group label, 'WIP_RANK'] + product_grain {product_keys} "
-            "+ ['WIP', 'PRODUCTION']. Do not output PRODUCTION_sum or rank."
+            "step_plan[0].rank_groups로 user-facing group label을 만들고, 그 group label과 product_grain별로 WIP를 aggregate하세요. "
+            "각 group label 안에서 별도로 rank하고 top_n을 유지한 뒤, ranked product key에 대해 PRODUCTION을 aggregate하고 left join하세요. "
+            "이 질문은 multi-step입니다. 먼저 WIP에서 ranked product를 찾고, 그 product에 대한 production을 조회/aggregate합니다. "
+            "plan.rank_group_output_column이 있으면 final group label column으로 사용하고, 없으면 RANK_GROUP을 사용하세요. "
+            "raw rank_groups field는 label 할당과 filtering에만 사용합니다. analysis_output_columns에 명시되지 않았으면 final result에 포함하지 마세요. "
+            f"최종 result_df column은 정확히 [group label, 'WIP_RANK'] + product_grain {product_keys} "
+            "+ ['WIP', 'PRODUCTION']이어야 합니다. PRODUCTION_sum 또는 rank를 출력하지 마세요."
         )
     if kind == "detail_rows":
         return (
-            "Return detail source rows without aggregation or groupby. "
-            "If step_plan[0].source_aliases exists, return rows from those aliases and add SOURCE_ALIAS so each row's source is clear; "
-            "otherwise return the requested detail columns from step_plan[0].source_alias."
+            "aggregation이나 groupby 없이 detail source row를 반환하세요. "
+            "step_plan[0].source_aliases가 있으면 해당 alias들의 row를 반환하고 각 row의 출처가 보이도록 SOURCE_ALIAS를 추가하세요. "
+            "그렇지 않으면 step_plan[0].source_alias에서 요청된 detail column을 반환하세요."
         )
     if kind == "rank_top_n":
         return (
-            "First copy the step source DataFrame and apply that source_alias retrieval filters from plan['retrieval_jobs'] "
-            "using pandas masks. Then aggregate the metric in step_plan[0].metric by "
-            f"product_grain {product_keys}, rank descending, keep top_n."
+            "먼저 step source DataFrame을 copy하고, plan['retrieval_jobs']의 해당 source_alias retrieval filter를 pandas mask로 적용하세요. "
+            "그 다음 step_plan[0].metric을 "
+            f"product_grain {product_keys}별로 aggregate하고 descending rank 후 top_n만 유지하세요."
         )
     if kind == "equipment_for_previous_products":
-        return "Filter equipment rows by plan.state_product_keys using product_grain, then return equipment detail columns."
+        return "product_grain을 사용해 plan.state_product_keys로 equipment row를 filter한 뒤 equipment detail column을 반환하세요."
     if kind == "equipment_count_for_previous_products":
         return (
-            "Filter equipment rows by plan.state_product_keys using product_grain, then calculate EQP_COUNT as EQPID.nunique(). "
-            f"Return product_grain {product_keys} plus ['EQP_COUNT']; do not use lot_status for this calculation."
+            "product_grain을 사용해 plan.state_product_keys로 equipment row를 filter한 뒤 EQPID.nunique()로 EQP_COUNT를 계산하세요. "
+            f"product_grain {product_keys}와 ['EQP_COUNT']를 반환하고, 이 계산에 lot_status를 사용하지 마세요."
         )
     if kind == "aggregate_join":
         return (
-            "Aggregate PRODUCTION and WIP from the exact retrieval job source aliases. "
-            "If product_grain/group_by is empty, calculate scalar totals from each source and build one result row directly with pd.DataFrame([{...}]); "
-            "do not merge scalar total DataFrames. If product_grain/group_by exists, aggregate each metric by that grain and outer join by that grain."
+            "정확한 retrieval job source alias에서 PRODUCTION과 WIP를 aggregate하세요. "
+            "product_grain/group_by가 비어 있으면 각 source에서 scalar total을 계산하고 pd.DataFrame([{...}])로 result row 하나를 직접 만드세요. "
+            "scalar total DataFrame끼리 merge하지 마세요. product_grain/group_by가 있으면 각 metric을 해당 grain별로 aggregate하고 그 grain으로 outer join하세요."
         )
     if kind == "production_wip_target_rate":
         return (
-            "Aggregate PRODUCTION, WIP, and OUT_PLAN by product_grain, join them, and calculate ACHIEVEMENT_RATE. "
-            f"The final result_df columns must be exactly product_grain {product_keys} plus "
-            "['WIP', 'PRODUCTION', 'OUT_PLAN', 'ACHIEVEMENT_RATE']."
+            "PRODUCTION, WIP, OUT_PLAN을 product_grain별로 aggregate하고 join한 뒤 ACHIEVEMENT_RATE를 계산하세요. "
+            f"최종 result_df column은 정확히 product_grain {product_keys}와 "
+            "['WIP', 'PRODUCTION', 'OUT_PLAN', 'ACHIEVEMENT_RATE']이어야 합니다."
         )
     if kind == "low_output_vs_target":
         return (
-            "Aggregate PRODUCTION and plan['target_column'] by product_grain. Rename the selected target measure "
-            "to TARGET_QTY in the final result, even when the source column is INPUT_PLAN or OUT_PLAN. "
-            "Calculate ACHIEVEMENT_RATE=PRODUCTION/TARGET_QTY, BALANCE=PRODUCTION-TARGET_QTY, and "
-            "LOW_OUTPUT_FLAG=ACHIEVEMENT_RATE < plan.get('threshold', 1.0). "
-            "When TARGET_QTY is zero, set ACHIEVEMENT_RATE to 0 using boolean masks; do not use pd.inf, float('inf'), numpy, or np.where. "
-            f"The final result_df columns must be exactly product_grain {product_keys} plus "
-            "['PRODUCTION', 'TARGET_QTY', 'ACHIEVEMENT_RATE', 'BALANCE', 'LOW_OUTPUT_FLAG']."
+            "PRODUCTION과 plan['target_column']을 product_grain별로 aggregate하세요. source column이 INPUT_PLAN 또는 OUT_PLAN이어도 "
+            "최종 result에서는 선택된 target measure를 TARGET_QTY로 rename하세요. "
+            "ACHIEVEMENT_RATE=PRODUCTION/TARGET_QTY, BALANCE=PRODUCTION-TARGET_QTY, "
+            "LOW_OUTPUT_FLAG=ACHIEVEMENT_RATE < plan.get('threshold', 1.0)를 계산하세요. "
+            "TARGET_QTY가 0이면 boolean mask로 ACHIEVEMENT_RATE를 0으로 설정하고, pd.inf, float('inf'), numpy, np.where를 사용하지 마세요. "
+            f"최종 result_df column은 정확히 product_grain {product_keys}와 "
+            "['PRODUCTION', 'TARGET_QTY', 'ACHIEVEMENT_RATE', 'BALANCE', 'LOW_OUTPUT_FLAG']이어야 합니다."
         )
     if kind == "lot_count_by_process":
-        return "Group lot_status rows by OPER_SHORT_DESC and calculate LOT_COUNT as LOT_ID.nunique()."
+        return "lot_status row를 OPER_SHORT_DESC별로 group하고 LOT_ID.nunique()로 LOT_COUNT를 계산하세요."
     if kind == "top_wip_process_hold_lot_in_tat":
         return (
-            "This is a sequential process-level analysis. Step 1: from the WIP source, group by OPER_NAME, "
-            "sum WIP, sort descending, keep step_plan[0].top_n, and rename the process output column to OPER_SHORT_DESC. "
-            "Step 2: from the lot_status source, use only rows whose OPER_SHORT_DESC/OPER_NAME is in those top processes; "
-            "calculate HOLD_LOT_COUNT as LOT_ID.nunique() where LOT_HOLD_STAT_CD means HOLD/ONHOLD, and calculate "
-            "AVG_IN_TAT as the numeric mean of IN_TAT for the selected process rows. Step 3: left join the lot metrics "
-            "to the ranked WIP result and return exactly ['OPER_SHORT_DESC', 'WIP', 'HOLD_LOT_COUNT', 'AVG_IN_TAT']."
+            "이것은 sequential process-level analysis입니다. Step 1: WIP source에서 OPER_NAME별로 group하고 "
+            "WIP를 sum한 뒤 descending sort, step_plan[0].top_n 유지, process output column을 OPER_SHORT_DESC로 rename하세요. "
+            "Step 2: lot_status source에서는 OPER_SHORT_DESC/OPER_NAME이 top process에 포함된 row만 사용하세요. "
+            "LOT_HOLD_STAT_CD가 HOLD/ONHOLD를 의미하는 row의 LOT_ID.nunique()로 HOLD_LOT_COUNT를 계산하고, "
+            "선택된 process row의 IN_TAT numeric mean으로 AVG_IN_TAT를 계산하세요. Step 3: lot metric을 ranked WIP result에 "
+            "left join하고 정확히 ['OPER_SHORT_DESC', 'WIP', 'HOLD_LOT_COUNT', 'AVG_IN_TAT']를 반환하세요."
         )
     if kind == "lot_quantity_summary":
         return (
-            "Return one row with LOT_COUNT=LOT_ID.nunique(), WF_QTY=sum(WF_QTY), DIE_QTY=sum(SUB_PROD_QTY). "
-            "The final result_df columns must be exactly ['LOT_COUNT', 'WF_QTY', 'DIE_QTY']."
+            "LOT_COUNT=LOT_ID.nunique(), WF_QTY=sum(WF_QTY), DIE_QTY=sum(SUB_PROD_QTY)를 가진 row 하나를 반환하세요. "
+            "최종 result_df column은 정확히 ['LOT_COUNT', 'WF_QTY', 'DIE_QTY']이어야 합니다."
         )
     if kind == "aggregate_wip_total":
-        return "Return one row with SCOPE=plan.scope_label or ALL and WIP=sum(WIP)."
+        return "SCOPE=plan.scope_label 또는 ALL, WIP=sum(WIP)를 가진 row 하나를 반환하세요."
     if kind == "aggregate_previous_source":
         return (
-            "Use the restored previous runtime source rows, not a new retrieval. "
-            "Read rows from step_plan[0].source_alias when present, otherwise use the first available source. "
-            "Group by step_plan[0].group_by or product_grain, sum plan.metric, and return the group columns plus the metric. "
-            "If group_by is empty, return one total row for the metric."
+            "새 retrieval이 아니라 restore된 previous runtime source row를 사용하세요. "
+            "step_plan[0].source_alias가 있으면 그 row를 읽고, 없으면 사용 가능한 첫 source를 사용하세요. "
+            "step_plan[0].group_by 또는 product_grain으로 group하고 plan.metric을 sum한 뒤 group column과 metric을 반환하세요. "
+            "group_by가 비어 있으면 metric에 대한 total row 하나를 반환하세요."
         )
     if kind == "overall_production_wip_target":
         return (
-            "Sum PRODUCTION, WIP, and OUT_PLAN independently and return one row. "
-            "Do not rename OUT_PLAN to TARGET. The final result_df columns must include ['PRODUCTION', 'WIP', 'OUT_PLAN']; "
-            "if you add SCOPE, set it to ALL."
+            "PRODUCTION, WIP, OUT_PLAN을 각각 독립적으로 sum하고 row 하나를 반환하세요. "
+            "OUT_PLAN을 TARGET으로 rename하지 마세요. 최종 result_df column에는 ['PRODUCTION', 'WIP', 'OUT_PLAN']이 포함되어야 합니다. "
+            "SCOPE를 추가한다면 ALL로 설정하세요."
         )
     if kind == "date_split_production_plan_gap":
         return (
-            "Aggregate yesterday PRODUCTION and today OUT_PLAN by product_grain, join by product_grain, and calculate "
-            "BALANCE=OUT_PLAN-PRODUCTION. In the final result, keep the measure columns named PRODUCTION, OUT_PLAN, "
-            f"and BALANCE. The final result_df columns must be exactly product_grain {product_keys} plus "
-            "['PRODUCTION', 'OUT_PLAN', 'BALANCE']; do not use names like yesterday_PRODUCTION or today_OUT_PLAN."
+            "yesterday PRODUCTION과 today OUT_PLAN을 product_grain별로 aggregate하고 product_grain으로 join한 뒤 "
+            "BALANCE=OUT_PLAN-PRODUCTION을 계산하세요. final result에서는 measure column 이름을 PRODUCTION, OUT_PLAN, "
+            f"BALANCE로 유지하세요. 최종 result_df column은 정확히 product_grain {product_keys}와 "
+            "['PRODUCTION', 'OUT_PLAN', 'BALANCE']이어야 합니다. yesterday_PRODUCTION 또는 today_OUT_PLAN 같은 이름을 사용하지 마세요."
         )
     if kind == "equipment_by_model":
         return (
-            "Group equipment rows by EQP_MODEL, calculate EQP_COUNT=EQPID.nunique() and PRESS_CNT=sum(PRESS_CNT). "
-            "The final result_df columns must be exactly ['EQP_MODEL', 'EQP_COUNT', 'PRESS_CNT']; "
-            "do not rename PRESS_CNT to TOTAL_PRESS_CNT and do not omit EQP_COUNT."
+            "equipment row를 EQP_MODEL별로 group하고 EQP_COUNT=EQPID.nunique(), PRESS_CNT=sum(PRESS_CNT)를 계산하세요. "
+            "최종 result_df column은 정확히 ['EQP_MODEL', 'EQP_COUNT', 'PRESS_CNT']이어야 합니다. "
+            "PRESS_CNT를 TOTAL_PRESS_CNT로 rename하지 말고 EQP_COUNT를 생략하지 마세요."
         )
     if _is_top_wip_product_oldest_lot_plan(plan):
         return (
-            "This is a sequential multi-source analysis. First aggregate WIP from the WIP source by product_grain "
-            f"{product_keys}, sort WIP descending, and keep the top product. Then filter lot_status rows to that "
-            "same product key, sort IN_TAT descending, and keep the top 1 oldest LOT. Return product_grain plus "
-            "['WIP', 'LOT_ID', 'IN_TAT']. Do not return an empty contract DataFrame unless the actual source rows "
-            "are empty after performing these steps."
+            "이것은 sequential multi-source analysis입니다. 먼저 WIP source에서 WIP를 product_grain "
+            f"{product_keys}별로 aggregate하고 WIP descending sort 후 top product를 유지하세요. 그 다음 lot_status row를 "
+            "같은 product key로 filter하고 IN_TAT descending sort 후 가장 오래된 top 1 LOT만 유지하세요. product_grain과 "
+            "['WIP', 'LOT_ID', 'IN_TAT']를 반환하세요. 실제 source row가 이 step 이후 비어 있는 경우가 아니면 empty contract DataFrame을 반환하지 마세요."
         )
     return (
-        "Use the normalized intent plan and step_plan to perform the requested pandas analysis over the provided "
-        "source DataFrames. Do not create an empty contract DataFrame unless the real source rows are empty after "
-        "applying the plan."
+        "제공된 source DataFrame에 대해 normalized intent plan과 step_plan을 사용해 요청된 pandas analysis를 수행하세요. "
+        "plan을 적용한 뒤 실제 source row가 비어 있는 경우가 아니면 empty contract DataFrame을 만들지 마세요."
     )
 
 
@@ -807,8 +820,8 @@ class PandasPromptBuilder(Component):
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),
         MessageTextInput(
-            name="pandas_function_cases_text",
-            display_name="Pandas Function Cases",
+            name="specialized_functions_text",
+            display_name="Specialized Functions",
             value="",
             required=False,
         ),
@@ -824,7 +837,7 @@ class PandasPromptBuilder(Component):
     def build_prompt(self) -> Message:
         prompt_payload = build_pandas_prompt_payload(
             getattr(self, "payload", None),
-            getattr(self, "pandas_function_cases_text", ""),
+            getattr(self, "specialized_functions_text", ""),
         )
 
         self.status = {
@@ -842,6 +855,6 @@ class PandasPromptBuilder(Component):
         return Data(
             data=build_pandas_prompt_payload(
                 getattr(self, "payload", None),
-                getattr(self, "pandas_function_cases_text", ""),
+                getattr(self, "specialized_functions_text", ""),
             )
         )

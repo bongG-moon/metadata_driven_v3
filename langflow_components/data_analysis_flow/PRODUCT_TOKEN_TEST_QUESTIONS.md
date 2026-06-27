@@ -2,7 +2,7 @@
 
 아래 질문은 현재 dummy/sample 데이터에 실제로 존재하는 제품 값 기준입니다.
 
-14 Pandas Prompt Builder의 `Pandas Function Cases` 입력칸에는 `PANDAS_FUNCTION_CASES_INPUT_GUIDE.md` 내용을 붙여넣고 테스트하세요.
+14 Pandas Prompt Builder의 `Specialized Functions` 입력칸에는 `prompts/SPECIALIZED_FUNCTIONS_INPUT_GUIDE.md` 내용을 붙여넣고 테스트하세요.
 
 ```text
 2048G H-HBM16E 제품 찾아줘
