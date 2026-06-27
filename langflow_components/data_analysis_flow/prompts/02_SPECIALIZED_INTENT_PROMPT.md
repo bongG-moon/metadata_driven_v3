@@ -20,6 +20,7 @@
 - lpddr4 lc 64g처럼 mode/density/package/lead/MCP-style 값이 여러 개 나열되고 product_terms로 정의된 제품군이 아니면 MODE/DEN/PKG_TYPE filter를 임의 생성하지 않는다.
 - 이런 경우 pandas_function_case=component_token_product_lookup을 설정하고 aggregate/rank/detail step 전에 apply_pandas_function_case step을 추가한다.
 - product-token function case에서는 retrieval_jobs가 helper에 필요한 제품 컬럼을 조회해야 하며, token match를 retrieval_jobs[].filters만으로 표현하지 않는다.
+- 단, "64G L-269 ASSY 제품 찾아줘"처럼 제품 token과 찾기/조회 의도만 있고 생산/재공/Lot/Hold/장비/dataset 같은 source family 단서가 없으면 wip_today나 production_today를 임의로 선택하지 않는다. 이 경우 dataset 선택이 불명확하다고 reasoning_steps에 남기고 retrieval_jobs를 만들지 않는다.
 - POP, MOBILE, HBM, AUTO향 같은 등록 product_terms는 ordinary metadata-backed filter condition이다. 이 제품군 조건은 pandas function case가 아니다.
 - product_terms의 raw condition field는 filter로만 쓰고, 필요하면 PRODUCT_GROUP 같은 사용자-facing scope label을 result_scope_columns/output_columns에 남긴다.
 - ranked 또는 aggregated entity가 DEVICE이면 DEVICE 기준으로 group/rank한다. MOBILE 같은 product filter가 있다고 product_grain으로 바꾸지 않는다.
@@ -72,4 +73,3 @@ source scope 분리 예시:
 - 전일/금일 같은 표현이 한 질문에 같이 있어도 source_scope에 따라 각 source의 date scope를 분리한다.
 - today_input, yesterday_input, DA production, WB wip, input source, comparison source, all-process wip 같은 source-local hint는 retrieval_jobs[].source_scope에 남기고 해당 job의 params/filters에만 반영한다.
 ```
-

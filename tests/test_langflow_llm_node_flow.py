@@ -1090,10 +1090,8 @@ def test_pandas_prompt_recognizes_raw_specialized_function_definition_without_ma
     }
     helper_text = "\n".join(
         [
-            "def match_product_tokens(input_text, products_df=None, source_df=None, frame=None):",
-            "    products_df = products_df if products_df is not None else source_df",
-            "    products_df = products_df if products_df is not None else frame",
-            "    return products_df.copy()",
+            "def match_product_tokens(input_text, source_df):",
+            "    return source_df.copy()",
         ]
     )
 
@@ -1104,9 +1102,9 @@ def test_pandas_prompt_recognizes_raw_specialized_function_definition_without_ma
     assert runtime["missing_helpers"] == []
     assert "missing_helpers" in prompt_payload["prompt"]
     assert "match_product_tokens" in prompt_payload["prompt"]
-    assert "match_product_tokens(input_text, products_df=None, source_df=None, frame=None)" in prompt_payload["prompt"]
+    assert "match_product_tokens(input_text, source_df)" in prompt_payload["prompt"]
     assert "def match_product_tokens" in prompt_payload["prompt"]
-    assert "return products_df.copy()" in prompt_payload["prompt"]
+    assert "return source_df.copy()" in prompt_payload["prompt"]
 
 
 def test_intent_prompt_includes_specialized_prompt_text_input() -> None:
@@ -1557,18 +1555,21 @@ def test_pandas_executor_loads_function_case_helper_from_text_input_message_obje
     helper_text = "\n".join(
         [
             "```python",
-            "def match_product_tokens(input_text, products_df=None, source_df=None, frame=None):",
-            "    products_df = products_df if products_df is not None else source_df",
-            "    products_df = products_df if products_df is not None else frame",
-            "    result = products_df.copy()",
-            "    return result[result['MCP_NO'].astype(str).str.startswith('G-777')].reset_index(drop=True)",
+            "def match_product_tokens(input_text, source_df):",
+            "    result = source_df.copy()",
+            "    result = result[result['MCP_NO'].astype(str).str.startswith('G-777')].reset_index(drop=True)",
+            "    result.attrs['matched_conditions'] = [",
+            "        {'token': '512G', 'column': 'DEN', 'match_type': 'eq', 'value': '512G'},",
+            "        {'token': 'G-777', 'column': 'MCP_NO', 'match_type': 'startswith', 'value': 'G-777'},",
+            "    ]",
+            "    return result",
             "```",
         ]
     )
     pandas_llm_json = {
         "code": "\n".join(
             [
-                "match_product_df = match_product_tokens(input_text='512G G-777', source_df=sources['production_data'])",
+                "match_product_df = match_product_tokens('512G G-777', sources['production_data'])",
                 "total_production = match_product_df['PRODUCTION'].sum()",
                 "result_df = pd.DataFrame([{'PRODUCTION': total_production}])",
             ]
@@ -1584,6 +1585,10 @@ def test_pandas_executor_loads_function_case_helper_from_text_input_message_obje
 
     assert result["analysis"]["status"] == "ok"
     assert result["analysis"]["rows"] == [{"PRODUCTION": 3}]
+    assert result["analysis"]["function_case_trace"]["dataframe_attrs"]["match_product_df"]["matched_conditions"] == [
+        {"token": "512G", "column": "DEN", "match_type": "eq", "value": "512G"},
+        {"token": "G-777", "column": "MCP_NO", "match_type": "startswith", "value": "G-777"},
+    ]
 
 
 def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(monkeypatch: Any) -> None:
@@ -1592,7 +1597,7 @@ def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(m
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
     pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
 
-    question = "64G L-269P1Q 제품 찾아줘"
+    question = "생산 데이터에서 64G L-269P1Q 제품 찾아줘"
     payload = request_loader.build_request_payload(question, "test-session", request_date="20260626")
     payload["state"] = {
         "current_data": {
@@ -1658,6 +1663,47 @@ def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(m
 
     assert prompt_payload["pandas_function_cases"][-1]["key"] == "component_token_product_lookup"
     assert "선택된 pandas function case를 helper match_product_tokens" in prompt_payload["prompt"]
+
+
+def test_intent_normalizer_rejects_ambiguous_product_token_dataset_guess(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    question = "64G L-269 ASSY 제품 찾아줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260628")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "detail_lookup",
+        "analysis_kind": "detail_rows",
+        "datasets": ["wip_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wip_data",
+                "purpose": "Guess WIP data for product lookup.",
+                "params": {"DATE": "20260628"},
+                "filters": [
+                    {"field": "DEN", "op": "eq", "value": "64G"},
+                    {"field": "MCP_NO", "op": "eq", "value": "L-269"},
+                    {"field": "ORG", "op": "eq", "value": "ASSY"},
+                ],
+            }
+        ],
+        "step_plan": [{"step_id": "filter_wip", "operation": "filter_data", "source_alias": "wip_data"}],
+        "reasoning_steps": ["Incorrectly guess wip_today for product lookup."],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+
+    assert plan["pandas_function_case"]["key"] == "component_token_product_lookup"
+    assert plan["pandas_function_case"]["function_name"] == "match_product_tokens"
+    assert plan["requires_dataset_selection"] is True
+    assert plan["datasets"] == []
+    assert payload["retrieval_jobs"] == []
+    assert plan["step_plan"] == []
+    assert any("제품 token만으로는 조회 dataset을 확정할 수 없습니다" in item for item in plan["normalizer_errors"])
 
 
 def test_intent_normalizer_routes_product_token_metric_filters_to_function_case(monkeypatch: Any) -> None:

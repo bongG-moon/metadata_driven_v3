@@ -92,13 +92,21 @@ def test_specialized_product_helper_uses_mcp_prefix_and_ignores_org() -> None:
         ]
     )
 
-    result = namespace["match_product_tokens"]("64G L-269제품 ASSY", source_df=products)
+    result = namespace["match_product_tokens"]("64G L-269제품 ASSY", products)
     org_only = namespace["match_product_tokens"]("ASSY", products)
 
     assert result["MCP_NO"].tolist() == ["L-269P1Q"]
     assert result["PRODUCTION"].tolist() == [10]
     assert "ORG" not in result.columns
+    assert result.attrs["matched_conditions"] == [
+        {"token": "64G", "column": "DEN", "match_type": "eq", "value": "64G"},
+        {"token": "L-269제품", "column": "MCP_NO", "match_type": "startswith", "value": "L-269"},
+        {"token": "ASSY", "column": "", "match_type": "unmatched", "value": "ASSY"},
+    ]
     assert org_only.empty
+    assert org_only.attrs["matched_conditions"] == [
+        {"token": "ASSY", "column": "", "match_type": "unmatched", "value": "ASSY"}
+    ]
 
 
 def test_component_token_product_lookup_metadata_is_selection_hint_only() -> None:

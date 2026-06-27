@@ -217,6 +217,10 @@ def _pandas_section(payload: dict[str, Any]) -> str:
         for index, step in enumerate(reasoning_steps[:8], start=1):
             lines.append(f"  {index}. {step}")
 
+    function_case_trace = analysis.get("function_case_trace")
+    if function_case_trace not in (None, "", [], {}):
+        lines.append("- 함수 조건 매핑: `" + _display_value(function_case_trace) + "`")
+
     code = str(analysis.get("analysis_code") or "").strip()
     if not code:
         pandas_json = analysis.get("pandas_code_json") if isinstance(analysis.get("pandas_code_json"), dict) else {}

@@ -150,6 +150,7 @@ def _execute_generated_pandas_code(
     safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
     try:
         exec(compile(code, "<llm_pandas_code>", "exec"), safe_globals, local_vars)
+        function_case_trace = _function_case_trace_from_locals(local_vars)
         result_df = local_vars.get("result_df")
         if result_df is None or not hasattr(result_df, "to_dict"):
             raise ValueError("Generated code must assign a pandas DataFrame to result_df.")
@@ -190,11 +191,12 @@ def _execute_generated_pandas_code(
         result_df = _normalize_result_columns(fallback_df, plan)
         repairable_errors.append(f"Generated pandas code failed before executor fallback: {exc}")
         code = code + f"\n# executor_fallback: {exc}"
+        function_case_trace = {}
 
     rows = result_df.to_dict(orient="records")
     product_key_columns = _product_key_columns(plan, list(result_df.columns))
     product_key_values = _product_key_values(rows, product_key_columns)
-    return {
+    analysis = {
         "status": "ok",
         "analysis_kind": plan.get("analysis_kind"),
         "analysis_code": code,
@@ -213,6 +215,9 @@ def _execute_generated_pandas_code(
         "output_columns": pandas_plan.get("output_columns", []),
         "reasoning_steps": pandas_plan.get("reasoning_steps", []),
     }
+    if function_case_trace:
+        analysis["function_case_trace"] = function_case_trace
+    return analysis
 
 
 def _function_case_helpers(payload: dict[str, Any], generated_code: Any = "") -> tuple[dict[str, Any], list[str]]:
@@ -424,6 +429,51 @@ def _function_case_code_text(value: Any) -> str:
     if isinstance(value, list):
         return "\n".join(str(line) for line in value)
     return str(value or "").strip()
+
+
+def _function_case_trace_from_locals(local_vars: dict[str, Any]) -> dict[str, Any]:
+    trace: dict[str, Any] = {}
+    for name in ("matched_conditions", "matched_conditions_df", "condition_trace", "function_case_trace"):
+        if name in local_vars:
+            trace[name] = _trace_value(local_vars[name])
+
+    dataframes: dict[str, Any] = {}
+    for name, value in local_vars.items():
+        if name.startswith("__") or not hasattr(value, "attrs"):
+            continue
+        attrs = getattr(value, "attrs", {})
+        if not isinstance(attrs, dict):
+            continue
+        matched_conditions = attrs.get("matched_conditions")
+        if matched_conditions not in (None, "", [], {}):
+            dataframes[name] = {"matched_conditions": _trace_value(matched_conditions)}
+    if dataframes:
+        trace["dataframe_attrs"] = dataframes
+
+    step_outputs = local_vars.get("step_outputs")
+    if isinstance(step_outputs, dict):
+        step_trace = {}
+        for key, value in step_outputs.items():
+            key_text = str(key)
+            lowered = key_text.lower()
+            if any(marker in lowered for marker in ("condition", "trace", "mapping")):
+                step_trace[key_text] = _trace_value(value)
+        if step_trace:
+            trace["step_outputs"] = step_trace
+    return {key: value for key, value in trace.items() if value not in (None, "", [], {})}
+
+
+def _trace_value(value: Any) -> Any:
+    if hasattr(value, "to_dict"):
+        try:
+            return _json_ready(value.head(100).to_dict(orient="records"))
+        except TypeError:
+            pass
+    if isinstance(value, dict):
+        return {str(key): _trace_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_trace_value(item) for item in list(value)[:100]]
+    return _json_ready(value)
 
 
 def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.DataFrame:

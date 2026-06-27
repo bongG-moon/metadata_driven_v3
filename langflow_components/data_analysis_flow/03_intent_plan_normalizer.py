@@ -60,7 +60,7 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
     raw_jobs = _repair_lot_count_plan(plan, raw_jobs, catalog, question, notes)
     raw_jobs = _repair_followup_equipment_plan(plan, raw_jobs, catalog, question, notes)
     _repair_followup_analysis_kind(plan, raw_jobs, catalog, notes)
-    raw_jobs = _normalize_pandas_function_case_intent(plan, raw_jobs, metadata, question, notes)
+    raw_jobs = _normalize_pandas_function_case_intent(plan, raw_jobs, metadata, question, notes, errors)
     for index, raw_job in enumerate(raw_jobs):
         if not isinstance(raw_job, dict):
             continue
@@ -117,7 +117,10 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
         _attach_column_standardization_contract(job, dataset_catalog)
         normalized_jobs.append(job)
     plan["retrieval_jobs"] = normalized_jobs
-    plan["datasets"] = _unique([job["dataset_key"] for job in normalized_jobs] or llm_json.get("datasets", []))
+    if plan.get("requires_dataset_selection"):
+        plan["datasets"] = []
+    else:
+        plan["datasets"] = _unique([job["dataset_key"] for job in normalized_jobs] or llm_json.get("datasets", []))
     if normalized_jobs:
         plan["pandas_preprocessing"] = {
             "standardize_columns": True,
@@ -135,7 +138,10 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
     _normalize_intent_type_for_analysis(plan, normalized_jobs)
     _mark_previous_result_restore_need(plan, payload, question, notes)
     normalized_jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else normalized_jobs
-    plan["datasets"] = _unique([job["dataset_key"] for job in normalized_jobs if isinstance(job, dict) and job.get("dataset_key")] or plan.get("datasets", []))
+    if plan.get("requires_dataset_selection"):
+        plan["datasets"] = []
+    else:
+        plan["datasets"] = _unique([job["dataset_key"] for job in normalized_jobs if isinstance(job, dict) and job.get("dataset_key")] or plan.get("datasets", []))
     plan["route"] = _route_for_intent(plan.get("intent_type"), len(normalized_jobs))
     plan["normalizer_errors"] = errors
     plan["normalizer_notes"] = notes
@@ -2125,6 +2131,7 @@ def _normalize_pandas_function_case_intent(
     metadata: dict[str, Any],
     question: str,
     notes: list[str],
+    errors: list[str],
 ) -> list[Any]:
     case_key, case = _matched_pandas_function_case(plan, metadata, question)
     if not case_key or not case:
@@ -2148,7 +2155,7 @@ def _normalize_pandas_function_case_intent(
     plan["pandas_function_case"] = function_case
 
     if _is_product_token_function_case(case_key, case):
-        _normalize_product_token_lookup_plan(plan, raw_jobs, case, function_case, question)
+        _normalize_product_token_lookup_plan(plan, raw_jobs, case, function_case, question, errors)
         _append_once(notes, f"제품 토큰 조회는 pandas_function_cases.{case_key} helper로 처리하도록 정규화했습니다.")
     else:
         _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
@@ -2355,6 +2362,7 @@ def _normalize_product_token_lookup_plan(
     case: dict[str, Any],
     function_case: dict[str, Any],
     question: str,
+    errors: list[str],
 ) -> None:
     detail_lookup = _product_token_case_should_return_detail(plan, question)
     output_columns = _unique(
@@ -2372,6 +2380,21 @@ def _normalize_product_token_lookup_plan(
         plan["depends_on_state"] = False
         plan["requires_full_previous_result_restore"] = False
         plan.pop("previous_result_restore_mode", None)
+    if _product_token_detail_lookup_needs_dataset_selection(plan, question):
+        raw_jobs.clear()
+        plan["datasets"] = []
+        plan["retrieval_jobs"] = []
+        plan["step_plan"] = []
+        plan["requires_dataset_selection"] = True
+        plan["dataset_selection_reason"] = (
+            "제품 token detail lookup이지만 생산/재공/Lot/Hold/장비 같은 dataset family 단서가 없어 "
+            "조회 dataset을 확정할 수 없습니다."
+        )
+        _append_once(
+            errors,
+            "제품 token만으로는 조회 dataset을 확정할 수 없습니다. 생산량, 재공, Lot/Hold, 장비, 또는 특정 dataset/source를 함께 지정해야 합니다.",
+        )
+        return
 
     token_columns = _case_token_columns(case)
     plan["filters"] = _remove_product_token_filters(plan.get("filters", []), token_columns, question)
@@ -2396,6 +2419,44 @@ def _normalize_product_token_lookup_plan(
             ]
         )
     _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
+
+
+def _product_token_detail_lookup_needs_dataset_selection(plan: dict[str, Any], question: str) -> bool:
+    if not _product_token_case_should_return_detail(plan, question):
+        return False
+    if _explicit_previous_reference_requested(question):
+        return False
+    return not _question_has_product_token_dataset_cue(question)
+
+
+def _question_has_product_token_dataset_cue(question: str) -> bool:
+    return _mentions_any(
+        question,
+        [
+            "생산",
+            "실적",
+            "production",
+            "PRODUCTION",
+            "재공",
+            "wip",
+            "WIP",
+            "Lot",
+            "LOT",
+            "lot",
+            "Hold",
+            "HOLD",
+            "hold",
+            "장비",
+            "설비",
+            "equipment",
+            "Equipment",
+            "EQP",
+            "dataset",
+            "데이터셋",
+            "source",
+            "소스",
+        ],
+    )
 
 
 def _ensure_pandas_function_case_step(plan: dict[str, Any], raw_jobs: list[Any], function_case: dict[str, Any]) -> None:

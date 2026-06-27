@@ -16,126 +16,78 @@
 이 helper는 조회된 제품 데이터에서 TECH, DEN/DENSITY, MODE, PKG1/PKG_TYPE1, PKG2/PKG_TYPE2, LEAD, MCP_NO 값을 입력 토큰과 비교해서 일치하는 행을 반환한다.
 MCP_NO는 사용자가 L-269처럼 앞부분만 입력해도 실제 L-269P1Q 같은 값과 startswith로 매칭한다.
 G-777제품처럼 제품 토큰 뒤에 한국어 명사/동사가 붙어도 G-777 token으로 정리해서 매칭한다.
-pandas 생성 코드는 이 함수를 재정의하지 말고 match_product_tokens(input_text, sources[source_alias])처럼 positional argument로 호출한다.
+어떤 입력 토큰이 어떤 컬럼 조건으로 해석됐는지 기록하기 위해 반환 DataFrame의 attrs["matched_conditions"]에 token, column, match_type, value를 남긴다.
+pandas 생성 코드는 이 helper 예시 형태를 참고해서 작성하고, helper를 호출할 때는 match_product_tokens(input_text, sources[source_alias])처럼 positional argument를 사용한다.
 ```
 
 아래 Python 코드블록은 실행 환경에 로드되는 helper 정의다. 이 코드블록은 14번, 첫 번째 15번, 두 번째 15번의 `Specialized Functions` 입력에 같은 내용으로 넣는다.
 
 ```python
-def match_product_tokens(input_text, products_df=None, source_df=None, frame=None):
-    products_df = products_df if products_df is not None else source_df
-    products_df = products_df if products_df is not None else frame
-    if products_df is None:
+def match_product_tokens(input_text, source_df):
+    token_columns = ["TECH", "DEN", "DENSITY", "MODE", "PKG_TYPE1", "PKG1", "PKG_TYPE2", "PKG2", "LEAD", "MCP_NO"]
+    output_columns = ["TECH", "DEN", "DENSITY", "PKG_TYPE1", "PKG1", "LEAD", "PKG_TYPE2", "PKG2", "MODE", "MCP_NO"]
+    if source_df is None:
         return pd.DataFrame()
 
-    token_columns = [
-        "TECH",
-        "DEN",
-        "DENSITY",
-        "MODE",
-        "PKG_TYPE1",
-        "PKG1",
-        "PKG_TYPE2",
-        "PKG2",
-        "LEAD",
-        "MCP_NO",
-    ]
-    output_columns = [
-        "TECH",
-        "DEN",
-        "DENSITY",
-        "PKG_TYPE1",
-        "PKG1",
-        "LEAD",
-        "PKG_TYPE2",
-        "PKG2",
-        "MODE",
-        "MCP_NO",
-    ]
-
-    result = products_df.copy()
+    result = source_df.copy()
 
     def normalize_token(value):
         return str(value or "").strip().upper()
 
-    def looks_like_mcp_prefix(value):
-        if "-" not in value:
-            return False
-        left, right = value.split("-", 1)
-        digit_prefix = ""
-        for character in right:
-            if not character.isdigit():
-                break
-            digit_prefix += character
-        return bool(left.isalpha() and len(digit_prefix) >= 2)
-
-    def input_tokens(text):
-        cleaned = str(text or "")
-        for separator in [",", "\n", "\t", "(", ")", "[", "]", "{", "}", ":", ";"]:
-            cleaned = cleaned.replace(separator, " ")
-        suffixes = [
-            "제품의",
-            "제품",
-            "생산량",
-            "수량",
-            "실적",
-            "리스트",
-            "목록",
-            "조회",
-            "찾아줘",
-            "보여줘",
-            "알려줘",
-            "찾아",
-            "보여",
-            "알려",
-        ]
-        normalized_suffixes = [normalize_token(suffix) for suffix in suffixes]
-        for raw_token in cleaned.split():
-            token = normalize_token(raw_token)
-            changed = True
-            while token and changed:
-                changed = False
-                for suffix in normalized_suffixes:
-                    if token == suffix:
-                        token = ""
-                        changed = True
-                        break
-                    if token.endswith(suffix):
-                        token = token[: -len(suffix)].strip()
-                        changed = True
-                        break
-            if token:
-                yield token
+    def clean_input_token(token):
+        token = normalize_token(token)
+        for suffix in ["제품의", "제품", "생산량", "수량", "실적", "리스트", "목록", "조회", "찾아줘", "보여줘", "알려줘"]:
+            normalized_suffix = normalize_token(suffix)
+            if token.endswith(normalized_suffix):
+                token = token[: -len(normalized_suffix)]
+        return token
 
     matched_conditions = []
-    for normalized_token in input_tokens(input_text):
+    cleaned_text = str(input_text or "").replace(",", " ")
+    for raw_token in cleaned_text.split():
+        normalized_token = clean_input_token(raw_token)
+        if not normalized_token:
+            continue
+        matched = False
         for column in token_columns:
             if column not in result.columns:
                 continue
             column_values = result[column].dropna().map(normalize_token)
-            if column == "MCP_NO" and looks_like_mcp_prefix(normalized_token):
+            if column == "MCP_NO" and "-" in normalized_token:
                 if column_values.str.startswith(normalized_token, na=False).any():
-                    matched_conditions.append((column, normalized_token, "startswith"))
+                    matched_conditions.append({"token": raw_token, "column": column, "match_type": "startswith", "value": normalized_token})
+                    matched = True
                     break
             elif normalized_token in set(column_values):
-                matched_conditions.append((column, normalized_token, "eq"))
+                matched_conditions.append({"token": raw_token, "column": column, "match_type": "eq", "value": normalized_token})
+                matched = True
                 break
+        if not matched:
+            matched_conditions.append({"token": raw_token, "column": "", "match_type": "unmatched", "value": normalized_token})
 
-    for column, normalized_token, match_type in matched_conditions:
+    filter_conditions = [condition for condition in matched_conditions if condition["column"]]
+    for condition in filter_conditions:
+        column = condition["column"]
+        normalized_token = condition["value"]
+        match_type = condition["match_type"]
         values = result[column].map(normalize_token)
         if match_type == "startswith":
             result = result[values.str.startswith(normalized_token, na=False)]
         else:
             result = result[values == normalized_token]
 
-    if not matched_conditions:
-        return products_df.head(0).copy()
+    if not filter_conditions:
+        empty_result = source_df.head(0).copy()
+        empty_result.attrs["matched_conditions"] = matched_conditions
+        return empty_result
 
     selected_columns = [column for column in output_columns if column in result.columns]
-    extra_columns = [column for column in products_df.columns if column not in selected_columns and column != "ORG"]
+    extra_columns = [column for column in source_df.columns if column not in selected_columns and column != "ORG"]
     if selected_columns:
         result = result[[*selected_columns, *extra_columns]]
-    return result.drop_duplicates().reset_index(drop=True)
+    result = result.drop_duplicates().reset_index(drop=True)
+    result.attrs["matched_conditions"] = matched_conditions
+    return result
 ```
 
 ---
@@ -148,7 +100,7 @@ def match_product_tokens(input_text, products_df=None, source_df=None, frame=Non
 Lot Hold 또는 Lot 상태를 복합 조건으로 찾는 질문에서는 match_lot_hold_conditions helper를 사용한다.
 사용자가 작업대기, Hold 사유, 공정명, Lot ID, IN_TAT/HOLD_TM 조건을 섞어서 입력하면 조회된 Lot/Hold 데이터의 실제 컬럼 값과 매칭해서 일치하는 row를 반환한다.
 상태/사유/공정/Lot token은 가능한 컬럼에서 찾고, 24시간 이상처럼 숫자와 이상/이하 표현이 있으면 TAT 계열 컬럼에 조건을 적용한다.
-pandas 생성 코드는 이 함수를 재정의하지 말고 match_lot_hold_conditions(input_text, sources[source_alias])처럼 호출한다.
+pandas 생성 코드는 이 helper 예시 형태를 참고해서 작성하고, helper를 호출할 때는 match_lot_hold_conditions(input_text, sources[source_alias])처럼 positional argument를 사용한다.
 ```
 
 아래 Python 코드블록은 실행 환경에 로드되는 helper 정의다.

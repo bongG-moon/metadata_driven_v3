@@ -55,7 +55,7 @@ VALIDATION_QUESTIONS = [
     "현재 DA공정 재공 수량 알려줘",
     "오늘 D/A1공정에서 목표값 대비해서 생산량이 저조한 제품을 알려줘",
     "오늘 HBM 장비 보유 현황을 EQP_MODEL별로 알려줘",
-    "64G L-269P1Q 제품 찾아줘",
+    "생산 데이터에서 64G L-269P1Q 제품 찾아줘",
     "오늘 lpddr4 lc 64g 제품 생산량 알려줘",
     "오늘 HBM 제품 생산량 알려줘",
     "Lot ID와 Hold 사유, IN_TAT 조건을 섞은 Lot/Hold 조회",
@@ -90,7 +90,7 @@ def main() -> int:
     print(f"- prompt files checked: {len(REQUIRED_TOKENS_BY_FILE)} Korean files")
     print(f"- validation questions checked: {len(VALIDATION_QUESTIONS)}")
     print(f"- deterministic reference question contracts passed: {reference_passed}/{len(REFERENCE_CASE_IDS)}")
-    print(f"- component-level product/function-case contracts passed: {component_passed}/4")
+    print(f"- component-level product/function-case contracts passed: {component_passed}/5")
     return 0
 
 
@@ -150,6 +150,7 @@ def _validate_component_question_contracts() -> tuple[int, list[str]]:
 
     checks = [
         _check_product_token_detail(request_loader, normalizer, metadata),
+        _check_ambiguous_product_token_requires_dataset_selection(request_loader, normalizer, metadata),
         _check_product_token_metric(request_loader, normalizer, metadata),
         _check_product_terms_priority(request_loader, normalizer, metadata),
         _check_inline_function_case_helper_allowed(executor),
@@ -166,7 +167,7 @@ def _normalize_with_llm_json(request_loader, normalizer, metadata: dict, questio
 
 
 def _check_product_token_detail(request_loader, normalizer, metadata: dict) -> tuple[bool, str]:
-    question = "64G L-269P1Q 제품 찾아줘"
+    question = "생산 데이터에서 64G L-269P1Q 제품 찾아줘"
     llm_json = {
         "intent_type": "detail_lookup",
         "analysis_kind": "detail_rows",
@@ -196,6 +197,37 @@ def _check_product_token_detail(request_loader, normalizer, metadata: dict) -> t
         and "MCP_NO" not in fields
     )
     return passed, "component case failed: product token detail should use match_product_tokens"
+
+
+def _check_ambiguous_product_token_requires_dataset_selection(request_loader, normalizer, metadata: dict) -> tuple[bool, str]:
+    question = "64G L-269 ASSY 제품 찾아줘"
+    llm_json = {
+        "intent_type": "detail_lookup",
+        "analysis_kind": "detail_rows",
+        "datasets": ["wip_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wip_data",
+                "params": {"DATE": "20260627"},
+                "filters": [
+                    {"field": "DEN", "op": "eq", "value": "64G"},
+                    {"field": "MCP_NO", "op": "eq", "value": "L-269"},
+                    {"field": "ORG", "op": "eq", "value": "ASSY"},
+                ],
+            }
+        ],
+        "step_plan": [{"step_id": "filter_wip", "operation": "filter_data", "source_alias": "wip_data"}],
+    }
+    payload = _normalize_with_llm_json(request_loader, normalizer, metadata, question, llm_json, "20260627")
+    plan = payload["intent_plan"]
+    passed = (
+        plan.get("pandas_function_case", {}).get("key") == "component_token_product_lookup"
+        and plan.get("requires_dataset_selection") is True
+        and not payload.get("retrieval_jobs")
+        and not plan.get("datasets")
+    )
+    return passed, "component case failed: ambiguous product token lookup should not guess wip_today"
 
 
 def _check_product_token_metric(request_loader, normalizer, metadata: dict) -> tuple[bool, str]:

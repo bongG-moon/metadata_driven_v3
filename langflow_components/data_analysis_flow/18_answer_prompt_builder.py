@@ -46,6 +46,7 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
         "analysis_kind": plan.get("analysis_kind"),
         "reasoning_steps": plan.get("reasoning_steps", []),
         "pandas_reasoning_steps": analysis.get("reasoning_steps", []),
+        "function_case_trace": analysis.get("function_case_trace", {}),
         "data": {
             "columns": analysis.get("columns", []),
             "rows": analysis.get("rows", [])[:50],

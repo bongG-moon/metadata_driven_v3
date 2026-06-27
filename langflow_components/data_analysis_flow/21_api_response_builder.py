@@ -171,6 +171,7 @@ def _build_analysis_view(payload: dict[str, Any], data: dict[str, Any]) -> dict[
         "analysis_code": analysis_code or "",
         "pandas_code_json": pandas_code_json,
         "reasoning_steps": _as_list(source.get("reasoning_steps") or debug.get("reasoning_steps")),
+        "function_case_trace": source.get("function_case_trace") or debug.get("function_case_trace"),
         "warnings": _as_list(source.get("warnings") or debug.get("warnings")),
         "errors": _as_list(source.get("errors") or debug.get("errors")),
     }
@@ -202,6 +203,7 @@ def _developer_view(payload: dict[str, Any], analysis: dict[str, Any], data_refs
         "analysis_code": analysis.get("analysis_code"),
         "pandas_code_json": analysis.get("pandas_code_json"),
         "reasoning_steps": analysis.get("reasoning_steps"),
+        "function_case_trace": analysis.get("function_case_trace"),
         "retrieval_jobs": intent_plan.get("retrieval_jobs"),
         "source_results": source_results,
         "data_refs": data_refs,
