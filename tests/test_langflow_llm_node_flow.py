@@ -108,6 +108,9 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     payload = answer_builder.build_answer_response_payload(payload, json.dumps(answer_llm_json, ensure_ascii=False))
     assert payload["answer_message"] == answer_llm_json["answer_message"]
     assert payload["data"]["row_count"] == 1
+    assert payload["data"]["rows"][0]["WIP"] > 0
+    assert "rows" not in payload["analysis"]
+    assert payload["analysis"]["rows_moved_to_data"] is True
     assert payload["applied_scope"]["datasets"] == ["wip_today"]
     assert "runtime_sources" not in payload
     assert payload["state"]["current_data"]["source_dataset_keys"] == ["wip_today"]
@@ -1034,6 +1037,7 @@ def test_pandas_prompt_tells_llm_to_handle_dates_without_datetime_imports() -> N
     assert "string value를 직접 사용하는 것을 우선" in prompt
     assert "underscore로 시작하는 local variable name" in prompt
     assert "이름 안의 underscore는 허용" in prompt
+    assert "plan['intent_plan'] 같은 중첩 key를 만들거나 참조하지 마세요" in prompt
 
 
 def test_pandas_prompt_includes_manual_function_case_text() -> None:
@@ -3741,6 +3745,8 @@ def test_pandas_repair_prompt_preserves_selected_function_case_helper_call() -> 
     assert "use the Specialized Functions intent and helper shape" in prompt
     assert "function_name(input_text, sources[source_alias])" in prompt
     assert "define the helper inline" in prompt
+    assert "Never create or reference plan['intent_plan']" in prompt
+    assert "plan['intent_plan'] does not exist" in prompt
     assert "Do not bypass a selected function case with unrelated simple filters" in prompt
     assert "match_product_tokens" in prompt
     assert "component_token_product_lookup" in prompt

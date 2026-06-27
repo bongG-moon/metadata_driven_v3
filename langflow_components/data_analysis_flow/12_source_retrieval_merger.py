@@ -16,21 +16,15 @@ from lfx.schema.message import Message
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
 def merge_source_retrieval_payloads(*payload_values: Any) -> dict[str, Any]:
     merged_results = []
-    intent_plan = {}
-    state = {}
     for value in payload_values:
         payload = _payload(value)
         retrieval = payload.get("retrieval_payload") if isinstance(payload.get("retrieval_payload"), dict) else payload
         if retrieval.get("skipped"):
             continue
-        if not intent_plan and isinstance(retrieval.get("intent_plan"), dict):
-            intent_plan = deepcopy(retrieval["intent_plan"])
-        if not state and isinstance(retrieval.get("state"), dict):
-            state = deepcopy(retrieval["state"])
         for item in retrieval.get("source_results", []):
             if isinstance(item, dict):
                 merged_results.append(deepcopy(item))
-    return {"retrieval_payload": {"route": intent_plan.get("route", "multi_retrieval"), "source_results": merged_results, "intent_plan": intent_plan, "state": state}}
+    return {"retrieval_payload": {"source_results": merged_results}}
 
 
 def _payload(value: Any) -> dict[str, Any]:

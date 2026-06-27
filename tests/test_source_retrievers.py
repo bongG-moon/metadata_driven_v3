@@ -77,6 +77,7 @@ def test_langflow_dummy_retriever_covers_all_current_datasets():
         }
     )
 
+    assert set(payload["retrieval_payload"]) == {"source_type", "source_results"}
     results = payload["retrieval_payload"]["source_results"]
     assert [item["dataset_key"] for item in results] == dataset_keys
     assert min(item["row_count"] for item in results if item["dataset_key"] != "hold_history") >= 8
@@ -316,8 +317,13 @@ def test_langflow_source_retrievers_and_merger_preserve_source_types():
     h_api = _load_component("11_h_api_retriever.py").retrieve_h_api_data(plan)
     datalake = _load_component("12_datalake_retriever.py").retrieve_datalake_data(plan)
     goodocs = _load_component("13_goodocs_retriever.py").retrieve_goodocs_data(plan)
+    assert set(oracle["retrieval_payload"]) == {"source_type", "source_results"}
+    assert set(h_api["retrieval_payload"]) == {"source_type", "source_results"}
+    assert set(datalake["retrieval_payload"]) == {"source_type", "source_results"}
+    assert set(goodocs["retrieval_payload"]) == {"source_type", "source_results"}
     merged = _load_component("14_source_retrieval_merger.py").merge_source_retrieval_payloads(oracle, h_api, datalake, goodocs)
 
+    assert set(merged["retrieval_payload"]) == {"source_results"}
     source_types = [item["source_type"] for item in merged["retrieval_payload"]["source_results"]]
     assert source_types == ["oracle", "h_api", "datalake", "goodocs"]
 

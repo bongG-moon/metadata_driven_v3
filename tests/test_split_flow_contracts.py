@@ -456,6 +456,12 @@ def test_previous_result_restore_router_and_merger_skip_loader_for_summary_mode(
 
     assert routed["restore_decision"]["required"] is False
     assert routed["restore_decision"]["branch"] == "skip_restore"
+    assert set(routed["restore_payload"]) == {
+        "previous_result_restore",
+        "previous_result_restore_mode",
+        "restore_previous_result_mode",
+    }
+    assert routed["restore_payload"]["previous_result_restore_mode"] == "summary"
     assert merged["previous_result_restore"]["used_loader_payload"] is False
     assert merged["state"]["current_data"]["rows"] == [{"MODE": "A"}]
 

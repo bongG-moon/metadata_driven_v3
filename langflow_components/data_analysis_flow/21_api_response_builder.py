@@ -61,7 +61,6 @@ def build_main_flow_api_response(payload_value: Any) -> dict[str, Any]:
         api_response["metadata_route"] = metadata_route
     if developer:
         api_response["developer"] = developer
-        api_response["debug"] = developer
     return {"api_response": api_response}
 
 

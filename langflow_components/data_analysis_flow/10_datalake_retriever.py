@@ -216,7 +216,7 @@ def _retrieval_payload(
     skipped: bool = False,
     skip_reason: str = "",
 ) -> dict[str, Any]:
-    payload = {"route": plan.get("route", "multi_retrieval"), "source_type": "datalake", "source_results": results, "intent_plan": plan, "state": state}
+    payload = {"source_type": "datalake", "source_results": results}
     if skipped:
         payload.update({"skipped": True, "skip_reason": skip_reason})
     return {"retrieval_payload": payload}

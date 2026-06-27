@@ -30,6 +30,7 @@ def build_answer_response_payload(payload_value: Any, llm_response_value: Any) -
 
     next_payload = dict(payload)
     next_payload.pop("runtime_sources", None)
+    next_payload["analysis"] = _compact_analysis_after_data(analysis)
     next_payload["data"] = data
     next_payload["applied_scope"] = applied_scope
     next_payload["answer_message"] = answer_message
@@ -37,6 +38,14 @@ def build_answer_response_payload(payload_value: Any, llm_response_value: Any) -
     next_payload["status"] = "ok" if not analysis.get("errors") else "warning"
     next_payload["errors"] = list(payload.get("errors", [])) + list(analysis.get("errors", []))
     return next_payload
+
+
+def _compact_analysis_after_data(analysis: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(analysis)
+    if isinstance(result.get("rows"), list):
+        result.pop("rows", None)
+        result["rows_moved_to_data"] = True
+    return result
 
 
 def _build_data(payload: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:

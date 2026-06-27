@@ -81,21 +81,15 @@ def retrieve_dummy_data(payload_value: Any) -> dict[str, Any]:
             "retrieval_payload": {
                 "skipped": True,
                 "skip_reason": payload.get("skip_reason", "route skipped"),
-                "route": plan.get("route", ""),
                 "source_results": [],
-                "intent_plan": plan,
-                "state": state,
             }
         }
 
     if plan.get("route") == "finish" or plan.get("query_mode") == "finish":
         return {
             "retrieval_payload": {
-                "route": "finish",
                 "source_results": [],
                 "early_result": {"response": plan.get("response", ""), "current_data": state.get("current_data")},
-                "intent_plan": plan,
-                "state": state,
             }
         }
 
@@ -103,11 +97,8 @@ def retrieve_dummy_data(payload_value: Any) -> dict[str, Any]:
     source_results = [_source_result(job) for job in jobs if isinstance(job, dict)]
     return {
         "retrieval_payload": {
-            "route": plan.get("route", "multi_retrieval"),
             "source_type": "dummy",
             "source_results": source_results,
-            "intent_plan": plan,
-            "state": state,
         }
     }
 

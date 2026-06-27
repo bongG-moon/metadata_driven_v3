@@ -43,10 +43,17 @@ def route_previous_result_restore(payload_value: Any) -> dict[str, Any]:
     main_payload = deepcopy(payload)
     main_payload["previous_result_restore"] = deepcopy(decision)
 
-    restore_payload = deepcopy(payload)
-    restore_payload["previous_result_restore"] = deepcopy(decision)
-    restore_payload["previous_result_restore_mode"] = "full" if required else "summary"
-    restore_payload["restore_previous_result_mode"] = "full" if required else "summary"
+    if required:
+        restore_payload = deepcopy(payload)
+        restore_payload["previous_result_restore"] = deepcopy(decision)
+        restore_payload["previous_result_restore_mode"] = "full"
+        restore_payload["restore_previous_result_mode"] = "full"
+    else:
+        restore_payload = {
+            "previous_result_restore": deepcopy(decision),
+            "previous_result_restore_mode": "summary",
+            "restore_previous_result_mode": "summary",
+        }
 
     return {
         "payload": main_payload,
