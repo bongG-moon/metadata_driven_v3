@@ -20,7 +20,6 @@ from lfx.schema.message import Message
 
 TABLE_PREVIEW_LIMIT = 20
 CELL_TEXT_LIMIT = 120
-CODE_TEXT_LIMIT = 4000
 GENERIC_REASONING_TEXT = "분석 계획에 따라 필요한 데이터를 처리합니다."
 INTENT_FIELD_LABELS = {
     "route": "처리 경로",
@@ -226,7 +225,6 @@ def _pandas_section(payload: dict[str, Any]) -> str:
         pandas_json = analysis.get("pandas_code_json") if isinstance(analysis.get("pandas_code_json"), dict) else {}
         code = str(pandas_json.get("code") or "").strip()
     if code:
-        code = _truncate(code, CODE_TEXT_LIMIT)
         lines.append("\n```python\n" + code + "\n```")
 
     errors = analysis.get("errors") if isinstance(analysis.get("errors"), list) else []

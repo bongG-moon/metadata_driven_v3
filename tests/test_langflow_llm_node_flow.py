@@ -23,6 +23,12 @@ def load_component(path: str):
     return module
 
 
+def _retrieval_jobs(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+    return jobs
+
+
 def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
@@ -71,7 +77,8 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     }
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     assert payload["intent_plan"]["route"] == "single_retrieval"
-    assert payload["retrieval_jobs"][0]["source_type"] == "oracle"
+    assert "retrieval_jobs" not in payload
+    assert _retrieval_jobs(payload)[0]["source_type"] == "oracle"
 
     retrieval_payload = dummy_retriever.retrieve_dummy_data(payload)
     payload = retrieval_adapter.adapt_retrieval_payload(payload, retrieval_payload)
@@ -204,7 +211,7 @@ def test_request_date_overrides_stale_llm_date_params_and_filters(monkeypatch: A
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(stale_llm_json, ensure_ascii=False))
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert jobs["production_today"]["params"]["DATE"] == "20260617"
     assert jobs["wip_today"]["params"]["DATE"] == "20260617"
@@ -234,12 +241,12 @@ def test_intent_normalizer_builds_recipe_jobs_when_llm_omits_jobs(monkeypatch: A
 
     assert payload["intent_plan"]["route"] == "multi_retrieval"
     assert payload["intent_plan"]["matched_analysis_recipe"] == "production_wip_target_rate"
-    assert [job["source_alias"] for job in payload["retrieval_jobs"]] == [
+    assert [job["source_alias"] for job in _retrieval_jobs(payload)] == [
         "production_data",
         "wip_data",
         "target_data",
     ]
-    assert [job["source_type"] for job in payload["retrieval_jobs"]] == ["oracle", "oracle", "goodocs"]
+    assert [job["source_type"] for job in _retrieval_jobs(payload)] == ["oracle", "oracle", "goodocs"]
     assert payload["intent_plan"]["step_plan"][0]["recipe_key"] == "production_wip_target_rate"
     assert payload["intent_plan"]["step_plan"][0]["group_by"] == [
         "TECH",
@@ -274,7 +281,7 @@ def test_intent_normalizer_builds_recipe_jobs_when_llm_omits_specialized_dataset
 
     assert payload["intent_plan"]["matched_analysis_recipe"] == "production_wip_target_rate"
     assert payload["intent_plan"]["analysis_kind"] == "production_wip_target_rate"
-    assert [job["dataset_key"] for job in payload["retrieval_jobs"]] == ["production_today", "wip_today", "target"]
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["production_today", "wip_today", "target"]
     assert payload["intent_plan"]["step_plan"][0]["recipe_key"] == "production_wip_target_rate"
     assert payload["intent_plan"]["route"] == "multi_retrieval"
     assert any("분석 recipe 'production_wip_target_rate'" in item for item in payload["info"])
@@ -297,7 +304,7 @@ def test_intent_normalizer_does_not_build_specialized_jobs_without_recipe_metada
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
-    assert payload["retrieval_jobs"] == []
+    assert _retrieval_jobs(payload) == []
     assert payload["intent_plan"]["step_plan"] == []
     assert any("datasets도 없어 조회 작업을 보완할 수 없습니다" in item for item in payload["warnings"])
 
@@ -350,7 +357,7 @@ def test_intent_normalizer_adds_result_scope_columns_from_process_group(monkeypa
     plan = payload["intent_plan"]
 
     assert plan["result_scope_columns"] == [{"column": "OPER_GROUP", "value": "WB_PROCESS_GROUP", "source_field": "OPER_NAME"}]
-    assert any(item.get("field") == "OPER_NAME" for item in payload["retrieval_jobs"][0]["filters"])
+    assert any(item.get("field") == "OPER_NAME" for item in _retrieval_jobs(payload)[0]["filters"])
 
 
 def test_intent_normalizer_does_not_add_raw_process_list_scope_column(monkeypatch: Any) -> None:
@@ -420,7 +427,7 @@ def test_intent_normalizer_detail_request_overrides_recipe_grouping(monkeypatch:
     assert payload["intent_plan"]["analysis_kind"] == "detail_rows"
     assert payload["intent_plan"]["original_analysis_kind"] == "production_wip_target_rate"
     assert payload["intent_plan"]["product_grain"] == []
-    assert [job["dataset_key"] for job in payload["retrieval_jobs"]] == ["production_today", "wip_today", "target"]
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["production_today", "wip_today", "target"]
     assert payload["intent_plan"]["step_plan"] == [
         {
             "step_id": "detail_rows",
@@ -430,8 +437,8 @@ def test_intent_normalizer_detail_request_overrides_recipe_grouping(monkeypatch:
         }
     ]
     assert "group_by" not in payload["intent_plan"]["step_plan"][0]
-    assert "OPER_NAME" in payload["retrieval_jobs"][0]["required_columns"]
-    assert "PRODUCTION" in payload["retrieval_jobs"][0]["required_columns"]
+    assert "OPER_NAME" in _retrieval_jobs(payload)[0]["required_columns"]
+    assert "PRODUCTION" in _retrieval_jobs(payload)[0]["required_columns"]
 
 
 def test_intent_normalizer_recipe_defaults_populate_plan(monkeypatch: Any) -> None:
@@ -485,8 +492,8 @@ def test_intent_normalizer_recipe_promotes_generic_lot_quantity_plan(monkeypatch
 
     assert payload["intent_plan"]["matched_analysis_recipe"] == "lot_quantity_summary"
     assert payload["intent_plan"]["analysis_kind"] == "lot_quantity_summary"
-    assert [job["dataset_key"] for job in payload["retrieval_jobs"]] == ["lot_status"]
-    assert {"LOT_ID", "WF_QTY", "SUB_PROD_QTY"}.issubset(set(payload["retrieval_jobs"][0]["required_columns"]))
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["lot_status"]
+    assert {"LOT_ID", "WF_QTY", "SUB_PROD_QTY"}.issubset(set(_retrieval_jobs(payload)[0]["required_columns"]))
 
 
 def test_intent_normalizer_removes_unrequested_optional_date_for_raw_lookup(monkeypatch: Any) -> None:
@@ -517,7 +524,7 @@ def test_intent_normalizer_removes_unrequested_optional_date_for_raw_lookup(monk
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert "DATE" not in job["params"]
     assert "DATE" not in {item["field"] for item in job["filters"]}
@@ -544,7 +551,7 @@ def test_intent_normalizer_keeps_optional_date_filter_when_question_has_date_sco
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert "DATE" not in job["params"]
     assert _filter_values(job, "DATE") == ["20260625"]
@@ -575,7 +582,7 @@ def test_intent_normalizer_recipe_aligns_history_dataset_for_date_split(monkeypa
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
     assert payload["intent_plan"]["matched_analysis_recipe"] == "date_split_production_plan_gap"
-    assert [job["dataset_key"] for job in payload["retrieval_jobs"]] == ["production", "target"]
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["production", "target"]
     assert payload["intent_plan"]["datasets"] == ["production", "target"]
     assert "production_today" not in payload["intent_plan"]["params_by_dataset"]
     assert payload["intent_plan"]["params_by_dataset"]["production"]["DATE"] == "20260611"
@@ -601,9 +608,9 @@ def test_intent_normalizer_builds_generic_rank_fallback_step(monkeypatch: Any) -
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     product_keys = payload["metadata"]["domain_items"]["product_key_columns"]
 
-    assert [job["source_alias"] for job in payload["retrieval_jobs"]] == ["wip_today"]
-    assert payload["retrieval_jobs"][0]["params"]["DATE"] == "20260612"
-    assert payload["retrieval_jobs"][0]["primary_quantity_column"] == "WIP"
+    assert [job["source_alias"] for job in _retrieval_jobs(payload)] == ["wip_today"]
+    assert _retrieval_jobs(payload)[0]["params"]["DATE"] == "20260612"
+    assert _retrieval_jobs(payload)[0]["primary_quantity_column"] == "WIP"
     assert payload["intent_plan"]["step_plan"] == [
         {
             "step_id": "rank_items",
@@ -659,7 +666,7 @@ def test_intent_normalizer_absorbs_loose_rank_fields_before_fallback(monkeypatch
     assert step["rank_order"] == "desc"
     assert step["group_by"] == product_keys
     assert step["output_columns"] == output_columns
-    assert _filter_values(payload["retrieval_jobs"][0], "OPER_NAME") == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
+    assert _filter_values(_retrieval_jobs(payload)[0], "OPER_NAME") == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
     assert any("retrieval_jobs가 없어" in item for item in payload["info"])
     assert any("step_plan이 없어" in item for item in payload["info"])
     assert not any("retrieval_jobs가 없어" in item for item in payload["warnings"])
@@ -775,7 +782,7 @@ def test_intent_normalizer_keeps_source_specific_process_filters(monkeypatch: An
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
-    jobs = {job["source_alias"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["source_alias"]: job for job in _retrieval_jobs(payload)}
 
     assert _filter_values(jobs["input_production"], "OPER_NAME") == ["INPUT"]
     assert _filter_values(jobs["bg1_production"], "OPER_NAME") == ["B/G1"]
@@ -841,7 +848,7 @@ def test_intent_normalizer_applies_process_scope_per_source_alias(monkeypatch: A
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
-    jobs = {job["source_alias"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["source_alias"]: job for job in _retrieval_jobs(payload)}
 
     assert _filter_values(jobs["prod_yesterday_dp"], "OPER_NAME") == dp_processes
     assert _filter_values(jobs["wip_today_da"], "OPER_NAME") == da_processes
@@ -878,7 +885,7 @@ def test_intent_normalizer_labels_product_term_scope_without_raw_condition_colum
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
 
-    hbm_filters = payload["retrieval_jobs"][0].get("filters", [])
+    hbm_filters = _retrieval_jobs(payload)[0].get("filters", [])
     assert any(
         item.get("field") == "TSV_DIE_TYP" and item.get("op") in {"exists", "not_empty"}
         for item in hbm_filters
@@ -920,7 +927,7 @@ def test_intent_normalizer_clears_process_filter_for_all_process_source(monkeypa
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
-    jobs = {job["source_alias"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["source_alias"]: job for job in _retrieval_jobs(payload)}
 
     assert _filter_values(jobs["prod_input"], "OPER_NAME") == ["INPUT"]
     assert _filter_values(jobs["wip_current_all_process"], "OPER_NAME") == []
@@ -961,7 +968,7 @@ def test_intent_normalizer_uses_explicit_device_grain_for_rank(monkeypatch: Any)
     assert plan["product_grain"] == ["DEVICE"]
     assert plan["step_plan"][0]["group_by"] == ["DEVICE"]
     assert plan["step_plan"][0]["top_n"] == 3
-    mobile_filters = payload["retrieval_jobs"][0].get("filters", [])
+    mobile_filters = _retrieval_jobs(payload)[0].get("filters", [])
     assert any(
         item.get("field") == "MCP_NO" and item.get("op") == "empty"
         for item in mobile_filters
@@ -1000,7 +1007,7 @@ def test_intent_normalizer_uses_quantity_term_source_column_for_unique_count(mon
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert plan["analysis_kind"] == "unique_count_by_group"
     assert plan["step_plan"][0]["operation"] == "unique_count_by_group"
@@ -1334,9 +1341,9 @@ def test_pandas_executor_allows_inline_selected_function_case_helper() -> None:
         "metadata": {
             "domain_items": {
                 "pandas_function_cases": {
-                    "lot_hold_complex_lookup": {
-                        "function_name": "match_lot_hold_conditions",
-                        "use_when": "Use for mixed Lot/Hold condition lookup.",
+                    "custom_inline_lookup": {
+                        "function_name": "match_custom_rows",
+                        "use_when": "Use for a custom inline row lookup.",
                     }
                 }
             }
@@ -1344,33 +1351,33 @@ def test_pandas_executor_allows_inline_selected_function_case_helper() -> None:
         "intent_plan": {
             "analysis_kind": "detail_rows",
             "pandas_function_case": {
-                "key": "lot_hold_complex_lookup",
-                "function_name": "match_lot_hold_conditions",
-                "input_text": "T1234567GEN1 Hold info",
+                "key": "custom_inline_lookup",
+                "function_name": "match_custom_rows",
+                "input_text": "A001",
             },
             "step_plan": [
                 {
-                    "step_id": "lot_hold_complex_lookup",
+                    "step_id": "custom_inline_lookup",
                     "operation": "apply_pandas_function_case",
-                    "source_alias": "hold_data",
-                    "function_case_key": "lot_hold_complex_lookup",
-                    "function_name": "match_lot_hold_conditions",
-                    "input_text": "T1234567GEN1 Hold info",
+                    "source_alias": "custom_data",
+                    "function_case_key": "custom_inline_lookup",
+                    "function_name": "match_custom_rows",
+                    "input_text": "A001",
                 }
             ],
         },
-        "runtime_sources": {"hold_data": [{"LOT_ID": "T1234567GEN1", "HOLD_CD": "QA_HOLD"}]},
+        "runtime_sources": {"custom_data": [{"ITEM_ID": "A001", "VALUE": 7}]},
         "state": {},
     }
     pandas_llm_json = {
         "code": "\n".join(
             [
-                "def match_lot_hold_conditions(input_text, frame):",
-                "    return frame.copy()",
-                "result_df = match_lot_hold_conditions(plan['pandas_function_case']['input_text'], sources['hold_data'])",
+                "def match_custom_rows(input_text, frame):",
+                "    return frame[frame['ITEM_ID'] == input_text].copy()",
+                "result_df = match_custom_rows(plan['pandas_function_case']['input_text'], sources['custom_data'])",
             ]
         ),
-        "output_columns": ["LOT_ID", "HOLD_CD"],
+        "output_columns": ["ITEM_ID", "VALUE"],
         "reasoning_steps": ["Define the specialized helper inline and call it."],
     }
 
@@ -1379,7 +1386,7 @@ def test_pandas_executor_allows_inline_selected_function_case_helper() -> None:
     assert result["analysis"]["status"] == "ok"
     assert result["analysis"]["executed"] is True
     assert result["analysis"]["row_count"] == 1
-    assert result["analysis"]["rows"][0]["LOT_ID"] == "T1234567GEN1"
+    assert result["analysis"]["rows"][0]["ITEM_ID"] == "A001"
 
 
 def test_pandas_executor_loads_function_case_helper_from_prompt_payload_text() -> None:
@@ -1638,7 +1645,7 @@ def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(m
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
     fields = {item.get("field") for item in job.get("filters", [])}
 
     assert plan["intent_type"] == "detail_lookup"
@@ -1705,7 +1712,7 @@ def test_intent_normalizer_rejects_ambiguous_product_token_dataset_guess(monkeyp
     assert plan["pandas_function_case"]["function_name"] == "match_product_tokens"
     assert plan["requires_dataset_selection"] is True
     assert plan["datasets"] == []
-    assert payload["retrieval_jobs"] == []
+    assert _retrieval_jobs(payload) == []
     assert plan["step_plan"] == []
     assert any("제품 token만으로는 조회 dataset을 확정할 수 없습니다" in item for item in plan["normalizer_errors"])
 
@@ -1755,7 +1762,7 @@ def test_intent_normalizer_routes_product_token_metric_filters_to_function_case(
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
     fields = {item.get("field") for item in job.get("filters", [])}
 
     assert plan["intent_type"] == "single_retrieval_analysis"
@@ -1785,6 +1792,52 @@ def test_intent_normalizer_routes_product_token_metric_filters_to_function_case(
 
     assert "먼저 선택된 pandas function case를 적용하세요" in prompt_payload["prompt"]
     assert "remaining step_plan step" in prompt_payload["prompt"]
+
+
+def test_intent_normalizer_uses_function_case_metadata_token_columns(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    question = "오늘 AAA 제품 생산량 알려줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260627")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    payload["metadata"]["domain_items"]["pandas_function_cases"]["component_token_product_lookup"]["token_columns"] = [
+        "CUSTOM_CODE"
+    ]
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_total",
+        "datasets": ["production_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "params": {"DATE": "20260627"},
+                "filters": [
+                    {"field": "CUSTOM_CODE", "op": "eq", "value": "AAA"},
+                    {"field": "DATE", "op": "eq", "value": "20260627"},
+                ],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "total_production",
+                "operation": "aggregate_data",
+                "source_alias": "production_data",
+                "metric": "PRODUCTION",
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+    fields = {item.get("field") for item in _retrieval_jobs(payload)[0].get("filters", [])}
+
+    assert plan["pandas_function_case"]["key"] == "component_token_product_lookup"
+    assert plan["pandas_function_case"]["token_columns"] == ["CUSTOM_CODE"]
+    assert "CUSTOM_CODE" not in fields
+    assert "DATE" in fields
 
 
 def test_intent_normalizer_keeps_registered_product_terms_out_of_function_case(monkeypatch: Any) -> None:
@@ -1820,7 +1873,7 @@ def test_intent_normalizer_keeps_registered_product_terms_out_of_function_case(m
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert "pandas_function_case" not in plan
     assert plan["step_plan"][0]["operation"] == "aggregate_data"
@@ -1850,7 +1903,7 @@ def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert jobs["production_today"]["params"]["DATE"] == "20260612"
     assert jobs["wip_today"]["params"]["DATE"] == "20260612"
@@ -1899,7 +1952,7 @@ def test_intent_normalizer_uses_product_terms_for_existing_jobs(monkeypatch: Any
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert _filter_values(job, "MODE") == ["LPDDR5"]
     assert _filter_values(job, "OPER_NAME") == ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
@@ -1941,7 +1994,7 @@ def test_intent_normalizer_repairs_product_wip_production_question_to_join(monke
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(wrong_llm_json, ensure_ascii=False))
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert payload["intent_plan"]["intent_type"] == "multi_source_analysis"
     assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
@@ -1985,7 +2038,7 @@ def test_intent_normalizer_repairs_yesterday_product_wip_production_question_to_
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(wrong_llm_json, ensure_ascii=False))
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
     assert payload["intent_plan"]["datasets"] == ["production", "wip"]
@@ -2019,7 +2072,7 @@ def test_intent_normalizer_replaces_wrong_product_alias_filter_with_metadata_con
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert any(item.get("field") == "TSV_DIE_TYP" and item.get("op") == "not_empty" for item in job["filters"])
     assert _filter_values(job, "TECH") == []
@@ -2048,7 +2101,7 @@ def test_intent_normalizer_converts_rich_product_conditions_to_filters(monkeypat
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    filters = payload["retrieval_jobs"][0]["filters"]
+    filters = _retrieval_jobs(payload)[0]["filters"]
 
     assert {"field": "MODE", "op": "starts_with", "value": "LP"} in filters
     assert {"field": "PKG_TYP1", "op": "in", "values": ["LFBGA", "TFBGA", "UFBGA", "VFBGA", "WFBGA"]} in filters
@@ -2091,7 +2144,7 @@ def test_intent_normalizer_treats_non_catalog_metric_name_as_output_label(monkey
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    required_columns = payload["retrieval_jobs"][0]["required_columns"]
+    required_columns = _retrieval_jobs(payload)[0]["required_columns"]
 
     assert "PKG_OUT_QTY" not in required_columns
     assert "PRODUCTION" in required_columns
@@ -2161,7 +2214,7 @@ def test_intent_normalizer_aligns_followup_equipment_to_state_products(monkeypat
     assert plan["state_product_keys"] == [
         {"TECH": "FC", "DEN": "128G", "MODE": "LPDDR5", "PKG_TYPE1": "UFBGA", "MCP_NO": "EMPTY"}
     ]
-    assert any(item.get("field") == "PRODUCT_GRAIN" for item in payload["retrieval_jobs"][0]["filters"])
+    assert any(item.get("field") == "PRODUCT_GRAIN" for item in _retrieval_jobs(payload)[0]["filters"])
 
 
 def test_intent_normalizer_uses_state_product_key_summary_without_full_rows(monkeypatch: Any) -> None:
@@ -2197,7 +2250,7 @@ def test_intent_normalizer_uses_state_product_key_summary_without_full_rows(monk
 
     assert plan["analysis_kind"] == "equipment_for_previous_products"
     assert plan["state_product_keys"] == [{"MODE": "LPDDR5"}, {"MODE": "HBM"}]
-    assert any(item.get("field") == "PRODUCT_GRAIN" for item in payload["retrieval_jobs"][0]["filters"])
+    assert any(item.get("field") == "PRODUCT_GRAIN" for item in _retrieval_jobs(payload)[0]["filters"])
 
 
 def test_intent_normalizer_prunes_lot_status_for_followup_equipment_count(monkeypatch: Any) -> None:
@@ -2233,8 +2286,8 @@ def test_intent_normalizer_prunes_lot_status_for_followup_equipment_count(monkey
 
     assert plan["analysis_kind"] == "equipment_count_for_previous_products"
     assert plan["datasets"] == ["equipment_status"]
-    assert [job["dataset_key"] for job in payload["retrieval_jobs"]] == ["equipment_status"]
-    assert payload["retrieval_jobs"][0]["filters"] == [{"field": "PRODUCT_GRAIN", "op": "from_state"}]
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["equipment_status"]
+    assert _retrieval_jobs(payload)[0]["filters"] == [{"field": "PRODUCT_GRAIN", "op": "from_state"}]
     assert plan["step_plan"][0]["operation"] == "equipment_count_for_previous_products"
     assert plan["analysis_output_columns"] == [
         "TECH",
@@ -2337,7 +2390,7 @@ def test_intent_normalizer_keeps_cross_source_join_keys_as_standard_columns() ->
     normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
     assert normalized["intent_plan"]["step_plan"][0]["join_keys"] == product_keys
-    assert normalized["retrieval_jobs"][0]["filter_mappings"]["DEN"] == ["DENSITY"]
+    assert _retrieval_jobs(normalized)[0]["filter_mappings"]["DEN"] == ["DENSITY"]
 
 
 def test_intent_normalizer_repairs_metric_detail_rows_to_total_aggregate() -> None:
@@ -2348,7 +2401,7 @@ def test_intent_normalizer_repairs_metric_detail_rows_to_total_aggregate() -> No
 
     normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = normalized["intent_plan"]
-    job = normalized["retrieval_jobs"][0]
+    job = _retrieval_jobs(normalized)[0]
 
     assert plan["analysis_kind"] == "generic_aggregate_recipe"
     assert plan["product_grain"] == []
@@ -2380,7 +2433,7 @@ def test_intent_normalizer_uses_requested_grain_for_metric_aggregate() -> None:
         json.dumps(_wafer_detail_intent_json(), ensure_ascii=False),
     )
     assert oper_num_result["intent_plan"]["step_plan"][0]["group_by"] == ["OPER_NUM"]
-    assert "OPER_NUM" in oper_num_result["retrieval_jobs"][0]["required_columns"]
+    assert "OPER_NUM" in _retrieval_jobs(oper_num_result)[0]["required_columns"]
 
 
 def test_intent_normalizer_keeps_explicit_metric_raw_data_request_as_detail_rows() -> None:
@@ -2471,7 +2524,7 @@ def test_intent_normalizer_maps_standard_required_columns_to_physical_source_col
     }
 
     normalized = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    job = normalized["retrieval_jobs"][0]
+    job = _retrieval_jobs(normalized)[0]
 
     assert normalized["intent_plan"]["step_plan"][0]["join_keys"] == product_keys
     assert {"TECH", "DENSITY", "MODE", "PKG1", "PKG2", "LEAD", "MCP_NO", "PRODUCTION"}.issubset(
@@ -2575,7 +2628,7 @@ def test_intent_normalizer_reuses_previous_source_rows_for_this_time_breakdown(m
     assert plan["previous_result_restore_mode"] == "full"
     assert plan["previous_result_restore_reason"] == "followup_reuses_previous_source_rows"
     assert plan["retrieval_jobs"] == []
-    assert payload["retrieval_jobs"] == []
+    assert _retrieval_jobs(payload) == []
     assert plan["datasets"] == ["production_today"]
     assert plan["metric"] == "PRODUCTION"
     assert plan["product_grain"] == ["MODE", "DEVICE"]
@@ -2613,7 +2666,7 @@ def test_intent_normalizer_maps_logical_required_columns_to_dataset_columns(monk
     }
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
-    job = payload["retrieval_jobs"][0]
+    job = _retrieval_jobs(payload)[0]
 
     assert "OPER_SHORT_DESC" in job["required_columns"]
     assert "LOT_ID" in job["required_columns"]
@@ -2661,8 +2714,8 @@ def test_intent_normalizer_repairs_lot_count_kind_from_generic_aggregate(monkeyp
     assert payload["intent_plan"]["analysis_kind"] == "lot_count_by_process"
     assert payload["intent_plan"]["step_plan"][0]["operation"] == "lot_count_by_process"
     assert payload["intent_plan"]["step_plan"][0]["group_by_columns"] == ["OPER_SHORT_DESC"]
-    assert payload["retrieval_jobs"][0]["dataset_key"] == "lot_status"
-    assert "OPER_SHORT_DESC" in payload["retrieval_jobs"][0]["required_columns"]
+    assert _retrieval_jobs(payload)[0]["dataset_key"] == "lot_status"
+    assert "OPER_SHORT_DESC" in _retrieval_jobs(payload)[0]["required_columns"]
     assert any("LOT_ID unique count" in item for item in payload["info"])
 
 
@@ -2707,7 +2760,7 @@ def test_intent_normalizer_preserves_top_wip_process_then_lot_metrics_plan(monke
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert plan["analysis_kind"] == "top_wip_process_hold_lot_in_tat"
     assert plan["matched_analysis_recipe"] == "top_wip_process_hold_lot_in_tat"
@@ -2754,7 +2807,7 @@ def test_intent_normalizer_does_not_hardcode_top_wip_process_lot_recipe(monkeypa
 
     assert payload["intent_plan"]["analysis_kind"] == "lot_count_by_process"
     assert "matched_analysis_recipe" not in payload["intent_plan"]
-    assert [job["dataset_key"] for job in payload["retrieval_jobs"]] == ["lot_status"]
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["lot_status"]
 
 
 def test_intent_normalizer_does_not_apply_wip_lot_recipe_to_production_equipment_question(monkeypatch: Any) -> None:
@@ -2784,7 +2837,7 @@ def test_intent_normalizer_does_not_apply_wip_lot_recipe_to_production_equipment
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert plan["analysis_kind"] == "top_production_products_equipment_count"
     assert plan["matched_analysis_recipe"] == "top_production_products_equipment_count"
@@ -2825,7 +2878,7 @@ def test_intent_normalizer_applies_top_wip_product_oldest_lot_recipe(monkeypatch
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
-    jobs = {job["dataset_key"]: job for job in payload["retrieval_jobs"]}
+    jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
     assert plan["analysis_kind"] == "top_wip_product_oldest_lot"
     assert plan["matched_analysis_recipe"] == "top_wip_product_oldest_lot"
@@ -2870,7 +2923,7 @@ def test_intent_normalizer_adds_eqpid_primary_quantity_to_equipment_columns(monk
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
-    assert payload["retrieval_jobs"][0]["required_columns"] == ["EQP_MODEL", "PKG1", "EQPID"]
+    assert _retrieval_jobs(payload)[0]["required_columns"] == ["EQP_MODEL", "PKG1", "EQPID"]
 
 
 def test_pandas_executor_normalizes_llm_result_column_names() -> None:
@@ -4134,6 +4187,33 @@ def test_answer_message_adapter_koreanizes_plan_and_pandas_reasoning() -> None:
     assert "Get production data" not in message
 
 
+def test_answer_message_adapter_does_not_truncate_pandas_code_block() -> None:
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    long_code = "\n".join(
+        [
+            "step_outputs = {}",
+            *[f"intermediate_{index} = {index}" for index in range(500)],
+            "result_df = pd.DataFrame([{'SENTINEL_FULL_CODE_TAIL': 'kept'}])",
+        ]
+    )
+    payload = {
+        "answer_message": "Pandas 코드 확인용입니다.",
+        "analysis": {
+            "status": "ok",
+            "safety_passed": True,
+            "executed": True,
+            "row_count": 1,
+            "analysis_code": long_code,
+        },
+    }
+
+    message = answer_message_adapter.build_playground_message(payload)
+
+    assert "... truncated ..." not in message
+    assert "SENTINEL_FULL_CODE_TAIL" in message
+    assert "intermediate_499 = 499" in message
+
+
 def test_answer_message_adapter_rebuilds_generic_repeated_intent_reasoning() -> None:
     answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
     payload = {
@@ -4244,12 +4324,18 @@ def test_answer_prompt_tells_llm_not_to_render_result_tables() -> None:
             "rows": [{"MODE": "HBM3E", "PRODUCTION": 100}],
             "row_count": 1,
         },
+        "runtime_sources": {"production_data": [{"MODE": "HBM3E", "PRODUCTION": 100}]},
+        "state": {"current_data": {"rows": [{"MODE": "OLD"}], "row_count": 1}},
     }
 
-    prompt = answer_prompt_builder.build_answer_prompt_payload(payload)["prompt"]
+    prompt_payload = answer_prompt_builder.build_answer_prompt_payload(payload)
+    prompt = prompt_payload["prompt"]
 
     assert "Markdown table, tab-separated table" in prompt
     assert "answer_message는 narrative text만 포함" in prompt
+    assert "runtime_sources" not in prompt_payload["payload"]
+    assert "state" not in prompt_payload["payload"]
+    assert "rows" not in prompt_payload["payload"]["analysis"]
 
 
 def test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract() -> None:

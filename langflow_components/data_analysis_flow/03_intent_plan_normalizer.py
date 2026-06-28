@@ -148,7 +148,6 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
 
     next_payload = dict(payload)
     next_payload["intent_plan"] = plan
-    next_payload["retrieval_jobs"] = normalized_jobs
     next_payload["metadata_context"] = _metadata_context(plan)
     if errors:
         next_payload["warnings"] = list(next_payload.get("warnings", [])) + [f"의도 정규화 오류: {item}" for item in errors]
@@ -586,6 +585,8 @@ def _repair_product_production_wip_join_plan(
 ) -> None:
     if not _product_production_wip_join_requested(question):
         return
+    if plan.get("matched_analysis_recipe") and _plan_has_production_wip_contract(plan, metadata):
+        return
     process_values = _metadata_process_values(question, metadata)
     if not process_values:
         return
@@ -660,6 +661,25 @@ def _repair_product_production_wip_join_plan(
         },
     ]
     _append_once(notes, "생산량과 재공을 제품별로 함께 묻는 공정 범위 질문을 production/wip 제품 grain 조인 계획으로 보정했습니다.")
+
+
+def _plan_has_production_wip_contract(plan: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
+    families: set[str] = set()
+    for dataset_key in plan.get("datasets", []) if isinstance(plan.get("datasets"), list) else []:
+        dataset_catalog = catalog.get(str(dataset_key)) if isinstance(catalog.get(str(dataset_key)), dict) else {}
+        family = str(dataset_catalog.get("dataset_family") or "").strip()
+        if family:
+            families.add(family)
+    for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
+        if not isinstance(job, dict):
+            continue
+        dataset_key = str(job.get("dataset_key") or "")
+        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
+        family = str(dataset_catalog.get("dataset_family") or "").strip()
+        if family:
+            families.add(family)
+    return {"production", "wip"}.issubset(families)
 
 
 def _product_production_wip_join_requested(question: str) -> bool:
@@ -1135,7 +1155,7 @@ def _recipe_required_columns(
 def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, Any], question: str) -> list[dict[str, Any]]:
     template = recipe.get("step_plan_template") if isinstance(recipe.get("step_plan_template"), list) else []
     if template:
-        aliases = recipe.get("source_aliases_by_family") if isinstance(recipe.get("source_aliases_by_family"), dict) else {}
+        aliases = _recipe_source_aliases_by_family(recipe, recipe_key, plan)
         top_n = plan.get("top_n")
         if not isinstance(top_n, int) or top_n <= 0:
             top_n = _rank_n_from_question(question) or int((recipe.get("defaults") or {}).get("top_n") or 0) or 5
@@ -1144,10 +1164,11 @@ def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, A
             if not isinstance(raw_step, dict):
                 continue
             step = deepcopy(raw_step)
-            source_family = str(step.pop("source_family", "") or "")
+            source_family = str(step.pop("source_family", "") or step.pop("dataset_family", "") or "")
             if source_family and not step.get("source_alias"):
                 step["source_alias"] = str(aliases.get(source_family) or "")
             step = _expand_recipe_step_value(step, top_n, plan)
+            step = _normalize_recipe_step_template(step)
             steps.append(step)
         return steps
     if not _recipe_has_execution_contract(recipe):
@@ -1165,6 +1186,109 @@ def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, A
             "output_columns": deepcopy(recipe.get("output_columns", [])),
         }
     ]
+
+
+def _recipe_source_aliases_by_family(recipe: dict[str, Any], recipe_key: str, plan: dict[str, Any]) -> dict[str, str]:
+    aliases = (
+        deepcopy(recipe.get("source_aliases_by_family"))
+        if isinstance(recipe.get("source_aliases_by_family"), dict)
+        else {}
+    )
+    for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
+        if not isinstance(job, dict):
+            continue
+        purpose = str(job.get("purpose") or "")
+        prefix = f"recipe:{recipe_key}:"
+        family = purpose[len(prefix) :] if purpose.startswith(prefix) else ""
+        alias = str(job.get("source_alias") or "").strip()
+        if family and alias and not aliases.get(family):
+            aliases[family] = alias
+    return aliases
+
+
+def _normalize_recipe_step_template(step: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(step)
+    if not result.get("operation"):
+        result["operation"] = _operation_from_recipe_analysis_kind(result)
+    group_by = _recipe_step_columns(result.get("group_by")) or _recipe_step_columns(result.get("group_by_columns"))
+    if group_by:
+        result["group_by"] = group_by
+    metrics = result.get("metrics") if isinstance(result.get("metrics"), list) else []
+    first_metric = next((item for item in metrics if isinstance(item, dict)), {})
+    if first_metric:
+        result.setdefault("metric", first_metric.get("quantity_column") or first_metric.get("column"))
+        result.setdefault("aggregation", first_metric.get("aggregation"))
+        output_column = str(first_metric.get("output_column") or "").strip()
+        if output_column and output_column != result.get("metric"):
+            result.setdefault("rename_columns", {str(result.get("metric")): output_column})
+    top_n = result.get("top_n")
+    if isinstance(top_n, dict):
+        result["top_n"] = top_n.get("n") or top_n.get("top") or "$top_n"
+    sort_by = result.get("sort_by") if isinstance(result.get("sort_by"), list) else []
+    if sort_by and isinstance(sort_by[0], dict):
+        result.setdefault("rank_order", sort_by[0].get("order") or sort_by[0].get("direction"))
+    if result.get("operation") == "left_join" and not result.get("join_keys"):
+        result["join_keys"] = _recipe_join_keys_from_step(result)
+    if _looks_like_hold_lot_in_tat_step(result):
+        result["operation"] = "hold_lot_in_tat_by_process"
+        result.setdefault("count_column", "LOT_ID")
+        result.setdefault("tat_column", "IN_TAT")
+        result.setdefault("hold_status_column", "LOT_HOLD_STAT_CD")
+    return result
+
+
+def _operation_from_recipe_analysis_kind(step: dict[str, Any]) -> str:
+    kind = str(step.get("analysis_kind") or "").strip().lower()
+    if kind in {"rank_by_quantity", "rank_top_n", "top_n"}:
+        return "rank_top_n"
+    if kind in {"join", "left_join"}:
+        return "left_join"
+    if kind in {"detail_rows", "detail"}:
+        return "detail_rows"
+    if kind in {"aggregate", "aggregate_data", "aggregate_quantity"}:
+        return "rank_top_n" if step.get("top_n") or step.get("post_aggregation_filters") else "aggregate_by_group"
+    if kind in {"retrieve_data", "retrieve"}:
+        return "detail_rows"
+    return kind
+
+
+def _recipe_step_columns(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    columns: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            column = str(item.get("column") or item.get("name") or "").strip()
+        else:
+            column = str(item or "").strip()
+        if column:
+            columns.append(column)
+    return _unique(columns)
+
+
+def _recipe_join_keys_from_step(step: dict[str, Any]) -> list[dict[str, str] | str]:
+    raw_on = step.get("on") or step.get("join_on") or step.get("join_on_columns")
+    if not isinstance(raw_on, list):
+        return []
+    join_keys: list[dict[str, str] | str] = []
+    for item in raw_on:
+        if isinstance(item, dict):
+            left = str(item.get("left") or item.get("left_column") or item.get("left_on") or "").strip()
+            right = str(item.get("right") or item.get("right_column") or item.get("right_on") or "").strip()
+            if left and right:
+                join_keys.append({"left": left, "right": right})
+        else:
+            column = str(item or "").strip()
+            if column:
+                join_keys.append(column)
+    return join_keys
+
+
+def _looks_like_hold_lot_in_tat_step(step: dict[str, Any]) -> bool:
+    if str(step.get("operation") or "") == "hold_lot_in_tat_by_process":
+        return True
+    text = json.dumps(step, ensure_ascii=False).upper()
+    return "LOT_ID" in text and "IN_TAT" in text and "HOLD" in text
 
 
 def _recipe_has_execution_contract(recipe: dict[str, Any]) -> bool:
@@ -1974,6 +2098,8 @@ def _repair_lot_count_plan(
 ) -> list[Any]:
     if not _is_lot_count_by_process_question(plan, raw_jobs, catalog, question):
         return raw_jobs
+    if plan.get("matched_analysis_recipe") and plan.get("step_plan"):
+        return raw_jobs
 
     lot_jobs = [deepcopy(job) for job in raw_jobs if isinstance(job, dict) and str(job.get("dataset_key") or "") == "lot_status"]
     if not lot_jobs:
@@ -2071,6 +2197,8 @@ def _repair_followup_equipment_plan(
         return raw_jobs
 
     count_requested = _is_equipment_count_question(question, plan)
+    if plan.get("matched_analysis_recipe") and plan.get("step_plan") and not count_requested:
+        return raw_jobs
     analysis_kind = "equipment_count_for_previous_products" if count_requested else "equipment_for_previous_products"
     plan["analysis_kind"] = analysis_kind
 
@@ -2177,13 +2305,10 @@ def _matched_pandas_function_case(plan: dict[str, Any], metadata: dict[str, Any]
             if isinstance(case, dict) and str(case.get("function_name") or "").strip() == explicit_name:
                 return str(case_key), case
 
-    if not (
-        _question_looks_like_product_token_lookup(question, metadata)
-        or _plan_has_unregistered_product_attribute_filters(plan, question, metadata)
-    ):
-        return "", {}
     for case_key, case in cases.items():
-        if isinstance(case, dict) and _is_product_token_function_case(str(case_key), case):
+        if not isinstance(case, dict) or not _is_product_token_function_case(str(case_key), case):
+            continue
+        if _question_looks_like_product_token_lookup(question, metadata, case) or _plan_has_unregistered_product_attribute_filters(plan, question, metadata):
             return str(case_key), case
     return "", {}
 
@@ -2226,7 +2351,7 @@ def _is_product_token_function_case(case_key: str, case: dict[str, Any]) -> bool
     return function_name == "match_product_tokens" or "product token" in text or "제품 토큰" in text
 
 
-def _question_looks_like_product_token_lookup(question: str, metadata: dict[str, Any]) -> bool:
+def _question_looks_like_product_token_lookup(question: str, metadata: dict[str, Any], case: dict[str, Any] | None = None) -> bool:
     text = str(question or "")
     if _explicit_previous_reference_requested(text):
         return False
@@ -2234,36 +2359,25 @@ def _question_looks_like_product_token_lookup(question: str, metadata: dict[str,
         return False
     if _matches_registered_product_term(text, metadata):
         return False
-    if not _mentions_any(text, ["제품", "product"]):
+    required_cues = _case_text_list(case or {}, "required_question_cues") or ["제품", "product"]
+    if required_cues and not all(_mentions_any(text, [cue]) for cue in required_cues):
         return False
-    if not _mentions_any(
-        text,
-        [
-            "찾",
-            "조회",
-            "리스트",
-            "목록",
-            "보여",
-            "알려",
-            "생산량",
-            "실적",
-            "재공",
-            "수량",
-            "합계",
-            "총",
-            "find",
-            "lookup",
-            "list",
-            "show",
-            "match",
-            "production",
-            "wip",
-            "quantity",
-            "total",
-        ],
-    ):
+    question_cues = _case_text_list(case or {}, "question_cues") or [
+        "찾",
+        "조회",
+        "리스트",
+        "목록",
+        "보여",
+        "알려",
+        "find",
+        "lookup",
+        "list",
+        "show",
+        "match",
+    ]
+    if question_cues and not _mentions_any(text, question_cues):
         return False
-    metric_terms = [
+    metric_terms = _case_text_list(case or {}, "metric_cues") or [
         "생산량",
         "실적",
         "재공",
@@ -2294,25 +2408,27 @@ def _plan_has_unregistered_product_attribute_filters(
         return False
     if _matches_registered_product_term(text, metadata):
         return False
-    token_columns = {
-        "TECH",
-        "DEN",
-        "DENSITY",
-        "MODE",
-        "PKG_TYPE1",
-        "PKG1",
-        "PKG_TYPE2",
-        "PKG2",
-        "LEAD",
-        "MCP_NO",
-        "DEVICE",
-        "DEVICE_DESC",
-    }
+    token_columns = _product_token_columns_from_metadata(metadata)
     for condition in _all_plan_filter_conditions(plan):
         field = str(condition.get("field") or "").strip().upper()
         if field in token_columns and _filter_value_appears_in_question(condition, question):
             return True
     return False
+
+
+def _product_token_columns_from_metadata(metadata: dict[str, Any]) -> set[str]:
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    cases = domain.get("pandas_function_cases") if isinstance(domain.get("pandas_function_cases"), dict) else {}
+    columns: set[str] = set()
+    for case_key, case in cases.items():
+        if isinstance(case, dict) and _is_product_token_function_case(str(case_key), case):
+            columns.update(_case_token_columns(case))
+    return columns or set(_default_product_token_columns())
+
+
+def _case_text_list(case: dict[str, Any], key: str) -> list[str]:
+    values = case.get(key) if isinstance(case.get(key), list) else []
+    return [str(value).strip() for value in values if str(value or "").strip()]
 
 
 def _all_plan_filter_conditions(plan: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2380,7 +2496,7 @@ def _normalize_product_token_lookup_plan(
         plan["depends_on_state"] = False
         plan["requires_full_previous_result_restore"] = False
         plan.pop("previous_result_restore_mode", None)
-    if _product_token_detail_lookup_needs_dataset_selection(plan, question):
+    if _product_token_detail_lookup_needs_dataset_selection(plan, question, case):
         raw_jobs.clear()
         plan["datasets"] = []
         plan["retrieval_jobs"] = []
@@ -2421,41 +2537,42 @@ def _normalize_product_token_lookup_plan(
     _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
 
 
-def _product_token_detail_lookup_needs_dataset_selection(plan: dict[str, Any], question: str) -> bool:
+def _product_token_detail_lookup_needs_dataset_selection(plan: dict[str, Any], question: str, case: dict[str, Any]) -> bool:
     if not _product_token_case_should_return_detail(plan, question):
         return False
     if _explicit_previous_reference_requested(question):
         return False
-    return not _question_has_product_token_dataset_cue(question)
+    return not _question_has_product_token_dataset_cue(question, case)
 
 
-def _question_has_product_token_dataset_cue(question: str) -> bool:
+def _question_has_product_token_dataset_cue(question: str, case: dict[str, Any] | None = None) -> bool:
+    cues = _case_text_list(case or {}, "dataset_cues") or [
+        "생산",
+        "실적",
+        "production",
+        "PRODUCTION",
+        "재공",
+        "wip",
+        "WIP",
+        "Lot",
+        "LOT",
+        "lot",
+        "Hold",
+        "HOLD",
+        "hold",
+        "장비",
+        "설비",
+        "equipment",
+        "Equipment",
+        "EQP",
+        "dataset",
+        "데이터셋",
+        "source",
+        "소스",
+    ]
     return _mentions_any(
         question,
-        [
-            "생산",
-            "실적",
-            "production",
-            "PRODUCTION",
-            "재공",
-            "wip",
-            "WIP",
-            "Lot",
-            "LOT",
-            "lot",
-            "Hold",
-            "HOLD",
-            "hold",
-            "장비",
-            "설비",
-            "equipment",
-            "Equipment",
-            "EQP",
-            "dataset",
-            "데이터셋",
-            "source",
-            "소스",
-        ],
+        cues,
     )
 
 

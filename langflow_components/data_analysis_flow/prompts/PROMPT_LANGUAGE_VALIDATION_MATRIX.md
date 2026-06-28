@@ -22,7 +22,7 @@
 | 7 | 어제 개선 product token detail | 생산 데이터에서 64G L-269P1Q 제품 찾아줘 | `pandas_function_cases.component_token_product_lookup`, `match_product_tokens`, `detail_rows` |
 | 8 | 오늘 개선 product token metric | 오늘 lpddr4 lc 64g 제품 생산량 알려줘 | MODE/DEN/PKG 임의 filter 금지, `component_token_product_lookup` 먼저 적용 후 production aggregate |
 | 9 | product_terms 우선순위 | 오늘 HBM 제품 생산량 알려줘 | HBM은 `product_terms` 조건으로 처리, product token function case 사용 금지 |
-| 10 | helper 미구현 guard | Lot ID와 Hold 사유, IN_TAT 조건을 섞은 Lot/Hold 조회 | metadata가 function case를 선택하더라도 14번 입력 또는 package에 helper code가 없으면 실행 불가로 안내 |
+| 10 | Hold/IN_TAT 공정 집계 | 현재 hold된 lot 중 IN_TAT 24시간 이상인 Lot을 공정별로 집계해서 보여줘 | `lot_status`, `LOT_HOLD_STAT_CD`/`IN_TAT` 조건, 공정별 `LOT_ID` 집계 |
 
 ## 로컬 계약 검증
 

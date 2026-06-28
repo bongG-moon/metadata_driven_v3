@@ -14,3 +14,4 @@
 - `02_SPECIALIZED_INTENT_PROMPT.md`에는 공정명, 공정 그룹, 제품 token, Lot/Hold, 장비, source별 scope 분리처럼 이 프로젝트/도메인에서만 중요한 규칙을 둔다.
 - helper 함수 이름, pandas 코드, DataFrame 처리 로직은 이 파일에 넣지 않는다.
 - 복잡한 pandas 절차가 필요하면 `pandas_function_cases` metadata에는 선택 힌트만 저장하고, 실제 helper 예시는 14번 노드의 `Specialized Functions` 입력에서 관리한다.
+- 새 domain metadata를 추가하거나 바꿀 때는 `metadata/domain_items.json`을 직접 수정하지 않는다. `langflow_components/domain_authoring_flow/raw_text_input_example.md`에 자연어 입력 예시를 추가한 뒤 Domain Authoring Flow 또는 `tools/register_domain_from_raw_text_examples.py`로 저장하고, 저장 결과를 MongoDB에서 검증한다.

@@ -172,7 +172,7 @@ def run_one(
 
 def summarize_jobs(payload: dict[str, Any]) -> list[dict[str, Any]]:
     rows = []
-    for job in payload.get("retrieval_jobs", []):
+    for job in _retrieval_jobs(payload):
         if not isinstance(job, dict):
             continue
         rows.append(
@@ -185,6 +185,11 @@ def summarize_jobs(payload: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _retrieval_jobs(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    return plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
 
 
 def build_report(results: list[dict[str, Any]], request_date: str) -> str:

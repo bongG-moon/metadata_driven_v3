@@ -572,13 +572,13 @@ def _dotted_result_column_renames(frame: pd.DataFrame, plan: dict[str, Any]) -> 
 
 
 def _fallback_result_df(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> pd.DataFrame | None:
+    step_plan_result = _fallback_from_step_plan(plan, runtime_sources)
+    if step_plan_result is not None:
+        return step_plan_result
     if str(plan.get("analysis_kind") or "") == "rank_wip_then_join_production":
         ranked_join = _fallback_rank_wip_then_join_production(plan, runtime_sources)
         if ranked_join is not None:
             return ranked_join
-    step_plan_result = _fallback_from_step_plan(plan, runtime_sources)
-    if step_plan_result is not None:
-        return step_plan_result
     if _is_top_wip_process_hold_lot_in_tat_plan(plan):
         return _fallback_top_wip_process_hold_lot_in_tat(plan, runtime_sources)
     if _is_top_wip_product_oldest_lot_plan(plan):
@@ -635,8 +635,16 @@ def _fallback_from_step_plan(plan: dict[str, Any], runtime_sources: dict[str, An
             frame = _fallback_step_rank_top_n(step, plan, runtime_sources, frames_by_step)
         elif operation in AGGREGATE_STEP_OPERATIONS:
             frame = _fallback_step_aggregate(step, plan, runtime_sources, frames_by_step)
-        elif operation in {"equipment_count_by_product", "unique_count_by_group", "nunique_by_group"}:
+        elif operation in {
+            "equipment_count_by_product",
+            "equipment_count_for_previous_products",
+            "lot_count_by_process",
+            "unique_count_by_group",
+            "nunique_by_group",
+        }:
             frame = _fallback_step_unique_count(step, plan, runtime_sources, frames_by_step)
+        elif operation in {"detail_rows", "detail_rows_for_product_keys"}:
+            frame = _fallback_step_detail_rows(step, plan, runtime_sources, frames_by_step)
         elif operation == "hold_lot_in_tat_by_process":
             frame = _fallback_step_hold_lot_in_tat(step, plan, runtime_sources, frames_by_step)
         elif operation == "left_join":
@@ -799,15 +807,35 @@ def _fallback_step_unique_count(
         return None
     frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
     count_column = str(step.get("count_column") or "").strip()
+    if not count_column:
+        operation = str(step.get("operation") or "").strip()
+        candidates = ["LOT_ID"] if operation == "lot_count_by_process" else ["EQPID", "EQP_ID"]
+        count_column = next((column for column in candidates if column in frame.columns), "")
     if not count_column or count_column not in frame.columns:
         return None
-    group_by = _available_columns(frame, step.get("group_by"))
+    group_by = _available_columns(frame, step.get("group_by") or step.get("group_by_columns"))
     output_column = _count_output_column(step, group_by)
     if group_by:
         result = frame.groupby(group_by, dropna=False)[count_column].nunique().reset_index(name=output_column)
     else:
         result = pd.DataFrame([{output_column: frame[count_column].nunique()}])
     return _select_step_columns(result, _step_output_columns(step))
+
+
+def _fallback_step_detail_rows(
+    step: dict[str, Any],
+    plan: dict[str, Any],
+    runtime_sources: dict[str, Any],
+    frames_by_step: dict[str, pd.DataFrame],
+) -> pd.DataFrame | None:
+    frame = _frame_for_step_source(step, runtime_sources, plan)
+    if frame is None:
+        return None
+    frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
+    output_columns = _step_output_columns(step)
+    if not output_columns:
+        output_columns = _column_names_from_output_specs(step.get("columns", []) if isinstance(step.get("columns"), list) else [])
+    return _select_step_columns(frame.drop_duplicates().reset_index(drop=True), output_columns)
 
 
 def _fallback_step_hold_lot_in_tat(
@@ -844,16 +872,21 @@ def _fallback_step_hold_lot_in_tat(
 
 
 def _fallback_step_left_join(step: dict[str, Any], frames_by_step: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
-    left_step = str(step.get("left_step") or "").strip()
-    right_step = str(step.get("right_step") or "").strip()
+    left_step = str(step.get("left_step") or step.get("left_step_id") or "").strip()
+    right_step = str(step.get("right_step") or step.get("right_step_id") or "").strip()
     if not left_step or not right_step or left_step not in frames_by_step or right_step not in frames_by_step:
         return None
     left = frames_by_step[left_step]
     right = frames_by_step[right_step]
-    join_keys = _step_join_keys(step, left, right)
-    if not join_keys:
+    join_pairs = _step_join_key_pairs(step, left, right)
+    if not join_pairs:
         return None
-    result = left.merge(right, on=join_keys, how="left")
+    left_on = [pair[0] for pair in join_pairs]
+    right_on = [pair[1] for pair in join_pairs]
+    if left_on == right_on:
+        result = left.merge(right, on=left_on, how="left")
+    else:
+        result = left.merge(right, left_on=left_on, right_on=right_on, how="left")
     for column in _step_output_columns(step):
         if column not in result.columns:
             result[column] = 0 if column.endswith("_COUNT") else None
@@ -1015,10 +1048,23 @@ def _normalize_compare_value(value: Any) -> str:
 
 
 def _step_join_keys(step: dict[str, Any], left: pd.DataFrame, right: pd.DataFrame) -> list[str]:
+    return [left_key for left_key, right_key in _step_join_key_pairs(step, left, right) if left_key == right_key]
+
+
+def _step_join_key_pairs(step: dict[str, Any], left: pd.DataFrame, right: pd.DataFrame) -> list[tuple[str, str]]:
     raw_keys = step.get("join_keys") if isinstance(step.get("join_keys"), list) else []
     if not raw_keys and step.get("join_key"):
         raw_keys = [step.get("join_key")]
-    return [str(key) for key in raw_keys if str(key) in left.columns and str(key) in right.columns]
+    pairs: list[tuple[str, str]] = []
+    for raw_key in raw_keys:
+        if isinstance(raw_key, dict):
+            left_key = str(raw_key.get("left") or raw_key.get("left_on") or raw_key.get("source") or "").strip()
+            right_key = str(raw_key.get("right") or raw_key.get("right_on") or raw_key.get("target") or "").strip()
+        else:
+            left_key = right_key = str(raw_key or "").strip()
+        if left_key and right_key and left_key in left.columns and right_key in right.columns:
+            pairs.append((left_key, right_key))
+    return pairs
 
 
 def _available_columns(frame: pd.DataFrame, columns: Any) -> list[str]:
@@ -1498,6 +1544,7 @@ def _shared_product_keys(plan: dict[str, Any], wip_df: pd.DataFrame, lot_df: pd.
 
 def _is_top_wip_product_oldest_lot_plan(plan: dict[str, Any]) -> bool:
     kind = str(plan.get("analysis_kind") or "").lower()
+    recipe = str(plan.get("matched_analysis_recipe") or "").lower()
     if kind == "top_wip_process_hold_lot_in_tat":
         return False
     if kind in {
@@ -1505,25 +1552,38 @@ def _is_top_wip_product_oldest_lot_plan(plan: dict[str, Any]) -> bool:
         "wip_top_product_oldest_lot",
         "top_wip_product_lot_in_tat",
         "oldest_lot_for_top_wip_product",
+    } or recipe in {
+        "top_wip_product_oldest_lot",
+        "wip_top_product_oldest_lot",
+        "top_wip_product_lot_in_tat",
+        "oldest_lot_for_top_wip_product",
     }:
         return True
-    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
-    has_wip = any(_job_text_contains(job, "wip") for job in jobs if isinstance(job, dict))
-    has_lot = any(_job_text_contains(job, "lot") for job in jobs if isinstance(job, dict))
-    step_text = json.dumps(plan.get("step_plan") or [], ensure_ascii=False).lower()
-    return has_wip and has_lot and "in_tat" in step_text and "wip" in step_text
+    return _step_plan_has_operations(plan, {"rank_top_n"}) and _step_plan_mentions(plan, {"IN_TAT", "WIP"})
 
 
 def _is_top_wip_process_hold_lot_in_tat_plan(plan: dict[str, Any]) -> bool:
     kind = str(plan.get("analysis_kind") or "").lower()
-    if kind == "top_wip_process_hold_lot_in_tat":
+    recipe = str(plan.get("matched_analysis_recipe") or "").lower()
+    if kind == "top_wip_process_hold_lot_in_tat" or recipe == "top_wip_process_hold_lot_in_tat":
         return True
-    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
-    has_wip = any(_job_text_contains(job, "wip") for job in jobs if isinstance(job, dict))
-    has_lot = any(_job_text_contains(job, "lot") for job in jobs if isinstance(job, dict))
-    columns = plan.get("analysis_output_columns") if isinstance(plan.get("analysis_output_columns"), list) else []
-    column_text = " ".join(str(column).upper() for column in columns)
-    return has_wip and has_lot and "HOLD_LOT_COUNT" in column_text and "AVG_IN_TAT" in column_text
+    return _step_plan_has_operations(plan, {"hold_lot_in_tat_by_process"})
+
+
+def _step_plan_has_operations(plan: dict[str, Any], operations: set[str]) -> bool:
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        operation = str(step.get("operation") or "").strip()
+        if operation in operations:
+            return True
+    return False
+
+
+def _step_plan_mentions(plan: dict[str, Any], tokens: set[str]) -> bool:
+    step_text = json.dumps(plan.get("step_plan") or [], ensure_ascii=False).upper()
+    return all(token.upper() in step_text for token in tokens)
 
 
 def _job_text_contains(job: dict[str, Any], token: str) -> bool:

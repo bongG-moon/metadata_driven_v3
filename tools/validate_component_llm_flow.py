@@ -219,7 +219,7 @@ def run_case(
         "payload": {
             "intent_type": payload["intent_plan"].get("intent_type"),
             "analysis_kind": payload["intent_plan"].get("analysis_kind"),
-            "retrieval_jobs": payload.get("retrieval_jobs", []),
+            "retrieval_jobs": _retrieval_jobs(payload),
             "applied_scope": payload.get("applied_scope", {}),
             "data": payload.get("data", {}),
             "info": payload.get("info", []),
@@ -299,6 +299,11 @@ def checks_for_case(case: dict[str, Any], payload: dict[str, Any]) -> list[dict[
             payload["intent_plan"].get("state_product_keys"),
         )
     return checks
+
+
+def _retrieval_jobs(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    return plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
 
 
 def filter_fields(payload: dict[str, Any]) -> set[str]:

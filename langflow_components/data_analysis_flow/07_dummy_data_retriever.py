@@ -93,7 +93,7 @@ def retrieve_dummy_data(payload_value: Any) -> dict[str, Any]:
             }
         }
 
-    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else payload.get("retrieval_jobs", [])
+    jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
     source_results = [_source_result(job) for job in jobs if isinstance(job, dict)]
     return {
         "retrieval_payload": {

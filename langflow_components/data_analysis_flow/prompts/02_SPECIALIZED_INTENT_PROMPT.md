@@ -8,6 +8,8 @@
 - 등록된 product_terms, process_groups, status_terms, metric_terms, quantity_terms, analysis_recipes가 있으면 일반 추론보다 먼저 적용한다.
 - 등록된 도메인 조건으로 처리 가능한 질문은 pandas_function_cases로 보내지 않는다.
 - pandas_function_cases는 일반 필터로 안정적으로 표현하기 어려운 절차형 매칭이나 파싱이 필요할 때만 선택한다.
+- 복합 분석 절차가 필요하면 02번에서 임의 절차를 새로 만들기보다 등록된 analysis_recipes를 먼저 찾는다.
+- analysis_recipes가 step_plan_template을 제공하면 그 단계 순서를 유지하고, pandas code 생성 단계에서 축약하지 않도록 한다.
 
 제품/공정 grain 규칙:
 - 제품별/product-by 질문은 product_grain으로 group_by한다.
@@ -51,7 +53,8 @@ Lot/Hold/상태 규칙:
 - status_terms의 시간대 alias, 예를 들어 07:00~15:00, 는 공백이 섞여도 같은 shift/status label alias처럼 처리한다.
 - 작업대기/작업중 Lot 수량 질문은 lot_status와 matching status_terms 값을 사용하고 LOT_COUNT는 LOT_ID.nunique()로 계산한다.
 - DA/WB 같은 공정 group에서 lot count + wafer count + die quantity를 함께 묻는 질문은 lot_status와 공정 group filter를 사용하고 lot_quantity_summary를 우선 검토한다.
-- Lot ID, Hold 상태/사유, 공정명, IN_TAT/HOLD_TM 조건을 자유롭게 섞어 Lot/Hold 목록을 찾는 질문은 등록된 lot_hold_complex_lookup function case가 있을 때 해당 helper를 선택한다.
+- 재공 상위 공정을 먼저 찾고 해당 공정의 Hold LOT 수나 평균 IN_TAT를 이어서 묻는 질문은 top_wip_process_hold_lot_in_tat recipe를 우선 검토한다.
+- 재공이 가장 많은 제품을 먼저 찾고 그 제품의 IN_TAT가 가장 오래된 LOT를 이어서 묻는 질문은 top_wip_product_oldest_lot recipe를 우선 검토한다.
 
 장비/follow-up 규칙:
 - follow-up 장비 현황/설비 현황 질문은 이전 product key를 사용하고 equipment_status를 우선 사용한다.
@@ -62,6 +65,7 @@ Lot/Hold/상태 규칙:
 
 rank/dependent lookup 특화 규칙:
 - rank_wip_then_join_production은 반드시 multi_step_analysis로 계획한다.
+- 재공 상위 제품을 먼저 뽑고 같은 제품의 생산량/실적을 붙이는 질문은 rank_wip_then_join_production recipe를 우선 검토한다.
 - top/bottom/rank 뒤에 dependent lookup, count, detail, oldest/longest selection이 이어지면 metadata analysis_recipes를 우선 검토하고 rank step을 dependent step보다 먼저 둔다.
 - DA/WB 같은 그룹별 rank 질문은 rank_groups를 사용하고, rank_group_output_column/output_columns에 OPER_GROUP 같은 사용자-facing label column을 둔다.
 - rank_groups[].field는 raw metadata-backed field에만 사용하고, 사용자가 raw breakdown axis를 명시하지 않는 한 final output_columns에는 넣지 않는다.

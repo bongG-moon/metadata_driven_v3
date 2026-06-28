@@ -64,6 +64,7 @@ def test_main_flow_api_response_builder_projects_current_payload() -> None:
     assert api_response["analysis"]["analysis_code"].startswith("result_df")
     assert api_response["data_refs"][0]["ref_id"] == "result-1"
     assert api_response["developer"]["analysis_code"].startswith("result_df")
+    assert "data_refs" not in api_response["developer"]
     assert "debug" not in api_response
     assert "runtime_sources" not in json.dumps(api_response, ensure_ascii=False)
 

@@ -26,7 +26,7 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
         )
         return {
             "prompt": prompt,
-            "payload": payload,
+            "payload": _compact_prompt_payload(payload),
             "prompt_type": "direct_response_skip",
             "answer_context": {
                 "question": (payload.get("request") or {}).get("question", "") if isinstance(payload.get("request"), dict) else "",
@@ -78,7 +78,7 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
             json.dumps(answer_context, ensure_ascii=False, indent=2),
         ]
     )
-    return {"prompt": prompt, "payload": payload, "prompt_type": "final_answer", "answer_context": answer_context}
+    return {"prompt": prompt, "payload": _compact_prompt_payload(payload), "prompt_type": "final_answer", "answer_context": answer_context}
 
 
 def _compact_source_results(source_results: list[Any]) -> list[dict[str, Any]]:
@@ -98,6 +98,25 @@ def _compact_source_results(source_results: list[Any]) -> list[dict[str, Any]]:
                 "data_ref": result.get("data_ref"),
             }
         )
+    return compact
+
+
+def _compact_prompt_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    compact = {
+        key: deepcopy(value)
+        for key, value in payload.items()
+        if key not in {"metadata", "runtime_sources", "state"}
+    }
+    if isinstance(compact.get("source_results"), list):
+        compact["source_results"] = _compact_source_results(compact["source_results"])
+    if isinstance(compact.get("analysis"), dict):
+        compact["analysis"] = {
+            key: deepcopy(value)
+            for key, value in compact["analysis"].items()
+            if key not in {"rows", "analysis_code", "pandas_code_json"}
+        }
+    if isinstance(compact.get("data"), dict):
+        compact["data"] = {key: deepcopy(value) for key, value in compact["data"].items() if key != "rows"}
     return compact
 
 

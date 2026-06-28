@@ -915,13 +915,18 @@ def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "llm_validation": payload.get("llm_validation"),
         "intent_type": payload.get("intent_plan", {}).get("intent_type"),
         "analysis_kind": payload.get("intent_plan", {}).get("analysis_kind"),
-        "retrieval_jobs": payload.get("retrieval_jobs", []),
+        "retrieval_jobs": _retrieval_jobs(payload),
         "source_results": payload.get("source_results", []),
         "analysis": payload.get("analysis", {}),
         "data": payload.get("data", {}),
         "applied_scope": payload.get("applied_scope", {}),
         "errors": payload.get("errors", []),
     }
+
+
+def _retrieval_jobs(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    return plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
 
 
 def build_report(results: list[dict[str, Any]]) -> str:

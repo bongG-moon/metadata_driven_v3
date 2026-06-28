@@ -5,7 +5,7 @@
 ## 원칙
 
 - prompt builder 노드는 LLM 입력 문자열을 만들기 위한 context만 구성한다. downstream 실행 노드는 prompt builder의 payload가 아니라 canonical payload를 직접 받는다.
-- canonical 위치를 하나 정한다. 예를 들어 조회 계획은 `intent_plan.retrieval_jobs`를 기준으로 하고, top-level `retrieval_jobs`는 노드 연결 편의를 위한 mirror인지 제거 가능한지 따로 판단한다.
+- canonical 위치를 하나 정한다. 조회 계획은 `intent_plan.retrieval_jobs`를 기준으로 하고, top-level `retrieval_jobs` mirror는 만들지 않는다.
 - row data는 `runtime_sources` 또는 저장된 `data_ref` 중 하나를 기준으로 이동한다. 같은 row가 `source_results.preview_rows`, `runtime_sources`, `analysis.rows`, `data.rows`, `state.current_data.rows`에 동시에 오래 남지 않게 한다.
 - 의미 판단 보완은 우선 prompt/metadata에 둔다. Python fallback은 schema 안정화, 어댑터, 실제 실행 안전성에 필요한 범위로 제한한다.
 - 각 축소는 대표 질문과 pytest subset을 통과한 뒤 다음 구간으로 넘어간다.
@@ -17,7 +17,7 @@
 | request | `00_analysis_request_loader.py` | question, previous state | `request`, compact `state`, `info/warnings/errors` | `request`, `state` |
 | metadata | `01_metadata_context_loader.py` | payload | `metadata`, initial `metadata_context` | `metadata`, `metadata_context` |
 | intent prompt | `02_intent_prompt_builder.py` | payload, specialized prompt | prompt text, prompt payload | prompt text only |
-| intent normalize | `03_intent_plan_normalizer.py` | payload, LLM JSON | `intent_plan`, top-level `retrieval_jobs`, refreshed `metadata_context`, `info/warnings` | `intent_plan`, `retrieval_jobs`, `metadata_context` |
+| intent normalize | `03_intent_plan_normalizer.py` | payload, LLM JSON | `intent_plan`, refreshed `metadata_context`, `info/warnings` | `intent_plan`, `metadata_context` |
 | previous restore | `04`~`06` | payload, restore payload | restored `runtime_sources` / previous state related keys | `runtime_sources`, `source_results`, `state` |
 | retrieval | `07`~`11` | payload | branch-level `retrieval_payload.source_results` | `source_results` |
 | retrieval merge | `12_source_retrieval_merger.py` | branch retrieval payloads | wrapped `retrieval_payload` with `source_results`, `intent_plan`, `state` | `source_results` |
@@ -34,7 +34,7 @@
 
 | 후보 | 현재 위치 | 관찰 | 정리 방향 |
 | --- | --- | --- | --- |
-| 조회 계획 | `intent_plan.retrieval_jobs`, top-level `retrieval_jobs` | 03에서 둘 다 세팅한다. 많은 downstream은 `intent_plan`을 직접 본다. | canonical을 `intent_plan.retrieval_jobs`로 정하고 top-level은 retriever 연결용 mirror인지 확인한다. |
+| 조회 계획 | `intent_plan.retrieval_jobs` | 03은 조회 계획을 `intent_plan` 안에만 세팅한다. downstream은 `intent_plan`을 직접 본다. | top-level mirror를 만들지 않고 검증/리포트 도구도 `intent_plan.retrieval_jobs`를 읽는다. |
 | dataset 목록 | `intent_plan.datasets`, retrieval job list, `applied_scope.datasets`, API `intent.datasets` | 같은 dataset 정보가 여러 단계에서 재구성된다. | 최종 표시용은 `applied_scope`, 실행용은 `intent_plan.retrieval_jobs`에서 파생하는 방향 검토. |
 | source rows | `runtime_sources`, `source_results.preview_rows`, `analysis.rows`, `data.rows`, `state.current_data.rows` | 단계가 진행될수록 같은 row가 preview와 full result로 중복될 수 있다. | 13 이후 실행 중에는 `runtime_sources`, 19 이후 응답/상태에는 `data`와 ref만 남기는 방향 유지. 중간 preview row 보존 필요성 점검. |
 | source metadata | `source_results`, `applied_scope.filters_by_source`, `metadata_context.filter_refs` | 필터/파라미터 표시용 정보가 여러 형태로 파생된다. | 원본은 `source_results.applied_filters/applied_params`, 표시용은 19에서 파생. 저장 시 중복 줄이기. |
@@ -46,7 +46,7 @@
 ## 먼저 줄일 후보
 
 1. `12 -> 13` 경계: `12`가 `retrieval_payload` wrapper 안에 `intent_plan/state`를 다시 넣는다. `13`은 main payload도 별도로 받으므로, wrapper에는 `source_results`만 남길 수 있는지 검토한다.
-2. `03` 출력: top-level `retrieval_jobs`와 `intent_plan.retrieval_jobs` mirror 관계를 명확히 한다. retriever가 top-level을 쓰는지, plan만 쓰는지 확인 후 하나로 축소한다.
+2. `03` 출력: top-level `retrieval_jobs` mirror는 제거했고, 조회 계획은 `intent_plan.retrieval_jobs`를 canonical로 사용한다.
 3. `18 -> 19` 경계: 18은 prompt-only 노드다. 현재 연결 가이드처럼 19가 17 payload를 직접 받는 구조를 유지하고, 18의 prompt payload가 downstream으로 새지 않게 테스트한다.
 4. `19` 이후: `analysis.rows`와 `data.rows`가 둘 다 API까지 간다. API에서 둘 다 필요한지, `analysis.rows`는 debug/analysis view에만 두고 state에는 `data`만 남기는지 확인한다.
 5. `17` 저장 전후: `runtime_sources` compact/ref 처리와 `source_results` ref 적용이 동시에 일어난다. 저장 이후 payload에 full row가 남는지 대표 질문으로 확인한다.
@@ -263,4 +263,121 @@ python -m pytest -q tests/test_langflow_llm_node_flow.py::test_langflow_llm_node
 
 python -m pytest -q tests/test_langflow_llm_node_flow.py::test_answer_response_strips_llm_embedded_result_table_before_adapter_table tests/test_mongodb_result_store_flow.py::test_answer_response_state_keeps_product_key_summary_without_full_restore tests/test_mongodb_result_store_flow.py::test_answer_response_state_preserves_followup_source_refs tests/test_session_state_flow.py
 # 7 passed
+```
+
+## 6차 정리 결과
+
+- `18_answer_prompt_builder.py`의 `Prompt Payload`는 디버그/검사용 output이며, `19`에 연결하는 실행 payload가 아니다.
+- 6차 정리로 `18`의 `prompt_payload.payload`에서 `metadata`, `runtime_sources`, `state`, `analysis.rows`, `analysis_code`, `pandas_code_json`, `data.rows`를 제거했다.
+- `18`의 실제 LLM prompt와 `answer_context`는 그대로 유지하므로 답변 품질용 preview는 유지된다.
+- `21_api_response_builder.py`는 top-level `data_refs`를 canonical data reference 위치로 유지하고, 동일한 값을 `developer.data_refs`에 다시 복사하지 않는다.
+- `data.rows`와 `state.current_data.rows`, `runtime_source_refs`, `followup_source_results`는 후속 질문/복원 경로와 연결되어 있어 이번 단계에서는 줄이지 않았다.
+
+검증:
+
+```powershell
+python -m pytest -q tests/test_langflow_llm_node_flow.py::test_answer_prompt_tells_llm_not_to_render_result_tables tests/test_langflow_llm_node_flow.py::test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract tests/test_langflow_llm_node_flow.py::test_langflow_llm_node_style_flow_contract
+# 3 passed
+
+python -m pytest -q tests/test_main_flow_api_response_builder.py tests/test_web_app_langflow_client.py
+# 25 passed
+
+python -m pytest -q tests/test_session_state_flow.py tests/test_mongodb_result_store_flow.py::test_answer_response_state_keeps_product_key_summary_without_full_restore tests/test_mongodb_result_store_flow.py::test_answer_response_state_preserves_followup_source_refs tests/test_split_flow_contracts.py::test_previous_result_restore_router_uses_source_refs_without_current_data_ref
+# 7 passed
+```
+
+## 7차 조사: top-level retrieval_jobs mirror
+
+- canonical 조회 계획은 여전히 `intent_plan.retrieval_jobs`다.
+- 운영 retriever(`08`~`11`)와 pandas/answer/display 노드는 `intent_plan.retrieval_jobs`를 기준으로 읽는다.
+- `07_dummy_data_retriever.py`만 `intent_plan`이 없을 때 top-level `retrieval_jobs` fallback을 갖고 있다.
+- 다만 tests, validation tools, 일부 web/debug 표시가 top-level `payload["retrieval_jobs"]`를 직접 많이 참조한다.
+- 따라서 이번 단계에서 top-level mirror를 제거하지 않는다. 제거하려면 먼저 테스트/검증 도구를 `intent_plan.retrieval_jobs` 기준으로 바꾸고, Langflow 연결 가이드의 legacy fallback 필요 여부를 별도로 확인한다.
+
+## 8차 정리 결과: 03 의미 보정과 15 fallback 범위
+
+- `03_intent_plan_normalizer.py`의 제품 토큰 function case 선택은 코드에 박힌 컬럼 목록보다 `pandas_function_cases` metadata의 `required_question_cues`, `question_cues`, `token_columns`, 선택적 `dataset_cues`를 우선 사용한다.
+- `POP`, `MOBILE`, `HBM`처럼 기존 `product_terms`로 등록된 제품군은 function case로 보내지 않고 기존 도메인 조건으로 처리한다.
+- 사용자가 `512G G-777 제품 생산량`처럼 제품 속성을 일반 filter로 받은 경우, metadata의 token column 기준으로 해당 filter를 pandas helper 단계로 넘기고 source retrieval filter에서는 제거한다.
+- `15_pandas_code_executor.py`의 특정 WIP/Lot fallback은 명시적 `analysis_kind`, `matched_analysis_recipe`, 또는 명시적 step operation/rank sequence가 있을 때만 실행한다.
+- `HOLD_LOT_COUNT`, `AVG_IN_TAT` 같은 output column 단서만으로 특정 fallback을 발동하지 않는다.
+- generic step primitive fallback(`rank_top_n`, aggregate, unique count, left join)은 유지한다.
+
+검증:
+
+```powershell
+python -m pytest -q tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_unregistered_product_tokens_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_rejects_ambiguous_product_token_dataset_guess tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_product_token_metric_filters_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_uses_function_case_metadata_token_columns tests/test_langflow_llm_node_flow.py::test_intent_normalizer_keeps_registered_product_terms_out_of_function_case
+# 5 passed
+
+python -m pytest -q tests/test_pandas_executor_guards.py::test_pandas_executor_replaces_incomplete_top_wip_process_lot_metrics_result tests/test_pandas_executor_guards.py::test_pandas_executor_does_not_apply_specific_lot_fallback_without_recipe_or_step tests/test_pandas_executor_guards.py::test_pandas_executor_replaces_unfiltered_rank_result_with_filtered_step_fallback tests/test_langflow_llm_node_flow.py::test_pandas_executor_falls_back_when_llm_returns_empty_contract_for_wip_lot_sequence tests/test_langflow_llm_node_flow.py::test_pandas_executor_falls_back_from_step_plan_primitives_for_production_equipment_count
+# 5 passed
+
+python -m pytest -q
+# 314 passed
+
+python tools/validate_current_stage_questions.py
+# 10/10 current-stage component LLM cases passed
+```
+
+## 9차 정리 결과: top-level retrieval_jobs mirror 제거
+
+- `03_intent_plan_normalizer.py`는 더 이상 top-level `retrieval_jobs`를 만들지 않는다.
+- 조회 계획의 canonical 위치는 `intent_plan.retrieval_jobs`로 고정한다.
+- `07_dummy_data_retriever.py`의 legacy top-level `retrieval_jobs` fallback도 제거해 dummy retrieval branch가 `intent_plan`만 보게 했다.
+- 검증/리포트 도구는 `payload.get("retrieval_jobs")` 대신 `intent_plan.retrieval_jobs`를 읽도록 바꿨다.
+- `tests/test_langflow_llm_node_flow.py`는 테스트 helper `_retrieval_jobs(payload)`를 통해 canonical 위치를 검증하고, normalizer 출력에 top-level `retrieval_jobs`가 생기지 않는 것을 확인한다.
+
+검증:
+
+```powershell
+python -m pytest -q tests/test_langflow_llm_node_flow.py::test_langflow_llm_node_style_flow_contract tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_unregistered_product_tokens_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_rejects_ambiguous_product_token_dataset_guess tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_product_token_metric_filters_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_uses_function_case_metadata_token_columns tests/test_langflow_llm_node_flow.py::test_intent_normalizer_keeps_registered_product_terms_out_of_function_case
+# 6 passed
+
+python -m pytest -q tests/test_source_retrievers.py
+# 17 passed
+
+python tools/validate_prompt_language_guides.py
+# Prompt language guide validation passed
+
+python -m pytest -q
+# 314 passed
+
+python tools/validate_current_stage_questions.py
+# 10/10 current-stage component LLM cases passed
+# report: C:\Users\qkekt\Desktop\metadata_driven_v3\validation_runs\20260628_110613_current_stage_component_llm\REPORT.md
+```
+
+## 10차 정리 결과: Playground pandas code 표시 보존
+
+- `20_answer_message_adapter.py`의 `Pandas 처리` code block은 더 이상 `CODE_TEXT_LIMIT`으로 자르지 않는다.
+- 결과 테이블 cell, JSON value 같은 일반 표시 값은 기존 `_truncate` 제한을 유지한다.
+- API payload의 `analysis.analysis_code`는 이미 원문을 유지하므로, 이번 변경은 Playground message 표시 계층에만 해당한다.
+
+검증:
+
+```powershell
+python -m pytest -q tests/test_langflow_llm_node_flow.py::test_answer_message_adapter_does_not_truncate_pandas_code_block tests/test_langflow_llm_node_flow.py::test_answer_message_adapter_koreanizes_plan_and_pandas_reasoning
+# 2 passed
+
+python -m pytest -q
+# 315 passed
+```
+
+## 11차 정리 결과: 미사용 Lot/Hold function case 제거
+
+- 미사용 Lot/Hold 특화 function case는 사용하지 않는 항목으로 판단해 예시와 검증에서 제거했다.
+- `domain_authoring_flow/raw_text_input_example.md`의 Lot/Hold function-case 작성 예시를 삭제했다.
+- `data_analysis_flow/prompts/SPECIALIZED_FUNCTIONS_INPUT_GUIDE.md`의 Lot/Hold helper 예시와 MongoDB JSON 예시를 삭제했다.
+- `02_SPECIALIZED_INTENT_PROMPT.md`에서 복잡한 Lot/Hold 조건을 function case로 유도하는 문장을 제거했다.
+- inline function-case 실행 가능성 검증은 Lot/Hold 이름 대신 generic `custom_inline_lookup` 예시로 유지한다.
+- MongoDB `agent_v3_domain_items` 컬렉션에서 해당 미사용 function-case document 1건을 삭제했다.
+
+검증:
+
+```powershell
+python tools/validate_prompt_language_guides.py
+# Prompt language guide validation passed
+
+python -m pytest -q
+# 315 passed
 ```

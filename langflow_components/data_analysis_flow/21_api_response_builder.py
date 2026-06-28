@@ -205,7 +205,6 @@ def _developer_view(payload: dict[str, Any], analysis: dict[str, Any], data_refs
         "function_case_trace": analysis.get("function_case_trace"),
         "retrieval_jobs": intent_plan.get("retrieval_jobs"),
         "source_results": source_results,
-        "data_refs": data_refs,
         "data_ref_load": payload.get("data_ref_load"),
         "mongo_data_store": payload.get("mongo_data_store"),
     }

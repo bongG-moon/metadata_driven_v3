@@ -205,6 +205,45 @@ def test_pandas_executor_replaces_incomplete_top_wip_process_lot_metrics_result(
     assert "missed required plan output columns" in result["analysis"]["analysis_code"]
 
 
+def test_pandas_executor_does_not_apply_specific_lot_fallback_without_recipe_or_step() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "multi_step_analysis",
+            "analysis_output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+            "retrieval_jobs": [
+                {"dataset_key": "wip_today", "source_alias": "wip_data"},
+                {"dataset_key": "lot_status", "source_alias": "lot_data"},
+            ],
+            "step_plan": [
+                {
+                    "step_id": "custom_lot_summary",
+                    "operation": "custom_unregistered_lot_summary",
+                    "source_alias": "lot_data",
+                    "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+                }
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "wip_data": [{"OPER_SHORT_DESC": "WB", "WIP": 100}],
+            "lot_data": [{"OPER_SHORT_DESC": "WB", "LOT_ID": "LOT1", "LOT_HOLD_STAT_CD": "HOLD", "IN_TAT": 30}],
+        },
+    }
+    pandas_llm_json = {
+        "code": "result_df = pd.DataFrame(columns=['OPER_SHORT_DESC', 'WIP', 'HOLD_LOT_COUNT', 'AVG_IN_TAT'])",
+        "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+        "reasoning_steps": ["No deterministic registered recipe was selected."],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["row_count"] == 0
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "executor_fallback" not in result["analysis"]["analysis_code"]
+
+
 def test_pandas_executor_errors_when_required_source_columns_are_missing() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {

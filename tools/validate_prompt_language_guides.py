@@ -58,7 +58,7 @@ VALIDATION_QUESTIONS = [
     "생산 데이터에서 64G L-269P1Q 제품 찾아줘",
     "오늘 lpddr4 lc 64g 제품 생산량 알려줘",
     "오늘 HBM 제품 생산량 알려줘",
-    "Lot ID와 Hold 사유, IN_TAT 조건을 섞은 Lot/Hold 조회",
+    "현재 hold된 lot 중 IN_TAT 24시간 이상인 Lot을 공정별로 집계해서 보여줘",
 ]
 
 REFERENCE_CASE_IDS = [
@@ -166,6 +166,11 @@ def _normalize_with_llm_json(request_loader, normalizer, metadata: dict, questio
     return normalizer.normalize_intent_payload(payload, json.dumps(llm_json, ensure_ascii=False))
 
 
+def _retrieval_jobs(payload: dict) -> list[dict]:
+    plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
+    return plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
+
+
 def _check_product_token_detail(request_loader, normalizer, metadata: dict) -> tuple[bool, str]:
     question = "생산 데이터에서 64G L-269P1Q 제품 찾아줘"
     llm_json = {
@@ -188,7 +193,7 @@ def _check_product_token_detail(request_loader, normalizer, metadata: dict) -> t
     }
     payload = _normalize_with_llm_json(request_loader, normalizer, metadata, question, llm_json, "20260627")
     plan = payload["intent_plan"]
-    fields = _job_filter_fields(payload["retrieval_jobs"][0])
+    fields = _job_filter_fields(_retrieval_jobs(payload)[0])
     passed = (
         plan.get("pandas_function_case", {}).get("key") == "component_token_product_lookup"
         and plan.get("pandas_function_case", {}).get("function_name") == "match_product_tokens"
@@ -224,7 +229,7 @@ def _check_ambiguous_product_token_requires_dataset_selection(request_loader, no
     passed = (
         plan.get("pandas_function_case", {}).get("key") == "component_token_product_lookup"
         and plan.get("requires_dataset_selection") is True
-        and not payload.get("retrieval_jobs")
+        and not _retrieval_jobs(payload)
         and not plan.get("datasets")
     )
     return passed, "component case failed: ambiguous product token lookup should not guess wip_today"
@@ -261,7 +266,7 @@ def _check_product_token_metric(request_loader, normalizer, metadata: dict) -> t
     }
     payload = _normalize_with_llm_json(request_loader, normalizer, metadata, question, llm_json, "20260627")
     plan = payload["intent_plan"]
-    fields = _job_filter_fields(payload["retrieval_jobs"][0])
+    fields = _job_filter_fields(_retrieval_jobs(payload)[0])
     steps = plan.get("step_plan", [])
     passed = (
         plan.get("pandas_function_case", {}).get("key") == "component_token_product_lookup"
@@ -302,7 +307,7 @@ def _check_product_terms_priority(request_loader, normalizer, metadata: dict) ->
     }
     payload = _normalize_with_llm_json(request_loader, normalizer, metadata, question, llm_json, "20260627")
     plan = payload["intent_plan"]
-    filters = payload["retrieval_jobs"][0].get("filters", [])
+    filters = _retrieval_jobs(payload)[0].get("filters", [])
     has_hbm_filter = any(
         (
             item.get("field") in {"PKG_TYPE1", "PKG_TYP1"}
@@ -320,9 +325,9 @@ def _check_inline_function_case_helper_allowed(executor) -> tuple[bool, str]:
         "metadata": {
             "domain_items": {
                 "pandas_function_cases": {
-                    "lot_hold_complex_lookup": {
-                        "function_name": "match_lot_hold_conditions",
-                        "use_when": "Use for mixed Lot/Hold condition lookup.",
+                    "custom_inline_lookup": {
+                        "function_name": "match_custom_rows",
+                        "use_when": "Use for a custom inline row lookup.",
                     }
                 }
             }
@@ -330,33 +335,33 @@ def _check_inline_function_case_helper_allowed(executor) -> tuple[bool, str]:
         "intent_plan": {
             "analysis_kind": "detail_rows",
             "pandas_function_case": {
-                "key": "lot_hold_complex_lookup",
-                "function_name": "match_lot_hold_conditions",
-                "input_text": "T1234567GEN1 Hold info",
+                "key": "custom_inline_lookup",
+                "function_name": "match_custom_rows",
+                "input_text": "A001",
             },
             "step_plan": [
                 {
-                    "step_id": "lot_hold_complex_lookup",
+                    "step_id": "custom_inline_lookup",
                     "operation": "apply_pandas_function_case",
-                    "source_alias": "hold_data",
-                    "function_case_key": "lot_hold_complex_lookup",
-                    "function_name": "match_lot_hold_conditions",
-                    "input_text": "T1234567GEN1 Hold info",
+                    "source_alias": "custom_data",
+                    "function_case_key": "custom_inline_lookup",
+                    "function_name": "match_custom_rows",
+                    "input_text": "A001",
                 }
             ],
         },
-        "runtime_sources": {"hold_data": [{"LOT_ID": "T1234567GEN1", "HOLD_CD": "QA_HOLD"}]},
+        "runtime_sources": {"custom_data": [{"ITEM_ID": "A001", "VALUE": 7}]},
         "state": {},
     }
     pandas_llm_json = {
         "code": "\n".join(
             [
-                "def match_lot_hold_conditions(input_text, frame):",
-                "    return frame.copy()",
-                "result_df = match_lot_hold_conditions(plan['pandas_function_case']['input_text'], sources['hold_data'])",
+                "def match_custom_rows(input_text, frame):",
+                "    return frame[frame['ITEM_ID'] == input_text].copy()",
+                "result_df = match_custom_rows(plan['pandas_function_case']['input_text'], sources['custom_data'])",
             ]
         ),
-        "output_columns": ["LOT_ID", "HOLD_CD"],
+        "output_columns": ["ITEM_ID", "VALUE"],
         "reasoning_steps": ["Define the selected helper inline and call it."],
     }
     result = executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
@@ -364,7 +369,7 @@ def _check_inline_function_case_helper_allowed(executor) -> tuple[bool, str]:
     passed = (
         result.get("analysis", {}).get("status") == "ok"
         and rows
-        and rows[0].get("LOT_ID") == "T1234567GEN1"
+        and rows[0].get("ITEM_ID") == "A001"
     )
     return passed, "component case failed: inline function-case helper should execute"
 
