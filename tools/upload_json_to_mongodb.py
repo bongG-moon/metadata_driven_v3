@@ -9,6 +9,13 @@ from pathlib import Path
 from typing import Any
 
 
+# python tools\upload_json_to_mongodb.py `
+#   --domain-registration-trace-json metadata\domain_items_with_registration_trace.json `
+#   --table-registration-trace-json metadata\table_catalog_with_registration_trace.json `
+#   --main-filter-registration-trace-json metadata\main_flow_filters_with_registration_trace.json
+
+
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_DOMAIN_COLLECTION = "agent_v3_domain_items"
 DEFAULT_TABLE_CATALOG_COLLECTION = "agent_v3_table_catalog_items"
@@ -66,6 +73,30 @@ def main() -> int:
             "Values: all, domain, table-catalog, main-flow-filter. Default uploads all core metadata."
         ),
     )
+    parser.add_argument(
+        "--domain-registration-trace-json",
+        default="",
+        help=(
+            "Optional domain document export JSON that includes registration_trace. "
+            "Use metadata/domain_items_with_registration_trace.json to upload domain payloads with registration input text."
+        ),
+    )
+    parser.add_argument(
+        "--table-registration-trace-json",
+        default="",
+        help=(
+            "Optional table catalog document export JSON that includes registration_trace. "
+            "Use metadata/table_catalog_with_registration_trace.json to upload table catalog payloads with registration input text."
+        ),
+    )
+    parser.add_argument(
+        "--main-filter-registration-trace-json",
+        default="",
+        help=(
+            "Optional main flow filter document export JSON that includes registration_trace. "
+            "Use metadata/main_flow_filters_with_registration_trace.json to upload filter payloads with registration input text."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print upload plan without connecting to MongoDB.")
     parser.add_argument(
         "--mode",
@@ -90,6 +121,9 @@ def main() -> int:
         include_sample_data=args.include_sample_data,
         collection_prefix=args.collection_prefix,
         metadata_kinds=metadata_kinds,
+        domain_registration_trace_json=args.domain_registration_trace_json,
+        table_registration_trace_json=args.table_registration_trace_json,
+        main_filter_registration_trace_json=args.main_filter_registration_trace_json,
     )
     if args.dry_run:
         print_upload_plan(batches, database=args.database)
@@ -125,6 +159,9 @@ def build_upload_batches(
     include_sample_data: bool = False,
     collection_prefix: str = "",
     metadata_kinds: Any = None,
+    domain_registration_trace_json: str = "",
+    table_registration_trace_json: str = "",
+    main_filter_registration_trace_json: str = "",
 ) -> dict[str, list[dict[str, Any]]]:
     metadata_dir = root / "metadata"
     sample_dir = root / "sample_data"
@@ -137,10 +174,19 @@ def build_upload_batches(
     auxiliary_prefix = _resolve_auxiliary_prefix(collection_prefix, collections["domain_items"])
 
     selected_kinds = set(_normalize_metadata_kinds(metadata_kinds))
+    domain_registration_trace_path = _optional_path(root, domain_registration_trace_json)
+    table_registration_trace_path = _optional_path(root, table_registration_trace_json)
+    main_filter_registration_trace_path = _optional_path(root, main_filter_registration_trace_json)
     metadata_doc_builders = {
-        "domain_items": lambda: _domain_item_docs(metadata_dir / "domain_items.json"),
-        "table_catalog": lambda: _table_catalog_docs(metadata_dir / "table_catalog.json"),
-        "main_flow_filters": lambda: _main_flow_filter_docs(metadata_dir / "main_flow_filters.json"),
+        "domain_items": lambda: _domain_registration_trace_docs(domain_registration_trace_path)
+        if domain_registration_trace_path
+        else _domain_item_docs(metadata_dir / "domain_items.json"),
+        "table_catalog": lambda: _metadata_document_export_docs(table_registration_trace_path, "table_catalog:")
+        if table_registration_trace_path
+        else _table_catalog_docs(metadata_dir / "table_catalog.json"),
+        "main_flow_filters": lambda: _metadata_document_export_docs(main_filter_registration_trace_path, "main_flow_filter:")
+        if main_filter_registration_trace_path
+        else _main_flow_filter_docs(metadata_dir / "main_flow_filters.json"),
     }
     batches: dict[str, list[dict[str, Any]]] = {}
     for kind in CORE_METADATA_KINDS:
@@ -281,6 +327,37 @@ def _domain_item_docs(path: Path) -> list[dict[str, Any]]:
     return docs
 
 
+def _domain_registration_trace_docs(path: Path) -> list[dict[str, Any]]:
+    return _metadata_document_export_docs(path, "domain:")
+
+
+def _metadata_document_export_docs(path: Path, id_prefix: str) -> list[dict[str, Any]]:
+    data = _read_json(path)
+    if isinstance(data, dict) and isinstance(data.get("documents"), list):
+        docs = [_metadata_document_export_doc(item) for item in data["documents"] if isinstance(item, dict)]
+        matching_docs = [doc for doc in docs if str(doc.get("_id") or "").startswith(id_prefix)]
+        if not matching_docs:
+            raise ValueError(f"{path} does not contain {id_prefix} documents.")
+        return matching_docs
+    if id_prefix == "domain:" and isinstance(data, dict):
+        return _domain_item_docs(path)
+    raise ValueError(f"{path} must be a metadata document export JSON object.")
+
+
+def _metadata_document_export_doc(item: dict[str, Any]) -> dict[str, Any]:
+    doc = {str(key): _json_ready(value) for key, value in item.items() if str(key) not in {"_class"}}
+    doc_id = _clean(doc.pop("_id", "") or doc.pop("id", ""))
+    if not doc_id:
+        raise ValueError("Metadata document export item is missing id/_id.")
+    doc["_id"] = doc_id
+    if "registration_trace" not in doc and isinstance(doc.get("authoring_trace"), dict):
+        doc["registration_trace"] = doc.pop("authoring_trace")
+    else:
+        doc.pop("authoring_trace", None)
+    doc.setdefault("status", "active")
+    return doc
+
+
 def _table_catalog_docs(path: Path) -> list[dict[str, Any]]:
     data = _read_json(path)
     docs = []
@@ -326,6 +403,24 @@ def _doc(doc_id: str, _source_path: Path, payload: dict[str, Any]) -> dict[str, 
 def _read_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as file:
         return json.load(file)
+
+
+def _optional_path(root: Path, value: str) -> Path | None:
+    text = _clean(value)
+    if not text:
+        return None
+    path = Path(text)
+    return path if path.is_absolute() else root / path
+
+
+def _json_ready(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        return [_json_ready(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_ready(item) for key, item in value.items()}
+    return str(value)
 
 
 def _clean(value: Any) -> str:

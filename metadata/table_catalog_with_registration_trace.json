@@ -1,0 +1,1190 @@
+{
+  "exported_at": "2026-06-28T13:39:18.585256+00:00",
+  "database": "datagov",
+  "collection": "agent_v3_table_catalog_items",
+  "document_count": 9,
+  "documents_with_registration_trace": 9,
+  "documents": [
+    {
+      "id": "table_catalog:capacity",
+      "dataset_key": "capacity",
+      "key": "capacity",
+      "payload": {
+        "display_name": "Equipment Recipe UPH",
+        "dataset_family": "capacity",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "GMS_DB",
+          "query_template": "SELECT FAC_ID, EQP_OPER_GRP_CD, EQP_OPER_DET_GRP_CD, EQP_MODEL_CD, OPER_ID, OPER_DESC, PRESS_CNT, PROD_TYP, TECH_NM, DEN_TYP, PKG_TYP, PKG_TYP2, LEAD_CNT, MCP_SALE_CD, RECIPE_ID, AVG_UPH_VAL, BASE_DT FROM UPH WHERE 1=1"
+        },
+        "required_params": [],
+        "primary_quantity_column": "AVG_UPH_VAL",
+        "filter_mappings": {
+          "DATE": [
+            "BASE_DT"
+          ],
+          "EQP_MODEL": [
+            "EQP_MODEL_CD",
+            "EQP_MODEL"
+          ],
+          "OPER_NAME": [
+            "OPER_DESC",
+            "OPER_ID"
+          ],
+          "RECIPE_ID": [
+            "RECIPE_ID"
+          ],
+          "MODE": [
+            "PROD_TYP",
+            "MODE"
+          ],
+          "TECH": [
+            "TECH_NM",
+            "TECH"
+          ],
+          "DEN": [
+            "DEN_TYP",
+            "DEN"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP",
+            "PKG_TYPE1"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP2",
+            "PKG_TYPE2"
+          ],
+          "LEAD": [
+            "LEAD_CNT",
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCP_SALE_CD",
+            "MCP_NO"
+          ]
+        },
+        "standard_column_aliases": {
+          "EQP_MODEL": [
+            "EQP_MODEL_CD"
+          ],
+          "OPER_NAME": [
+            "OPER_DESC"
+          ],
+          "MODE": [
+            "PROD_TYP"
+          ],
+          "TECH": [
+            "TECH_NM"
+          ],
+          "DEN": [
+            "DEN_TYP"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP2"
+          ],
+          "LEAD": [
+            "LEAD_CNT"
+          ],
+          "MCP_NO": [
+            "MCP_SALE_CD"
+          ]
+        },
+        "default_detail_columns": [
+          "BASE_DT",
+          "EQP_MODEL_CD",
+          "RECIPE_ID",
+          "AVG_UPH_VAL",
+          "PROD_TYP",
+          "TECH_NM",
+          "DEN_TYP",
+          "MCP_SALE_CD"
+        ],
+        "columns": [
+          "FAC_ID",
+          "EQP_OPER_GRP_CD",
+          "EQP_OPER_DET_GRP_CD",
+          "EQP_MODEL_CD",
+          "OPER_ID",
+          "OPER_DESC",
+          "PRESS_CNT",
+          "PROD_TYP",
+          "TECH_NM",
+          "DEN_TYP",
+          "PKG_TYP",
+          "PKG_TYP2",
+          "LEAD_CNT",
+          "MCP_SALE_CD",
+          "RECIPE_ID",
+          "AVG_UPH_VAL",
+          "BASE_DT"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:equipment_status",
+      "dataset_key": "equipment_status",
+      "key": "equipment_status",
+      "payload": {
+        "display_name": "Equipment Status",
+        "dataset_family": "equipment",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT BAY_ID, EQPID, EQP_MODEL, PRESS_CNT, MODE, DEN, TECH, PKG1, PKG2, LEAD, ORG, PKGSIZE, MCPSALENO, DEVICE, DEVICE_DESC, LOT_ID, EQP_OPERATYN, PI, RECIPE_ID FROM EQP_TABLE WHERE 1=1"
+        },
+        "required_params": [],
+        "primary_quantity_column": "EQPID",
+        "filter_mappings": {
+          "MODE": [
+            "MODE"
+          ],
+          "TECH": [
+            "TECH"
+          ],
+          "ORG": [
+            "ORG"
+          ],
+          "DEN": [
+            "DEN"
+          ],
+          "PKG_TYPE1": [
+            "PKG1",
+            "PKG_TYPE1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2",
+            "PKG_TYPE2"
+          ],
+          "LEAD": [
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCPSALENO",
+            "MCP_NO"
+          ],
+          "EQP_ID": [
+            "EQPID",
+            "EQP_ID"
+          ],
+          "EQP_MODEL": [
+            "EQP_MODEL"
+          ],
+          "DEVICE_DESC": [
+            "DEVICE_DESC"
+          ],
+          "LOT_ID": [
+            "LOT_ID"
+          ],
+          "RECIPE_ID": [
+            "RECIPE_ID"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ]
+        },
+        "standard_column_aliases": {
+          "PKG_TYPE1": [
+            "PKG1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2"
+          ],
+          "MCP_NO": [
+            "MCPSALENO"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ]
+        },
+        "default_detail_columns": [
+          "EQPID",
+          "EQP_MODEL",
+          "MODE",
+          "TECH",
+          "DEN",
+          "MCPSALENO",
+          "RECIPE_ID"
+        ],
+        "columns": [
+          "BAY_ID",
+          "EQPID",
+          "EQP_MODEL",
+          "PRESS_CNT",
+          "MODE",
+          "DEN",
+          "TECH",
+          "PKG1",
+          "PKG2",
+          "LEAD",
+          "ORG",
+          "PKGSIZE",
+          "MCPSALENO",
+          "DEVICE",
+          "DEVICE_DESC",
+          "LOT_ID",
+          "EQP_OPERATYN",
+          "PI",
+          "RECIPE_ID"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:hold_history",
+      "dataset_key": "hold_history",
+      "key": "hold_history",
+      "payload": {
+        "display_name": "HOLD History",
+        "dataset_family": "hold",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT FAB_ID, DEN_TYP, PROD_ID, GRADE_CD, OWNER_CD, OPER_ID, OPER_SHORT_DESC, LOT_ID, OLD_SUB_PROD_QTY, HOLD_TM, RELEASE_DUE_DATE, HOLD_CD, HOLD_USER_ID, HOLD_DESC, FAMILY_CD, TECH_NM, GEN_TYP, ORGANIZ_CD, PKG_TYP_2, PKG_SIZE_VAL, PROD_GRP_ID, THK_CD, MCP_SALE_CD, HOLD_GRADE_CD, FLOW_ID, FAC_ID, EVENT_CD FROM HOLD_HISTORY_TABLE WHERE 1=1 AND LOT_ID = {LOT_ID}"
+        },
+        "required_params": [
+          "LOT_ID"
+        ],
+        "required_param_mappings": {
+          "LOT_ID": [
+            "LOT_ID"
+          ]
+        },
+        "primary_quantity_column": [
+          "LOT_ID",
+          "OLD_SUB_PROD_QTY"
+        ],
+        "filter_mappings": {
+          "LOT_ID": [
+            "LOT_ID"
+          ],
+          "OPER_NAME": [
+            "OPER_SHORT_DESC",
+            "OPER_ID"
+          ],
+          "DEN": [
+            "DEN_TYP",
+            "DEN"
+          ],
+          "TECH": [
+            "TECH_NM",
+            "TECH"
+          ],
+          "ORG": [
+            "ORGANIZ_CD",
+            "ORG"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP_2",
+            "PKG_TYPE2"
+          ],
+          "MCP_NO": [
+            "MCP_SALE_CD",
+            "MCP_NO"
+          ]
+        },
+        "standard_column_aliases": {
+          "DEN": [
+            "DEN_TYP"
+          ],
+          "TECH": [
+            "TECH_NM"
+          ],
+          "ORG": [
+            "ORGANIZ_CD"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP_2"
+          ],
+          "MCP_NO": [
+            "MCP_SALE_CD"
+          ]
+        },
+        "default_detail_columns": [
+          "LOT_ID",
+          "HOLD_TM",
+          "HOLD_CD",
+          "HOLD_DESC",
+          "HOLD_USER_ID",
+          "EVENT_CD"
+        ],
+        "columns": [
+          "FAB_ID",
+          "DEN_TYP",
+          "PROD_ID",
+          "GRADE_CD",
+          "OWNER_CD",
+          "OPER_ID",
+          "OPER_SHORT_DESC",
+          "LOT_ID",
+          "OLD_SUB_PROD_QTY",
+          "HOLD_TM",
+          "RELEASE_DUE_DATE",
+          "HOLD_CD",
+          "HOLD_USER_ID",
+          "HOLD_DESC",
+          "FAMILY_CD",
+          "TECH_NM",
+          "GEN_TYP",
+          "ORGANIZ_CD",
+          "PKG_TYP_2",
+          "PKG_SIZE_VAL",
+          "PROD_GRP_ID",
+          "THK_CD",
+          "MCP_SALE_CD",
+          "HOLD_GRADE_CD",
+          "FLOW_ID",
+          "FAC_ID",
+          "EVENT_CD"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "hold_history는 HOLD 이력 조회 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 LOT_ID를 필수 파라미터로 받아 조회해.\nHOLD 발생 시간은 HOLD_TM, HOLD 사유는 HOLD_CD와 HOLD_DESC를 사용해.\n\nquery_template:\nSELECT LOT_ID, HOLD_TM, RELEASE_DUE_DATE, HOLD_CD, HOLD_USER_ID, HOLD_DESC, OPER_ID, OPER_SHORT_DESC, EVENT_CD\nFROM HOLD_HISTORY_TABLE\nWHERE 1=1\nAND LOT_ID = {LOT_ID}\n\nrequired_param_mappings는 LOT_ID -> LOT_ID로 연결해줘.\nfilter_mappings는 LOT_ID -> LOT_ID, OPER_NAME -> OPER_SHORT_DESC, DEN -> DEN_TYP, TECH -> TECH_NM, MCP_NO -> MCP_SALE_CD로 연결해줘.\nstandard_column_aliases는 OPER_NAME -> OPER_SHORT_DESC, DEN -> DEN_TYP, TECH -> TECH_NM, MCP_NO -> MCP_SALE_CD로 연결해줘.",
+        "refined_text": "hold_history는 HOLD 이력 조회 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 LOT_ID를 필수 파라미터로 받아 조회해.\nHOLD 발생 시간은 HOLD_TM, HOLD 사유는 HOLD_CD와 HOLD_DESC를 사용해.\n\nquery_template:\nSELECT LOT_ID, HOLD_TM, RELEASE_DUE_DATE, HOLD_CD, HOLD_USER_ID, HOLD_DESC, OPER_ID, OPER_SHORT_DESC, EVENT_CD\nFROM HOLD_HISTORY_TABLE\nWHERE 1=1\nAND LOT_ID = {LOT_ID}\n\nrequired_param_mappings는 LOT_ID -> LOT_ID로 연결해줘.\nfilter_mappings는 LOT_ID -> LOT_ID, OPER_NAME -> OPER_SHORT_DESC, DEN -> DEN_TYP, TECH -> TECH_NM, MCP_NO -> MCP_SALE_CD로 연결해줘.\nstandard_column_aliases는 OPER_NAME -> OPER_SHORT_DESC, DEN -> DEN_TYP, TECH -> TECH_NM, MCP_NO -> MCP_SALE_CD로 연결해줘.",
+        "source_marker": "single_hold_history",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:lot_status",
+      "dataset_key": "lot_status",
+      "key": "lot_status",
+      "payload": {
+        "display_name": "LOT Status",
+        "dataset_family": "lot",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT ERM_ID, OPER_ID, OPER_SHORT_DESC, FAB_ID, OWNER_CD, GRADE_CD, PROD_ID, LOT_ID, SUB_LOT_ID, SUB_PROD_QTY, WF_QTY, IN_TAT, CUM_TAT, EQP_ID, FLOW_ID, OPER_IN_TM, CRT_TM, FAC_IN_TM, LOT_HOLD_STAT_CD, REASON_CD, FAMILY_CD, PROD_TYP, DEN_TYP, TECH_NM, ORGANIZ_CD, PKG_TYP, PKG_TYP_2, PKG_TYP_3, LEAD_CNT, PROD_GRP_ID, THK_CD, LOT_STAT_CD, LOT_GRP_CD, PKG_SIZE_VAL, PKG_DEN_TYP, HOT_LOT_YN, HOT_LEVEL_TYP, PKG_COMPOSIT_TYP, DURABLE_ID, DURABLE_TYP, SUB_QTY, TSV_DIE_TYP, EVENT_DESC, PLANNING_DESC, MOVE_IN_TM, PAD_ABNORM_YN, SWR_REQ_NO, OPER_GRP_VAL_1, INSP_TGT_YN FROM LOT_STATUS_TABLE WHERE 1=1"
+        },
+        "required_params": [],
+        "primary_quantity_column": [
+          "SUB_PROD_QTY",
+          "WF_QTY",
+          "IN_TAT",
+          "CUM_TAT"
+        ],
+        "filter_mappings": {
+          "LOT_ID": [
+            "LOT_ID"
+          ],
+          "OPER_NAME": [
+            "OPER_SHORT_DESC",
+            "OPER_ID"
+          ],
+          "MODE": [
+            "PROD_TYP",
+            "MODE"
+          ],
+          "TECH": [
+            "TECH_NM",
+            "TECH"
+          ],
+          "ORG": [
+            "ORGANIZ_CD",
+            "ORG"
+          ],
+          "DEN": [
+            "DEN_TYP",
+            "DEN"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP",
+            "PKG_TYPE1"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP_2",
+            "PKG_TYPE2"
+          ],
+          "LEAD": [
+            "LEAD_CNT",
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "PROD_GRP_ID",
+            "MCP_NO"
+          ],
+          "TSV_DIE_TYP": [
+            "TSV_DIE_TYP"
+          ],
+          "EQP_ID": [
+            "EQP_ID"
+          ]
+        },
+        "standard_column_aliases": {
+          "MODE": [
+            "PROD_TYP"
+          ],
+          "TECH": [
+            "TECH_NM"
+          ],
+          "ORG": [
+            "ORGANIZ_CD"
+          ],
+          "DEN": [
+            "DEN_TYP"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP_2"
+          ],
+          "LEAD": [
+            "LEAD_CNT"
+          ],
+          "MCP_NO": [
+            "PROD_GRP_ID"
+          ]
+        },
+        "default_detail_columns": [
+          "LOT_ID",
+          "OPER_SHORT_DESC",
+          "LOT_STAT_CD",
+          "LOT_HOLD_STAT_CD",
+          "SUB_PROD_QTY",
+          "WF_QTY",
+          "IN_TAT",
+          "CUM_TAT"
+        ],
+        "columns": [
+          "ERM_ID",
+          "OPER_ID",
+          "OPER_SHORT_DESC",
+          "FAB_ID",
+          "OWNER_CD",
+          "GRADE_CD",
+          "PROD_ID",
+          "LOT_ID",
+          "SUB_LOT_ID",
+          "SUB_PROD_QTY",
+          "WF_QTY",
+          "IN_TAT",
+          "CUM_TAT",
+          "EQP_ID",
+          "FLOW_ID",
+          "OPER_IN_TM",
+          "CRT_TM",
+          "FAC_IN_TM",
+          "LOT_HOLD_STAT_CD",
+          "REASON_CD",
+          "FAMILY_CD",
+          "PROD_TYP",
+          "DEN_TYP",
+          "TECH_NM",
+          "ORGANIZ_CD",
+          "PKG_TYP",
+          "PKG_TYP_2",
+          "PKG_TYP_3",
+          "LEAD_CNT",
+          "PROD_GRP_ID",
+          "THK_CD",
+          "LOT_STAT_CD",
+          "LOT_GRP_CD",
+          "PKG_SIZE_VAL",
+          "PKG_DEN_TYP",
+          "HOT_LOT_YN",
+          "HOT_LEVEL_TYP",
+          "PKG_COMPOSIT_TYP",
+          "DURABLE_ID",
+          "DURABLE_TYP",
+          "SUB_QTY",
+          "TSV_DIE_TYP",
+          "EVENT_DESC",
+          "PLANNING_DESC",
+          "MOVE_IN_TM",
+          "PAD_ABNORM_YN",
+          "SWR_REQ_NO",
+          "OPER_GRP_VAL_1",
+          "INSP_TGT_YN"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:production",
+      "dataset_key": "production",
+      "key": "production",
+      "payload": {
+        "display_name": "Production History",
+        "dataset_family": "production",
+        "date_scope": "history",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, PRODUCTION FROM PRODUCTION A WHERE 1=1 AND A.WORK_DATE = {DATE} AND PRODUCTION > 0"
+        },
+        "required_params": [
+          "DATE"
+        ],
+        "date_format": "YYYYMMDD",
+        "required_param_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ]
+        },
+        "primary_quantity_column": "PRODUCTION",
+        "filter_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "OPER_NAME": [
+            "OPER_NAME"
+          ],
+          "MODE": [
+            "MODE"
+          ],
+          "TECH": [
+            "TECH"
+          ],
+          "ORG": [
+            "ORG"
+          ],
+          "DEN": [
+            "DENSITY"
+          ],
+          "PKG_TYPE1": [
+            "PKG1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2"
+          ],
+          "LEAD": [
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCP_NO"
+          ],
+          "TSV_DIE_TYP": [
+            "TSV_DIE_TYP"
+          ],
+          "DEVICE_DESC": [
+            "DEVICE_DESC"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "standard_column_aliases": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "DEN": [
+            "DENSITY"
+          ],
+          "PKG_TYPE1": [
+            "PKG1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "columns": [
+          "WORK_DATE",
+          "SHIFT",
+          "FACTORY",
+          "FAB",
+          "FAMILY",
+          "MODE",
+          "DENSITY",
+          "TECH",
+          "ORG",
+          "PKG1",
+          "PKG2",
+          "LEAD",
+          "MCP_NO",
+          "TSV_DIE_TYP",
+          "DEVICE",
+          "DEVICE_DESC",
+          "DIE_ATTACH_QTY",
+          "NETDIE_300_CNT",
+          "OPER",
+          "OPER_NAME",
+          "OPER_SEQ",
+          "PRODUCTION"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:production_today",
+      "dataset_key": "production_today",
+      "key": "production_today",
+      "payload": {
+        "display_name": "Production Today",
+        "dataset_family": "production",
+        "date_scope": "current_day",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.MODE, A.DEN, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, PRODUCTION FROM PRODUCTION_TODAY A WHERE 1=1 AND A.WORK_DATE = {DATE} AND PRODUCTION > 0"
+        },
+        "required_params": [
+          "DATE"
+        ],
+        "date_format": "YYYYMMDD",
+        "required_param_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ]
+        },
+        "primary_quantity_column": "PRODUCTION",
+        "filter_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "OPER_NAME": [
+            "OPER_NAME"
+          ],
+          "MODE": [
+            "MODE"
+          ],
+          "TECH": [
+            "TECH"
+          ],
+          "ORG": [
+            "ORG"
+          ],
+          "DEN": [
+            "DEN"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP1"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP2"
+          ],
+          "LEAD": [
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCP_NO"
+          ],
+          "TSV_DIE_TYP": [
+            "TSV_DIE_TYP"
+          ],
+          "DEVICE_DESC": [
+            "DEVICE_DESC"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "standard_column_aliases": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP1"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP2"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "columns": [
+          "WORK_DATE",
+          "SHIFT",
+          "FACTORY",
+          "FAB",
+          "FAMILY",
+          "MODE",
+          "DEN",
+          "TECH",
+          "ORG",
+          "PKG_TYP1",
+          "PKG_TYP2",
+          "LEAD",
+          "MCP_NO",
+          "TSV_DIE_TYP",
+          "DEVICE",
+          "DEVICE_DESC",
+          "DIE_ATTACH_QTY",
+          "NETDIE_300_CNT",
+          "OPER",
+          "OPER_NAME",
+          "OPER_SEQ",
+          "PRODUCTION"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:target",
+      "dataset_key": "target",
+      "key": "target",
+      "payload": {
+        "display_name": "Target2 Goodocs Plan",
+        "dataset_family": "target",
+        "source_type": "goodocs",
+        "source_config": {
+          "source_type": "goodocs",
+          "doc_id": "GOODOCS_TARGET2_DOCUMENT_ID",
+          "sheet_name": "목표2"
+        },
+        "required_params": [],
+        "date_format": "YYYY-MM-DD",
+        "primary_quantity_column": [
+          "INPUT_PLAN",
+          "OUT_PLAN"
+        ],
+        "filter_mappings": {
+          "DATE": [
+            "DATE"
+          ],
+          "MODE": [
+            "Mode",
+            "MODE"
+          ],
+          "TECH": [
+            "TECH"
+          ],
+          "ORG": [
+            "ORG"
+          ],
+          "DEN": [
+            "DEN"
+          ],
+          "PKG_TYPE1": [
+            "PKG1",
+            "PKG_TYPE1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2",
+            "PKG_TYPE2"
+          ],
+          "LEAD": [
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCP NO",
+            "MCP_NO"
+          ]
+        },
+        "standard_column_aliases": {
+          "MODE": [
+            "Mode"
+          ],
+          "PKG_TYPE1": [
+            "PKG1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2"
+          ],
+          "MCP_NO": [
+            "MCP NO"
+          ],
+          "INPUT_PLAN": [
+            "INPUT계획"
+          ],
+          "OUT_PLAN": [
+            "OUT계획",
+            "TARGET"
+          ]
+        },
+        "columns": [
+          "DATE",
+          "Mode",
+          "DEN",
+          "TECH",
+          "PKG1",
+          "PKG2",
+          "LEAD",
+          "ORG",
+          "MCP NO",
+          "INPUT계획",
+          "OUT계획",
+          "INPUT_PLAN",
+          "OUT_PLAN"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:wip",
+      "dataset_key": "wip",
+      "key": "wip",
+      "payload": {
+        "display_name": "WIP History",
+        "dataset_family": "wip",
+        "date_scope": "history",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP FROM WIP A WHERE 1=1 AND A.WORK_DATE = {DATE} GROUP BY A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ"
+        },
+        "required_params": [
+          "DATE"
+        ],
+        "date_format": "YYYYMMDD",
+        "required_param_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ]
+        },
+        "primary_quantity_column": "WIP",
+        "filter_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "OPER_NAME": [
+            "OPER_NAME"
+          ],
+          "MODE": [
+            "MODE"
+          ],
+          "TECH": [
+            "TECH"
+          ],
+          "ORG": [
+            "ORG"
+          ],
+          "DEN": [
+            "DENSITY"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP1"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP2"
+          ],
+          "LEAD": [
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCP_NO"
+          ],
+          "TSV_DIE_TYP": [
+            "TSV_DIE_TYP"
+          ],
+          "DEVICE_DESC": [
+            "DEVICE_DESC"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "standard_column_aliases": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "DEN": [
+            "DENSITY"
+          ],
+          "PKG_TYPE1": [
+            "PKG_TYP1"
+          ],
+          "PKG_TYPE2": [
+            "PKG_TYP2"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "columns": [
+          "WORK_DATE",
+          "SHIFT",
+          "FACTORY",
+          "FAB",
+          "FAMILY",
+          "MODE",
+          "DENSITY",
+          "TECH",
+          "ORG",
+          "PKG_TYP1",
+          "PKG_TYP2",
+          "LEAD",
+          "MCP_NO",
+          "TSV_DIE_TYP",
+          "DEVICE",
+          "DEVICE_DESC",
+          "DIE_ATTACH_QTY",
+          "NETDIE_300_CNT",
+          "OPER",
+          "OPER_NAME",
+          "OPER_SEQ",
+          "WIP"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "table_catalog:wip_today",
+      "dataset_key": "wip_today",
+      "key": "wip_today",
+      "payload": {
+        "display_name": "WIP Today",
+        "dataset_family": "wip",
+        "date_scope": "current_day",
+        "source_type": "oracle",
+        "source_config": {
+          "source_type": "oracle",
+          "db_key": "PNT_RPT",
+          "query_template": "SELECT A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP FROM WIP_TODAY A WHERE 1=1 AND A.WORK_DATE = {DATE} GROUP BY A.WORK_DATE, A.SHIFT, A.FACTORY, A.FAB, A.FAMILY, A.\"MODE\", A.DENSITY, A.TECH, A.ORG, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.TSV_DIE_TYP, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ"
+        },
+        "required_params": [
+          "DATE"
+        ],
+        "date_format": "YYYYMMDD",
+        "required_param_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ]
+        },
+        "primary_quantity_column": "WIP",
+        "filter_mappings": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "OPER_NAME": [
+            "OPER_NAME"
+          ],
+          "MODE": [
+            "MODE"
+          ],
+          "TECH": [
+            "TECH"
+          ],
+          "ORG": [
+            "ORG"
+          ],
+          "DEN": [
+            "DENSITY"
+          ],
+          "PKG_TYPE1": [
+            "PKG1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2"
+          ],
+          "LEAD": [
+            "LEAD"
+          ],
+          "MCP_NO": [
+            "MCP_NO"
+          ],
+          "TSV_DIE_TYP": [
+            "TSV_DIE_TYP"
+          ],
+          "DEVICE_DESC": [
+            "DEVICE_DESC"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "standard_column_aliases": {
+          "DATE": [
+            "WORK_DATE"
+          ],
+          "DEN": [
+            "DENSITY"
+          ],
+          "PKG_TYPE1": [
+            "PKG1"
+          ],
+          "PKG_TYPE2": [
+            "PKG2"
+          ],
+          "OPER_NUM": [
+            "OPER"
+          ],
+          "DEVICE": [
+            "DEVICE"
+          ],
+          "DIE_ATTACH_QTY": [
+            "DIE_ATTACH_QTY"
+          ],
+          "NETDIE_300_CNT": [
+            "NETDIE_300_CNT"
+          ],
+          "OPER_SEQ": [
+            "OPER_SEQ"
+          ]
+        },
+        "columns": [
+          "WORK_DATE",
+          "SHIFT",
+          "FACTORY",
+          "FAB",
+          "FAMILY",
+          "MODE",
+          "DENSITY",
+          "TECH",
+          "ORG",
+          "PKG1",
+          "PKG2",
+          "LEAD",
+          "MCP_NO",
+          "TSV_DIE_TYP",
+          "DEVICE",
+          "DEVICE_DESC",
+          "DIE_ATTACH_QTY",
+          "NETDIE_300_CNT",
+          "OPER",
+          "OPER_NAME",
+          "OPER_SEQ",
+          "WIP"
+        ]
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "refined_text": "[Oracle 생산 데이터셋]\nproduction_today는 오늘 생산 실적 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 PRODUCTION 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DEN, A.TECH, A.PKG_TYP1, A.PKG_TYP2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, A.PRODUCTION\nFROM PRODUCTION_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nAND A.PRODUCTION > 0\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, PKG_TYPE1 -> PKG_TYP1, PKG_TYPE2 -> PKG_TYP2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Oracle 재공 데이터셋]\nwip_today는 오늘 재공 데이터셋이야.\nsource는 oracle, db_key는 PNT_RPT이고 DATE는 WORK_DATE 컬럼에 넣어 조회하는 필수 파라미터야.\n주요 수량은 WIP 컬럼이고 date_format은 YYYYMMDD야.\n\nquery_template:\nSELECT A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ, ROUND(SUM(A.WIP),1) AS WIP\nFROM WIP_TODAY A\nWHERE 1=1\nAND A.WORK_DATE = {DATE}\nGROUP BY A.WORK_DATE, A.SHIFT, A.MODE, A.DENSITY, A.TECH, A.PKG1, A.PKG2, A.LEAD, A.MCP_NO, A.DEVICE, A.DEVICE_DESC, A.DIE_ATTACH_QTY, A.NETDIE_300_CNT, A.OPER, A.OPER_NAME, A.OPER_SEQ\n\nfilter_mappings는 DATE -> WORK_DATE, MODE -> MODE, DEN -> DENSITY, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP_NO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ, OPER_NAME -> OPER_NAME로 연결해줘.\nstandard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, DIE_ATTACH_QTY -> DIE_ATTACH_QTY, NETDIE_300_CNT -> NETDIE_300_CNT, OPER_NUM -> OPER, OPER_SEQ -> OPER_SEQ로 연결해줘.\n\n[Goodocs 목표 데이터셋]\ntarget은 목표 또는 계획 데이터셋이야.\nsource는 goodocs이고 DATE 형식은 YYYY-MM-DD야.\n주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.\nfilter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.\n\n[장비 현황 데이터셋]\nequipment_status는 제품에 할당된 장비 현황 데이터셋이야.\nsource는 oracle이고 필수 조회 파라미터는 없어.\n장비 대수는 EQPID를 중복 없이 세어 EQP_COUNT로 보여줘.\nfilter_mappings는 MODE -> MODE, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC, EQP_ID -> EQPID로 연결해줘.\nstandard_column_aliases는 PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, MCP_NO -> MCPSALENO, DEVICE -> DEVICE, DEVICE_DESC -> DEVICE_DESC로 연결해줘.",
+        "source_marker": "bulk_table_catalog",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    }
+  ]
+}

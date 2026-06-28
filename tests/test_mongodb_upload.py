@@ -57,6 +57,21 @@ def test_mongodb_upload_can_select_domain_only():
     assert "domain:process_groups:DA_PROCESS_GROUP" in {doc["_id"] for doc in batches["agent_v3_domain_items"]}
 
 
+def test_mongodb_upload_can_use_domain_registration_trace_export():
+    module = _load_upload_module()
+    batches = module.build_upload_batches(
+        ROOT,
+        metadata_kinds=["domain"],
+        domain_registration_trace_json="metadata/domain_items_with_registration_trace.json",
+    )
+
+    docs = batches["agent_v3_domain_items"]
+    assert len(docs) >= 70
+    device_doc = next(doc for doc in docs if doc["_id"] == "domain:analysis_recipes:DEVICE_ALIAS_TO_COLUMN_MAPPING")
+    assert device_doc["registration_trace"]["raw_text"].startswith("DEVICE 첨자 용어를 등록해줘")
+    assert "authoring_trace" not in device_doc
+
+
 def test_mongodb_upload_can_select_multiple_metadata_kinds_with_aliases():
     module = _load_upload_module()
     batches = module.build_upload_batches(ROOT, metadata_kinds=["table-catalog,main-flow-filter"])
@@ -67,6 +82,27 @@ def test_mongodb_upload_can_select_multiple_metadata_kinds_with_aliases():
     ]
     assert "table_catalog:wip_today" in {doc["_id"] for doc in batches["agent_v3_table_catalog_items"]}
     assert "main_flow_filter:DATE" in {doc["_id"] for doc in batches["agent_v3_main_flow_filters"]}
+
+
+def test_mongodb_upload_can_use_table_and_filter_registration_trace_exports():
+    module = _load_upload_module()
+    batches = module.build_upload_batches(
+        ROOT,
+        metadata_kinds=["table-catalog,main-flow-filter"],
+        table_registration_trace_json="metadata/table_catalog_with_registration_trace.json",
+        main_filter_registration_trace_json="metadata/main_flow_filters_with_registration_trace.json",
+    )
+
+    table_docs = batches["agent_v3_table_catalog_items"]
+    filter_docs = batches["agent_v3_main_flow_filters"]
+    assert len(table_docs) == 9
+    assert len(filter_docs) == 23
+    hold_doc = next(doc for doc in table_docs if doc["_id"] == "table_catalog:hold_history")
+    date_doc = next(doc for doc in filter_docs if doc["_id"] == "main_flow_filter:DATE")
+    assert hold_doc["registration_trace"]["raw_text"].startswith("hold_history는 HOLD 이력 조회")
+    assert date_doc["registration_trace"]["raw_text"].startswith("[기준일/공정 필터]")
+    assert "authoring_trace" not in hold_doc
+    assert "authoring_trace" not in date_doc
 
 
 def test_mongodb_upload_rejects_unknown_metadata_kind():

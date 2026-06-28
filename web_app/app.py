@@ -71,6 +71,16 @@ AUTHORING_EXAMPLES = {
     "table_catalog": "wip_today는 Oracle PNT_RPT에서 SELECT WORK_DT, OPER_NAME, WIP FROM PKG_WIP_TODAY WHERE WORK_DT = {DATE}로 조회해. DATE는 WORK_DT에 매핑해.",
     "main_flow_filter": "날짜 조건은 DATE라는 기준 필터로 사용해줘. 오늘, 금일, 작업일은 WORK_DT 후보 컬럼과 연결해.",
 }
+DOMAIN_SECTION_DESCRIPTIONS = {
+    "process_groups": ("공정 그룹", "사용자가 DA, WB, SG처럼 부르는 공정 묶음을 실제 공정명/OPER 값으로 연결합니다."),
+    "product_terms": ("제품 조건", "POP, MOBILE, HBM 같은 제품군 표현을 실제 데이터 필터 조건으로 연결합니다."),
+    "quantity_terms": ("수량 기준", "생산량, 재공, Lot 수 같은 업무 수량을 데이터 컬럼과 집계 방식으로 연결합니다."),
+    "metric_terms": ("계산 지표", "달성률, 차이, 비율처럼 여러 수량을 조합해 계산하는 지표입니다."),
+    "status_terms": ("상태 조건", "Hold, 작업대기 같은 상태 표현을 실제 상태 컬럼/값으로 연결합니다."),
+    "analysis_recipes": ("분석 레시피", "여러 데이터셋 조회, rank, join, 집계처럼 단계가 필요한 질문의 처리 계획입니다."),
+    "pandas_function_cases": ("Pandas 함수 케이스", "일반 도메인 조건만으로 어려운 질문에서 어떤 helper 함수를 써야 하는지 알려주는 선택 규칙입니다."),
+    "product_key_columns": ("제품 키", "데이터셋 사이에서 같은 제품을 식별하고 join할 때 쓰는 기준 컬럼 목록입니다."),
+}
 CHAT_RESULT_TABLE_MAX_HEIGHT = 640
 DATA_REF_TABLE_MAX_HEIGHT = 620
 def main() -> None:
@@ -1356,6 +1366,130 @@ def domain_item_label(item: dict[str, Any]) -> str:
     return f"{label} | {display_name}" if display_name else label
 
 
+def domain_section_label(section: Any) -> str:
+    key = str(section or "").strip()
+    return DOMAIN_SECTION_DESCRIPTIONS.get(key, (key or "도메인", ""))[0]
+
+
+def domain_section_description(section: Any) -> str:
+    key = str(section or "").strip()
+    return DOMAIN_SECTION_DESCRIPTIONS.get(key, ("", ""))[1]
+
+
+def short_value_text(value: Any, max_length: int = 240) -> str:
+    text = value_text(value).strip()
+    if len(text) <= max_length:
+        return text
+    return text[: max(0, max_length - 1)].rstrip() + "…"
+
+
+def as_display_list(value: Any, limit: int = 8) -> str:
+    if isinstance(value, list):
+        values = [str(item) for item in value if str(item or "").strip()]
+    elif isinstance(value, dict):
+        values = [f"{key}={short_value_text(item, 60)}" for key, item in value.items()]
+    elif str(value or "").strip():
+        values = [str(value)]
+    else:
+        values = []
+    if not values:
+        return ""
+    clipped = values[:limit]
+    suffix = f" 외 {len(values) - limit}개" if len(values) > limit else ""
+    return ", ".join(clipped) + suffix
+
+
+def metadata_registration_trace(item: dict[str, Any]) -> dict[str, str]:
+    trace = item.get("registration_trace") if isinstance(item.get("registration_trace"), dict) else {}
+    if not trace and isinstance(item.get("authoring_trace"), dict):
+        trace = item["authoring_trace"]
+    if not trace and isinstance(item.get("trace"), dict):
+        trace = item["trace"]
+    result = {
+        "raw_text": trace.get("raw_text") or item.get("raw_text") or item.get("source_text") or "",
+        "refined_text": trace.get("refined_text") or item.get("refined_text") or "",
+        "reviewed_at": trace.get("reviewed_at") or item.get("reviewed_at") or "",
+    }
+    return {key: str(value) for key, value in result.items() if str(value or "").strip()}
+
+
+domain_authoring_trace = metadata_registration_trace
+
+
+def render_metadata_registration_trace(item: dict[str, Any], key_prefix: str) -> None:
+    trace = metadata_registration_trace(item)
+    if trace.get("raw_text") or trace.get("refined_text"):
+        render_detail_title("생성할 때 입력한 문장")
+        if trace.get("raw_text"):
+            st.text_area("사용자 입력 원문", value=trace["raw_text"], height=130, disabled=True, key=f"{key_prefix}_raw_text")
+        if trace.get("refined_text") and trace.get("refined_text") != trace.get("raw_text"):
+            st.text_area("정제된 입력 문장", value=trace["refined_text"], height=130, disabled=True, key=f"{key_prefix}_refined_text")
+    else:
+        render_inline_status("생성 입력 없음", "이 문서에는 생성 당시 raw_text/refined_text가 저장되어 있지 않습니다. 앞으로 저장되는 메타데이터는 registration_trace에 입력 문장이 함께 남습니다.", tone="warning")
+
+
+render_metadata_authoring_trace = render_metadata_registration_trace
+
+
+def domain_item_summary(item: dict[str, Any]) -> dict[str, str]:
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    section = str(item.get("gbn") or item.get("section") or "").strip()
+    summary = {
+        "도메인 유형": f"{domain_section_label(section)} ({section})" if section else domain_section_label(section),
+        "키": str(item.get("key") or ""),
+        "상태": str(item.get("status") or "active"),
+        "표시명": str(payload.get("display_name") or item.get("display_name") or ""),
+    }
+    aliases = as_display_list(item.get("aliases") or payload.get("aliases"))
+    if aliases:
+        summary["사용자 표현/별칭"] = aliases
+    description = domain_section_description(section)
+    use_when = payload.get("use_when") or payload.get("description") or payload.get("summary")
+    if use_when or description:
+        summary["무엇을 의미하나"] = str(use_when or description)
+    cues = as_display_list(payload.get("required_question_cues") or payload.get("question_cues"))
+    if cues:
+        summary["질문에서 찾는 표현"] = cues
+    if section == "process_groups":
+        summary["포함 공정"] = as_display_list(payload.get("processes") or payload.get("OPER_NAME"), limit=12)
+    elif section == "product_terms":
+        summary["적용 조건"] = short_value_text(payload.get("condition_by_family") or payload.get("condition") or payload.get("filters"))
+    elif section == "quantity_terms":
+        summary["수량 컬럼"] = as_display_list(payload.get("quantity_column"))
+        summary["집계 방식"] = str(payload.get("aggregation") or "")
+        summary["출력 컬럼"] = str(payload.get("output_column") or "")
+        summary["대상 데이터"] = as_display_list(payload.get("dataset_key") or payload.get("dataset_family") or payload.get("required_dataset_families"))
+    elif section == "metric_terms":
+        summary["계산식"] = short_value_text(payload.get("formula") or payload.get("calculation"))
+        summary["필요 수량"] = as_display_list(payload.get("required_quantity_terms"))
+        summary["출력 컬럼"] = str(payload.get("output_column") or "")
+    elif section == "status_terms":
+        summary["상태 조건"] = short_value_text(payload.get("condition") or payload.get("filters"))
+        summary["대상 데이터"] = as_display_list(payload.get("dataset_key") or payload.get("dataset_family") or payload.get("required_dataset_families"))
+    elif section == "analysis_recipes":
+        summary["분석 유형"] = str(payload.get("default_analysis_kind") or "")
+        summary["사용 데이터"] = as_display_list(payload.get("required_dataset_families") or payload.get("required_quantity_terms"))
+        steps = payload.get("step_plan_template") if isinstance(payload.get("step_plan_template"), list) else []
+        if steps:
+            summary["처리 단계"] = " → ".join(str(step.get("step_id") or step.get("operation") or index + 1) for index, step in enumerate(steps[:6]) if isinstance(step, dict))
+    elif section == "pandas_function_cases":
+        summary["사용 함수"] = str(payload.get("function_name") or "")
+        summary["입력 설명"] = str(payload.get("input_text") or "")
+        summary["필수 컬럼"] = as_display_list(payload.get("required_source_columns"), limit=12)
+    elif section == "product_key_columns":
+        summary["제품 키 컬럼"] = as_display_list(item.get("columns") or payload.get("columns") or payload.get("product_key_columns"), limit=16)
+    return {key: value for key, value in summary.items() if str(value or "").strip()}
+
+
+def render_domain_human_summary(item: dict[str, Any], key_prefix: str) -> None:
+    section = item.get("gbn") or item.get("section") or ""
+    render_metadata_registration_trace(item, f"{key_prefix}_domain")
+    description = domain_section_description(section)
+    if description:
+        render_inline_status(domain_section_label(section), description, tone="success")
+    st.dataframe(key_value_frame(domain_item_summary(item)), width="stretch", hide_index=True)
+
+
 def table_item_label(item: dict[str, Any]) -> str:
     label = str(item.get("dataset_key") or "")
     display_name = str(item.get("display_name") or "").strip()
@@ -1369,43 +1503,43 @@ def main_filter_item_label(item: dict[str, Any]) -> str:
     return f"{label} | {role}" if role else label
 
 
+def metadata_item_key_prefix(key_prefix: str, item: dict[str, Any]) -> str:
+    section = item.get("gbn") or item.get("section") or ""
+    item_key = item.get("key") or item.get("dataset_key") or item.get("filter_key") or ""
+    identity = item.get("_id") or item.get("id") or f"{section}:{item_key}"
+    raw_key = f"{key_prefix}_{identity}"
+    safe_key = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in raw_key)
+    return safe_key or key_prefix
+
+
 def render_domain_item_detail(item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
     payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
     gbn = item.get("gbn") or item.get("section", "")
-    single_domain_json = domain_export_payload([item])
-    summary = {
-        "gbn": gbn,
-        "key": item.get("key", ""),
-        "status": item.get("status", ""),
-        "display_name": payload.get("display_name") or item.get("display_name", ""),
-        "collection": collection_name_for("domain", settings.get("api_settings") if isinstance(settings, dict) else None),
-    }
-    tab_summary, tab_payload, tab_langflow, tab_document = st.tabs(["요약", "Payload", "Langflow JSON", "원본 Document"])
+    item_key_prefix = metadata_item_key_prefix(key_prefix, item)
+    tab_summary, tab_payload = st.tabs(["요약", "Payload"])
     with tab_summary:
-        st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
-        if item.get("source_text"):
-            st.text_area("Source Text", value=str(item.get("source_text") or ""), height=120, disabled=True, key=f"{key_prefix}_domain_source")
-        render_metadata_delete_action("domain", item, settings, f"{key_prefix}_domain")
+        render_domain_human_summary(item, item_key_prefix)
+        render_detail_title("저장 위치")
+        st.dataframe(
+            key_value_frame(
+                {
+                    "collection": collection_name_for("domain", settings.get("api_settings") if isinstance(settings, dict) else None),
+                    "section": gbn,
+                    "key": item.get("key", ""),
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+        render_metadata_delete_action("domain", item, settings, f"{item_key_prefix}_domain")
     with tab_payload:
         st.dataframe(key_value_frame(payload), width="stretch", hide_index=True)
-    with tab_langflow:
-        render_compact_json(single_domain_json, max_height=360)
-        st.download_button(
-            "선택 항목 Domain JSON 다운로드",
-            data=json_text(single_domain_json),
-            file_name=f"langflow_main_domain_{gbn or 'item'}_{item.get('key', 'item')}.json",
-            mime="application/json",
-            width="stretch",
-            key=f"{key_prefix}_domain_download",
-        )
-    with tab_document:
-        render_compact_json(item, max_height=360)
 
 
 def render_table_item_detail(item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
-    catalog_json = table_catalog_export_payload([item])
     payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
     metadata = {key: value for key, value in {**payload, **{k: v for k, v in item.items() if k != "payload"}}.items() if key not in {"columns", "source_text"}}
+    item_key_prefix = metadata_item_key_prefix(key_prefix, item)
     summary = {
         "dataset_key": item.get("dataset_key", ""),
         "status": item.get("status", ""),
@@ -1414,33 +1548,23 @@ def render_table_item_detail(item: dict[str, Any], settings: dict[str, Any], key
         "tool_name": payload.get("tool_name", ""),
         "collection": collection_name_for("table_catalog", settings.get("api_settings") if isinstance(settings, dict) else None),
     }
-    tab_summary, tab_metadata, tab_columns, tab_langflow, tab_document = st.tabs(["요약", "Metadata", "Columns", "Langflow JSON", "원본 Document"])
+    tab_summary, tab_metadata, tab_columns = st.tabs(["요약", "Metadata", "Columns"])
     with tab_summary:
+        render_metadata_registration_trace(item, f"{item_key_prefix}_table")
         st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
         if payload.get("description") or item.get("description"):
-            st.text_area("Description", value=str(payload.get("description") or item.get("description") or ""), height=100, disabled=True, key=f"{key_prefix}_table_description")
-        render_metadata_delete_action("table_catalog", item, settings, f"{key_prefix}_table")
+            st.text_area("Description", value=str(payload.get("description") or item.get("description") or ""), height=100, disabled=True, key=f"{item_key_prefix}_table_description")
+        render_metadata_delete_action("table_catalog", item, settings, f"{item_key_prefix}_table")
     with tab_metadata:
         st.dataframe(key_value_frame(metadata), width="stretch", hide_index=True)
     with tab_columns:
         columns = payload.get("columns") if isinstance(payload.get("columns"), list) else []
         st.dataframe(pd.DataFrame(columns), width="stretch", hide_index=True)
-    with tab_langflow:
-        render_compact_json(catalog_json, max_height=360)
-        st.download_button(
-            "선택 항목 Table Catalog JSON 다운로드",
-            data=json_text(catalog_json),
-            file_name=f"langflow_main_table_catalog_{item.get('dataset_key', 'dataset')}.json",
-            mime="application/json",
-            width="stretch",
-            key=f"{key_prefix}_table_download",
-        )
-    with tab_document:
-        render_compact_json(item, max_height=360)
 
 
 def render_main_filter_item_detail(item: dict[str, Any], settings: dict[str, Any], key_prefix: str) -> None:
     payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    item_key_prefix = metadata_item_key_prefix(key_prefix, item)
     summary = {
         "filter_key": item.get("filter_key") or item.get("key", ""),
         "status": item.get("status", ""),
@@ -1448,14 +1572,13 @@ def render_main_filter_item_detail(item: dict[str, Any], settings: dict[str, Any
         "semantic_role": item.get("semantic_role") or payload.get("semantic_role", ""),
         "collection": collection_name_for("main_flow_filter", settings.get("api_settings") if isinstance(settings, dict) else None),
     }
-    tab_summary, tab_payload, tab_document = st.tabs(["요약", "Payload", "원본 Document"])
+    tab_summary, tab_payload = st.tabs(["요약", "Payload"])
     with tab_summary:
+        render_metadata_registration_trace(item, f"{item_key_prefix}_main_filter")
         st.dataframe(key_value_frame(summary), width="stretch", hide_index=True)
-        render_metadata_delete_action("main_flow_filter", item, settings, f"{key_prefix}_main_filter")
+        render_metadata_delete_action("main_flow_filter", item, settings, f"{item_key_prefix}_main_filter")
     with tab_payload:
         st.dataframe(key_value_frame(payload), width="stretch", hide_index=True)
-    with tab_document:
-        render_compact_json(item, max_height=360)
 
 
 def filter_metadata_status(rows: list[dict[str, Any]], status: str) -> list[dict[str, Any]]:

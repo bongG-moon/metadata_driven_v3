@@ -1077,6 +1077,58 @@
       ],
       "grain_policy": "question_or_product_grain"
     },
+    "PRODUCT_BASED_DATA_JOIN_RULE": {
+      "display_name": "제품 기준 데이터 결합 규칙",
+      "aliases": [
+        "제품 기준 join rule",
+        "제품 기준으로 결합"
+      ],
+      "required_dataset_families": [
+        "production",
+        "wip",
+        "target",
+        "equipment"
+      ],
+      "calculation_rule": "production, wip, target, equipment 데이터를 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO를 기본 제품 키로 사용하여 결합합니다. dataset마다 물리 컬럼명이 달라도 table catalog의 mapping을 통해 표준 컬럼으로 맞춘 뒤 pandas에서 조인합니다.",
+      "required_columns_by_family": {
+        "production": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO"
+        ],
+        "wip": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO"
+        ],
+        "target": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO"
+        ],
+        "equipment": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO"
+        ]
+      }
+    },
     "PRODUCT_INPUT_CHANGE_ANALYSIS": {
       "display_name": "전일 미투입 금일 투입 제품 분석",
       "aliases": [

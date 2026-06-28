@@ -20,6 +20,7 @@ def test_metadata_loader_assembles_uploaded_mongodb_docs() -> None:
                 "section": "process_groups",
                 "key": "DA",
                 "payload": {"display_name": "D/A", "processes": ["D/A1"]},
+                "registration_trace": {"raw_text": "D/A 공정 그룹을 등록해줘"},
             },
             {
                 "_id": "domain:product_key_columns",
@@ -33,6 +34,7 @@ def test_metadata_loader_assembles_uploaded_mongodb_docs() -> None:
                 "_id": "table_catalog:production_today",
                 "dataset_key": "production_today",
                 "payload": {"source_type": "oracle", "columns": ["TECH", "MODE", "PRODUCTION"]},
+                "registration_trace": {"raw_text": "production_today 데이터셋을 등록해줘"},
             }
         ],
         [
@@ -40,14 +42,18 @@ def test_metadata_loader_assembles_uploaded_mongodb_docs() -> None:
                 "_id": "main_flow_filter:OPER_NAME",
                 "filter_key": "OPER_NAME",
                 "payload": {"column_candidates": ["OPER_NAME"]},
+                "registration_trace": {"raw_text": "OPER_NAME 필터를 등록해줘"},
             }
         ],
     )
 
     assert metadata["domain_items"]["process_groups"]["DA"]["processes"] == ["D/A1"]
+    assert "registration_trace" not in metadata["domain_items"]["process_groups"]["DA"]
     assert metadata["domain_items"]["product_key_columns"] == ["TECH", "MODE"]
     assert metadata["table_catalog"]["datasets"]["production_today"]["source_type"] == "oracle"
+    assert "registration_trace" not in metadata["table_catalog"]["datasets"]["production_today"]
     assert metadata["main_flow_filters"]["OPER_NAME"]["column_candidates"] == ["OPER_NAME"]
+    assert "registration_trace" not in metadata["main_flow_filters"]["OPER_NAME"]
 
 
 def test_metadata_loader_loads_only_from_mongodb(monkeypatch: Any) -> None:

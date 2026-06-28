@@ -53,7 +53,7 @@ def review_and_write_table_catalog_payload(
         write_result["status"] = "error"
         write_result["errors"].append("mongo_uri가 비어 있어 MongoDB에 저장하지 못했습니다.")
     else:
-        write_result = _write_items(uri, database, collection, payload.get("items", []), action)
+        write_result = _write_items(uri, database, collection, payload.get("items", []), action, _registration_trace(payload))
 
     next_payload = dict(payload)
     next_payload["duplicate_decision"] = _resolved_duplicate_decision(payload, action)
@@ -102,7 +102,7 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
     }
 
 
-def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any], action: str) -> dict[str, Any]:
+def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any], action: str, registration_trace: dict[str, Any] | None = None) -> dict[str, Any]:
     result = {"status": "ok", "saved_count": 0, "saved_items": [], "errors": [], "skipped_reason": ""}
     client = None
     try:
@@ -110,7 +110,7 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
         for item in items:
             if not isinstance(item, dict):
                 continue
-            doc = _table_doc(item)
+            doc = _table_doc(item, registration_trace or {})
             doc_errors = _storage_doc_errors(doc)
             if doc_errors:
                 result["errors"].extend(doc_errors)
@@ -150,7 +150,7 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
     return result
 
 
-def _table_doc(item: dict[str, Any]) -> dict[str, Any]:
+def _table_doc(item: dict[str, Any], registration_trace: dict[str, Any] | None = None) -> dict[str, Any]:
     dataset_key = _clean(item.get("dataset_key"))
     payload = deepcopy(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
     _normalize_payload_query_template(payload)
@@ -162,7 +162,19 @@ def _table_doc(item: dict[str, Any]) -> dict[str, Any]:
         "payload": payload,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if registration_trace:
+        doc["registration_trace"] = deepcopy(registration_trace)
     return doc
+
+
+def _registration_trace(payload: dict[str, Any]) -> dict[str, Any]:
+    trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
+    result = {
+        "raw_text": _clean(payload.get("raw_text")),
+        "refined_text": _clean(payload.get("refined_text")),
+        "reviewed_at": trace.get("reviewed_at") or datetime.now(timezone.utc).isoformat(),
+    }
+    return {key: value for key, value in result.items() if _clean(value)}
 
 
 def _normalize_payload_query_template(payload: dict[str, Any]) -> None:

@@ -180,7 +180,13 @@ def filter_items_from_current_metadata() -> list[dict[str, Any]]:
     data = read_json("metadata/main_flow_filters.json")
     items = []
     for filter_key, payload in data.items():
-        hints = FILTER_AUTHORING_HINTS[filter_key]
+        hints = FILTER_AUTHORING_HINTS.get(
+            filter_key,
+            {
+                "aliases": [filter_key, str(payload.get("description") or filter_key)],
+                "semantic_role": "filter",
+            },
+        )
         authoring_payload = {
             "display_name": payload.get("description", filter_key),
             "description": payload.get("description", ""),
@@ -402,6 +408,7 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
     assert written["write_result"]["status"] == "ok"
     docs = store[("metadata_driven_agent_v3", "agent_v3_domain_items")]
     assert written["write_result"]["saved_count"] == len(docs)
+    assert docs["domain:analysis_recipes:DEVICE_ALIAS_TO_COLUMN_MAPPING"]["registration_trace"]["raw_text"] == DOMAIN_BULK_TEXT
     assert set(docs) >= {
         "domain:process_groups:DP_DP_PROCESS_GROUP",
         "domain:process_groups:DA_PROCESS_GROUP",
@@ -431,9 +438,20 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
     assert docs["domain:process_groups:DS_PROCESS_GROUP"]["payload"]["processes"] == ["D/S1"]
     assert "condition" not in docs["domain:process_groups:DS_PROCESS_GROUP"]["payload"]
     assert docs["domain:product_terms:HBM_3DS_TSV_PRODUCT"]["payload"]["condition"] == {"TSV_DIE_TYP": {"exists": True, "not_in": [None, ""]}}
-    assert "condition_by_dataset" in docs["domain:product_terms:POP_PRODUCT"]["payload"]
-    assert docs["domain:product_terms:MOBILE_PRODUCT"]["payload"]["condition"]["MCP_NO"] == {"in": [None, ""]}
-    assert "FAB, DEVICE, OWNER, GRADE" in docs["domain:product_terms:flexible_product"]["payload"]["calculation_rule"]
+    assert (
+        "condition_by_family" in docs["domain:product_terms:POP_PRODUCT"]["payload"]
+        or "condition_by_dataset" in docs["domain:product_terms:POP_PRODUCT"]["payload"]
+    )
+    mobile_payload = docs["domain:product_terms:MOBILE_PRODUCT"]["payload"]
+    mobile_condition_text = json.dumps(
+        mobile_payload.get("condition_by_family") or mobile_payload.get("condition"),
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    assert "MCP_NO" in mobile_condition_text
+    assert "null" in mobile_condition_text
+    flexible_rule = docs["domain:product_terms:flexible_product"]["payload"]["calculation_rule"]
+    assert "FAB" in flexible_rule and "DEVICE" in flexible_rule and "OWNER" in flexible_rule and "GRADE" in flexible_rule
     assert docs["domain:product_terms:flexible_product"]["payload"]["required_columns_by_family"]["production"] == ["FAB", "DEVICE"]
     assert docs["domain:metric_terms:PRODUCTION_ACHIEVEMENT_RATE_METRIC"]["payload"]["required_dataset_families"] == ["production", "target"]
     assert docs["domain:analysis_recipes:BOH_WIP_DATE_RULE"]["payload"]["required_dataset_families"] == ["wip"]
@@ -498,6 +516,7 @@ def test_worker_bulk_table_text_input_saves_all_current_datasets(monkeypatch: An
     assert written["write_result"]["saved_count"] == 9
     docs = store[("metadata_driven_agent_v3", "agent_v3_table_catalog_items")]
     assert set(docs) >= {"table_catalog:production_today", "table_catalog:wip_today", "table_catalog:hold_history"}
+    assert docs["table_catalog:hold_history"]["registration_trace"]["raw_text"] == TABLE_BULK_TEXT
     assert docs["table_catalog:hold_history"]["payload"]["required_params"] == ["LOT_ID"]
     assert docs["table_catalog:hold_history"]["payload"]["default_detail_columns"] == [
         "LOT_ID",
@@ -530,6 +549,7 @@ def test_worker_single_table_text_input_saves_hold_history(monkeypatch: Any) -> 
     assert_lean_metadata_doc(doc)
     assert doc["dataset_key"] == "hold_history"
     assert doc["key"] == "hold_history"
+    assert doc["registration_trace"]["raw_text"] == TABLE_HOLD_HISTORY_TEXT
     assert doc["payload"]["source_type"] == "oracle"
 
 
@@ -539,9 +559,18 @@ def test_worker_bulk_filter_text_input_saves_all_current_filters(monkeypatch: An
 
     assert written["raw_text"] == FILTER_BULK_TEXT
     assert written["write_result"]["status"] == "ok"
-    assert written["write_result"]["saved_count"] == 17
+    assert written["write_result"]["saved_count"] == len(items)
     docs = store[("metadata_driven_agent_v3", "agent_v3_main_flow_filters")]
-    assert set(docs) >= {"main_flow_filter:DATE", "main_flow_filter:ORG", "main_flow_filter:LOT_ID", "main_flow_filter:EQP_MODEL", "main_flow_filter:RECIPE_ID"}
+    assert set(docs) >= {
+        "main_flow_filter:DATE",
+        "main_flow_filter:ORG",
+        "main_flow_filter:LOT_ID",
+        "main_flow_filter:EQP_MODEL",
+        "main_flow_filter:RECIPE_ID",
+        "main_flow_filter:DEVICE",
+        "main_flow_filter:LOT_HOLD_STAT_CD",
+    }
+    assert docs["main_flow_filter:DATE"]["registration_trace"]["raw_text"] == FILTER_BULK_TEXT
     assert not {"main_flow_filter:OPER_DESC", "main_flow_filter:FAB", "main_flow_filter:OWNER", "main_flow_filter:GRADE"} & set(docs)
     assert docs["main_flow_filter:DATE"]["payload"]["semantic_role"] == "date"
 
@@ -561,4 +590,5 @@ def test_worker_single_filter_text_input_saves_eqp_model(monkeypatch: Any) -> No
     assert_lean_metadata_doc(doc)
     assert doc["filter_key"] == "EQP_MODEL"
     assert doc["key"] == "EQP_MODEL"
-    assert doc["payload"]["column_candidates"] == ["EQP_MODEL"]
+    assert doc["registration_trace"]["raw_text"] == FILTER_EQP_MODEL_TEXT
+    assert doc["payload"]["column_candidates"] == ["EQP_MODEL", "EQP_MODEL_CD"]

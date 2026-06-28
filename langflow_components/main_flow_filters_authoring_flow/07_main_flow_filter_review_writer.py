@@ -52,7 +52,7 @@ def review_and_write_main_flow_filter_payload(
         write_result["status"] = "error"
         write_result["errors"].append("mongo_uri가 비어 있어 MongoDB에 저장하지 못했습니다.")
     else:
-        write_result = _write_items(uri, database, collection, payload.get("items", []), action)
+        write_result = _write_items(uri, database, collection, payload.get("items", []), action, _registration_trace(payload))
 
     next_payload = dict(payload)
     next_payload["duplicate_decision"] = _resolved_duplicate_decision(payload, action)
@@ -94,7 +94,7 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
     }
 
 
-def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any], action: str) -> dict[str, Any]:
+def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any], action: str, registration_trace: dict[str, Any] | None = None) -> dict[str, Any]:
     result = {"status": "ok", "saved_count": 0, "saved_items": [], "errors": [], "skipped_reason": ""}
     client = None
     try:
@@ -109,7 +109,7 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
             if existing and action == "create_new":
                 result["errors"].append(f"{filter_key}는 이미 존재합니다. create_new를 쓰려면 새 filter_key가 필요합니다.")
                 continue
-            doc = _filter_doc(item)
+            doc = _filter_doc(item, registration_trace or {})
             if existing and action == "merge":
                 doc = _deep_merge(_json_ready(existing), doc)
                 doc["_id"] = existing.get("_id", doc["_id"])
@@ -128,7 +128,7 @@ def _write_items(mongo_uri: str, database: str, collection: str, items: list[Any
     return result
 
 
-def _filter_doc(item: dict[str, Any]) -> dict[str, Any]:
+def _filter_doc(item: dict[str, Any], registration_trace: dict[str, Any] | None = None) -> dict[str, Any]:
     filter_key = _clean(item.get("filter_key"))
     payload = deepcopy(item.get("payload")) if isinstance(item.get("payload"), dict) else {}
     doc = {
@@ -139,7 +139,19 @@ def _filter_doc(item: dict[str, Any]) -> dict[str, Any]:
         "payload": payload,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+    if registration_trace:
+        doc["registration_trace"] = deepcopy(registration_trace)
     return doc
+
+
+def _registration_trace(payload: dict[str, Any]) -> dict[str, Any]:
+    trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
+    result = {
+        "raw_text": _clean(payload.get("raw_text")),
+        "refined_text": _clean(payload.get("refined_text")),
+        "reviewed_at": trace.get("reviewed_at") or datetime.now(timezone.utc).isoformat(),
+    }
+    return {key: value for key, value in result.items() if _clean(value)}
 
 
 def _strip_storage_envelope(doc: dict[str, Any]) -> dict[str, Any]:

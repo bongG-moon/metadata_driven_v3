@@ -202,7 +202,10 @@ POP 제품은 MODE가 LP로 시작하고, PKG_TYPE1이 LFBGA, TFBGA, UFBGA, VFBG
 <!-- single_product_mobile:start -->
 ```text
 MOBILE 제품 조건을 등록해줘.
+section은 product_terms이고 key는 MOBILE_PRODUCT야.
+display_name은 MOBILE 제품이고 aliases는 MOBILE 제품, MOBILE이야.
 MOBILE 제품은 MODE가 LP로 시작하고, PKG_TYPE1이 LFBGA, TFBGA, UFBGA, VFBGA, WFBGA 중 하나이며, MCP_NO 값이 NULL이거나 빈칸인 제품이야.
+production, wip, lot, equipment, capacity 계열 모두 같은 조건을 condition_by_family로 저장해.
 ```
 <!-- single_product_mobile:end -->
 

@@ -89,11 +89,44 @@ def test_load_metadata_items_reads_mongodb_documents(monkeypatch: Any) -> None:
     assert client.closed is True
 
 
+def test_normalize_metadata_document_exposes_domain_registration_trace() -> None:
+    item = normalize_metadata_document(
+        "domain",
+        {
+            "section": "analysis_recipes",
+            "key": "DEVICE_ALIAS_TO_COLUMN_MAPPING",
+            "payload": {"display_name": "DEVICE 첨자"},
+            "registration_trace": {
+                "raw_text": "DEVICE 첨자 규칙을 등록해줘",
+                "refined_text": "DEVICE 컬럼 첨자 해석 규칙",
+            },
+        },
+    )
+
+    assert item["registration_trace"]["raw_text"] == "DEVICE 첨자 규칙을 등록해줘"
+    assert item["registration_trace"]["refined_text"] == "DEVICE 컬럼 첨자 해석 규칙"
+
+
+def test_normalize_metadata_document_accepts_legacy_authoring_trace() -> None:
+    item = normalize_metadata_document(
+        "domain",
+        {
+            "section": "analysis_recipes",
+            "key": "DEVICE_ALIAS_TO_COLUMN_MAPPING",
+            "payload": {"display_name": "DEVICE 첨자"},
+            "authoring_trace": {"raw_text": "기존 authoring_trace 원문"},
+        },
+    )
+
+    assert item["registration_trace"]["raw_text"] == "기존 authoring_trace 원문"
+
+
 def test_normalize_metadata_document_handles_table_payload() -> None:
     item = normalize_metadata_document(
         "table_catalog",
         {
             "dataset_key": "production_today",
+            "registration_trace": {"raw_text": "production_today 데이터셋을 등록해줘"},
             "payload": {
                 "display_name": "오늘 생산",
                 "dataset_family": "production",
@@ -105,6 +138,26 @@ def test_normalize_metadata_document_handles_table_payload() -> None:
     assert item["display_name"] == "오늘 생산"
     assert item["dataset_family"] == "production"
     assert item["source_type"] == "oracle"
+    assert item["registration_trace"]["raw_text"] == "production_today 데이터셋을 등록해줘"
+
+
+def test_normalize_metadata_document_handles_main_filter_registration_trace() -> None:
+    item = normalize_metadata_document(
+        "main_flow_filter",
+        {
+            "filter_key": "DATE",
+            "registration_trace": {"raw_text": "오늘은 DATE 필터로 매핑해줘"},
+            "payload": {
+                "display_name": "날짜",
+                "semantic_role": "date",
+                "column_candidates": ["DATE", "WORK_DT"],
+            },
+        },
+    )
+
+    assert item["display_name"] == "날짜"
+    assert item["semantic_role"] == "date"
+    assert item["registration_trace"]["raw_text"] == "오늘은 DATE 필터로 매핑해줘"
 
 
 def test_mark_metadata_deleted_updates_status_without_removing_document(monkeypatch: Any) -> None:

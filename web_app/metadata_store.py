@@ -125,6 +125,7 @@ def normalize_metadata_document(metadata_type: str, document: dict[str, Any]) ->
         doc.setdefault("display_name", payload.get("display_name") or doc.get("key") or "")
         if "aliases" not in doc and isinstance(payload.get("aliases"), list):
             doc["aliases"] = list(payload["aliases"])
+        doc["registration_trace"] = normalize_registration_trace(doc)
         doc["payload"] = payload
         return doc
     if kind == "table_catalog":
@@ -136,6 +137,7 @@ def normalize_metadata_document(metadata_type: str, document: dict[str, Any]) ->
         doc.setdefault("display_name", payload.get("display_name") or doc.get("dataset_key") or "")
         doc.setdefault("dataset_family", payload.get("dataset_family") or "")
         doc.setdefault("source_type", payload.get("source_type") or source_config.get("source_type") or "")
+        doc["registration_trace"] = normalize_registration_trace(doc)
         doc["payload"] = payload
         return doc
     doc.setdefault("type", "main_flow_filter")
@@ -145,6 +147,7 @@ def normalize_metadata_document(metadata_type: str, document: dict[str, Any]) ->
     doc.setdefault("display_name", payload.get("display_name") or payload.get("description") or doc.get("filter_key") or "")
     doc.setdefault("column_candidates", payload.get("column_candidates") if isinstance(payload.get("column_candidates"), list) else [])
     doc.setdefault("semantic_role", payload.get("semantic_role") or payload.get("value_type") or "")
+    doc["registration_trace"] = normalize_registration_trace(doc)
     doc["payload"] = payload
     return doc
 
@@ -175,3 +178,20 @@ def normalize_metadata_type(value: str) -> str:
     if text in {"table", "table_catalog", "catalog", "data_catalog"}:
         return "table_catalog"
     return "main_flow_filter"
+
+
+def normalize_registration_trace(document: dict[str, Any]) -> dict[str, Any]:
+    trace = document.get("registration_trace") if isinstance(document.get("registration_trace"), dict) else {}
+    if not trace and isinstance(document.get("authoring_trace"), dict):
+        trace = document["authoring_trace"]
+    if not trace and isinstance(document.get("trace"), dict):
+        trace = document["trace"]
+    result = {
+        "raw_text": trace.get("raw_text") or document.get("raw_text") or document.get("source_text") or "",
+        "refined_text": trace.get("refined_text") or document.get("refined_text") or "",
+        "reviewed_at": trace.get("reviewed_at") or document.get("reviewed_at") or "",
+    }
+    return {key: value for key, value in result.items() if str(value or "").strip()}
+
+
+normalize_authoring_trace = normalize_registration_trace

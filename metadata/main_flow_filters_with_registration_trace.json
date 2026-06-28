@@ -1,0 +1,477 @@
+{
+  "exported_at": "2026-06-28T13:39:18.683610+00:00",
+  "database": "datagov",
+  "collection": "agent_v3_main_flow_filters",
+  "document_count": 23,
+  "documents_with_registration_trace": 23,
+  "documents": [
+    {
+      "id": "main_flow_filter:DATE",
+      "filter_key": "DATE",
+      "key": "DATE",
+      "payload": {
+        "column_candidates": [
+          "WORK_DATE",
+          "WORK_DT",
+          "DATE",
+          "BASE_DT"
+        ],
+        "description": "기준일자"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:DEN",
+      "filter_key": "DEN",
+      "key": "DEN",
+      "payload": {
+        "column_candidates": [
+          "DEN",
+          "DENSITY",
+          "DEN_TYP"
+        ],
+        "description": "제품 density"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:DEVICE",
+      "filter_key": "DEVICE",
+      "key": "DEVICE",
+      "payload": {
+        "column_candidates": [
+          "DEVICE",
+          "DEVICE_CODE"
+        ],
+        "description": "제품/디바이스 코드"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:DEVICE_DESC",
+      "filter_key": "DEVICE_DESC",
+      "key": "DEVICE_DESC",
+      "payload": {
+        "column_candidates": [
+          "DEVICE_DESC",
+          "DEVICE",
+          "DEVICE_CODE"
+        ],
+        "description": "사용자가 device를 직접 언급했을 때 사용하는 device 계열"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:DIE_ATTACH_QTY",
+      "filter_key": "DIE_ATTACH_QTY",
+      "key": "DIE_ATTACH_QTY",
+      "payload": {
+        "column_candidates": [
+          "DIE_ATTACH_QTY"
+        ],
+        "description": "Die attach 수량"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:EQP_ID",
+      "filter_key": "EQP_ID",
+      "key": "EQP_ID",
+      "payload": {
+        "column_candidates": [
+          "EQP_ID",
+          "EQPID"
+        ],
+        "description": "장비 ID"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:EQP_MODEL",
+      "filter_key": "EQP_MODEL",
+      "key": "EQP_MODEL",
+      "payload": {
+        "column_candidates": [
+          "EQP_MODEL",
+          "EQP_MODEL_CD"
+        ],
+        "description": "장비 모델"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "장비 모델 조건은 EQP_MODEL로 사용해줘.\n사용자가 eqp model, equipment model, 장비 모델, 설비 모델이라고 말하면 EQP_MODEL 조건으로 해석해줘.\n실제 컬럼 후보는 EQP_MODEL, EQP_MODEL_CD야.\n문자 값이 여러 개 들어오면 in 조건으로 적용해줘.",
+        "refined_text": "장비 모델 조건은 EQP_MODEL로 사용해줘.\n사용자가 eqp model, equipment model, 장비 모델, 설비 모델이라고 말하면 EQP_MODEL 조건으로 해석해줘.\n실제 컬럼 후보는 EQP_MODEL, EQP_MODEL_CD야.\n문자 값이 여러 개 들어오면 in 조건으로 적용해줘.",
+        "source_marker": "single_eqp_model",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:LEAD",
+      "filter_key": "LEAD",
+      "key": "LEAD",
+      "payload": {
+        "column_candidates": [
+          "LEAD",
+          "LEAD_CNT"
+        ],
+        "description": "Lead"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:LOT_HOLD_STAT_CD",
+      "filter_key": "LOT_HOLD_STAT_CD",
+      "key": "LOT_HOLD_STAT_CD",
+      "payload": {
+        "column_candidates": [
+          "LOT_HOLD_STAT_CD"
+        ],
+        "description": "Lot hold 상태"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:LOT_ID",
+      "filter_key": "LOT_ID",
+      "key": "LOT_ID",
+      "payload": {
+        "column_candidates": [
+          "LOT_ID"
+        ],
+        "description": "Lot ID"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:LOT_STAT_CD",
+      "filter_key": "LOT_STAT_CD",
+      "key": "LOT_STAT_CD",
+      "payload": {
+        "column_candidates": [
+          "LOT_STAT_CD"
+        ],
+        "description": "Lot 작업 상태"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:MCP_NO",
+      "filter_key": "MCP_NO",
+      "key": "MCP_NO",
+      "payload": {
+        "column_candidates": [
+          "MCP_NO",
+          "MCP NO",
+          "MCP_SALES_NO",
+          "MCP_SALE_CD",
+          "MCPSALENO",
+          "PROD_GRP_ID"
+        ],
+        "description": "제품 코드"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:MODE",
+      "filter_key": "MODE",
+      "key": "MODE",
+      "payload": {
+        "column_candidates": [
+          "MODE",
+          "PROD_TYP"
+        ],
+        "description": "제품 mode"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:NETDIE_300_CNT",
+      "filter_key": "NETDIE_300_CNT",
+      "key": "NETDIE_300_CNT",
+      "payload": {
+        "column_candidates": [
+          "NETDIE_300_CNT"
+        ],
+        "description": "300mm wafer 기준 net die 수량"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:OPER_NAME",
+      "filter_key": "OPER_NAME",
+      "key": "OPER_NAME",
+      "payload": {
+        "column_candidates": [
+          "OPER_NAME",
+          "OPER_DESC",
+          "OPER_ID",
+          "OPER_SHORT_DESC"
+        ],
+        "description": "공정명"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:OPER_NUM",
+      "filter_key": "OPER_NUM",
+      "key": "OPER_NUM",
+      "payload": {
+        "column_candidates": [
+          "OPER_NUM",
+          "OPER",
+          "OPER_NO"
+        ],
+        "description": "공정 번호"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:OPER_SEQ",
+      "filter_key": "OPER_SEQ",
+      "key": "OPER_SEQ",
+      "payload": {
+        "column_candidates": [
+          "OPER_SEQ"
+        ],
+        "description": "공정 순서"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:ORG",
+      "filter_key": "ORG",
+      "key": "ORG",
+      "payload": {
+        "column_candidates": [
+          "ORG",
+          "ORGANIZ_CD",
+          "organiz_cd"
+        ],
+        "description": "제품 조직/organization code"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "ORG는 제품 ORG 또는 조직 코드 필터야.\n사용자가 ORG, 조직, organization code라고 말하면 ORG 조건으로 해석해줘.\n실제 컬럼 후보는 ORG, ORGANIZ_CD, organiz_cd야.",
+        "refined_text": "ORG는 제품 ORG 또는 조직 코드 필터야.\n사용자가 ORG, 조직, organization code라고 말하면 ORG 조건으로 해석해줘.\n실제 컬럼 후보는 ORG, ORGANIZ_CD, organiz_cd야.",
+        "source_marker": "single_org",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:PKG_TYPE1",
+      "filter_key": "PKG_TYPE1",
+      "key": "PKG_TYPE1",
+      "payload": {
+        "column_candidates": [
+          "PKG_TYPE1",
+          "PKG1",
+          "PKG_TYP1",
+          "PKG_TYP"
+        ],
+        "description": "Package type 1"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:PKG_TYPE2",
+      "filter_key": "PKG_TYPE2",
+      "key": "PKG_TYPE2",
+      "payload": {
+        "column_candidates": [
+          "PKG_TYPE2",
+          "PKG2",
+          "PKG_TYP2",
+          "PKG_TYP_2"
+        ],
+        "description": "Package type 2"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:RECIPE_ID",
+      "filter_key": "RECIPE_ID",
+      "key": "RECIPE_ID",
+      "payload": {
+        "column_candidates": [
+          "RECIPE_ID"
+        ],
+        "description": "Recipe ID"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:TECH",
+      "filter_key": "TECH",
+      "key": "TECH",
+      "payload": {
+        "column_candidates": [
+          "TECH"
+        ],
+        "description": "제품 기술"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    },
+    {
+      "id": "main_flow_filter:TSV_DIE_TYP",
+      "filter_key": "TSV_DIE_TYP",
+      "key": "TSV_DIE_TYP",
+      "payload": {
+        "column_candidates": [
+          "TSV_DIE_TYP",
+          "TSV_DIE_TYPE"
+        ],
+        "description": "HBM/3DS/TSV 제품 판별 컬럼"
+      },
+      "status": "active",
+      "registration_trace": {
+        "raw_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "refined_text": "[기준일/공정 필터]\nDATE는 기준일 필터야. 날짜, 일자, 기준일, 작업일, 오늘, 금일, 어제, 전일, date, work date는 DATE 조건으로 해석해줘.\nOPER_NAME은 공정명 필터야. 공정, 작업공정, operation, process, oper name은 OPER_NAME 조건으로 해석해줘.\nOPER_NUM은 공정 번호/차수 필터야. 공정번호, 공정 차수, oper num, oper no는 OPER_NUM 조건으로 해석해줘.\n\n[제품 속성 필터]\nTECH는 제품 기술, DEN은 제품 용량, MODE는 제품 모드 필터야.\nPKG_TYPE1은 package type 1, PKG_TYPE2는 package type 2 필터야.\nORG는 제품 ORG/조직 코드 필터야.\nLEAD는 lead count 필터야.\nMCP_NO는 제품 코드 필터야. MCP_NO, MCP NO, MCP_SALES_NO, MCP_SALE_CD, MCPSALENO는 같은 의미 후보야.\nDEVICE_DESC는 사용자가 DEVICE_DESC 또는 제품 설명을 명시적으로 말했을 때만 사용하는 설명 필터야.\nTSV_DIE_TYP은 HBM/3DS/TSV 또는 2Hi/4Hi/8Hi 같은 TSV die type 판별 필터야.\n\n[장비/Lot/Recipe 필터]\nEQP_ID는 장비 ID 필터야. EQP_ID와 EQPID는 같은 의미 후보야.\nEQP_MODEL은 장비 모델 필터야.\nLOT_ID는 Lot ID 필터야.\nRECIPE_ID는 Recipe ID 필터야.",
+        "source_marker": "bulk_main_flow_filters",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-28T13:39:14.953582+00:00"
+      }
+    }
+  ]
+}

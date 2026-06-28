@@ -45,6 +45,49 @@ python tools\upload_json_to_mongodb.py --metadata-kind table-catalog --metadata-
 python tools\upload_json_to_mongodb.py --metadata-kind table-catalog,main-flow-filter
 ```
 
+## Upload With Registration Trace
+
+`metadata/domain_items.json`, `metadata/table_catalog.json`, `metadata/main_flow_filters.json`은
+runtime seed용 compact JSON이라 등록 당시 입력 문장 정보가 없습니다.
+등록 입력 원문까지 함께 옮기려면 MongoDB 문서 백업형 JSON을 사용합니다.
+
+- `metadata/domain_items_with_registration_trace.json`
+- `metadata/table_catalog_with_registration_trace.json`
+- `metadata/main_flow_filters_with_registration_trace.json`
+
+먼저 업로드 대상과 문서 수를 확인합니다.
+
+```powershell
+python tools\upload_json_to_mongodb.py --dry-run --metadata-kind domain `
+  --domain-registration-trace-json metadata\domain_items_with_registration_trace.json
+```
+
+실제 업로드는 아래처럼 실행합니다.
+
+```powershell
+python tools\upload_json_to_mongodb.py --metadata-kind domain `
+  --domain-registration-trace-json metadata\domain_items_with_registration_trace.json
+```
+
+table catalog와 main flow filter도 registration trace 포함 JSON으로 올릴 수 있습니다.
+
+```powershell
+python tools\upload_json_to_mongodb.py --dry-run --metadata-kind table-catalog,main-flow-filter `
+  --table-registration-trace-json metadata\table_catalog_with_registration_trace.json `
+  --main-filter-registration-trace-json metadata\main_flow_filters_with_registration_trace.json
+```
+
+세 metadata를 모두 registration trace 포함 형태로 올리려면 아래처럼 실행합니다.
+
+```powershell
+python tools\upload_json_to_mongodb.py `
+  --domain-registration-trace-json metadata\domain_items_with_registration_trace.json `
+  --table-registration-trace-json metadata\table_catalog_with_registration_trace.json `
+  --main-filter-registration-trace-json metadata\main_flow_filters_with_registration_trace.json
+```
+
+이 옵션을 쓰면 각 metadata collection에는 `registration_trace.raw_text`가 포함된 문서가 upsert됩니다.
+
 ## Export From MongoDB
 
 현재 MongoDB에 저장된 metadata를 다른 환경에 one-shot으로 업로드할 seed JSON으로 내려받을 수 있습니다.

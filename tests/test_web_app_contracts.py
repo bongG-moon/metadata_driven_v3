@@ -96,6 +96,60 @@ def test_chat_metadata_summary_helpers_render_korean_descriptions() -> None:
     assert any("출력 컬럼" in line for line in pandas_lines)
 
 
+def test_domain_item_summary_renders_human_readable_recipe_and_keeps_input_trace() -> None:
+    item = {
+        "section": "analysis_recipes",
+        "key": "DEVICE_ALIAS_TO_COLUMN_MAPPING",
+        "status": "active",
+        "payload": {
+            "display_name": "DEVICE 첨자",
+            "aliases": ["DEVICE 첨자", "DEVICE suffix"],
+            "default_analysis_kind": "generic_recipe_sequence",
+            "required_dataset_families": ["production"],
+            "step_plan_template": [
+                {"step_id": "extract_device_suffix", "operation": "transform_data"},
+                {"step_id": "aggregate_by_suffix", "operation": "aggregate_by_group"},
+            ],
+        },
+        "registration_trace": {
+            "raw_text": "DEVICE 첨자 규칙을 등록해줘",
+            "refined_text": "DEVICE 컬럼 첨자 해석 규칙",
+        },
+    }
+    summary = app.domain_item_summary(item)
+
+    assert summary["도메인 유형"].startswith("분석 레시피")
+    assert summary["사용자 표현/별칭"] == "DEVICE 첨자, DEVICE suffix"
+    assert summary["사용 데이터"] == "production"
+    assert summary["처리 단계"] == "extract_device_suffix → aggregate_by_suffix"
+    assert "생성 입력 문장" not in summary
+    assert app.metadata_registration_trace(item)["raw_text"] == "DEVICE 첨자 규칙을 등록해줘"
+
+
+def test_metadata_item_key_prefix_changes_by_selected_domain_item() -> None:
+    first_key = app.metadata_item_key_prefix(
+        "lookup",
+        {"section": "analysis_recipes", "key": "AGGREGATE_TOTAL"},
+    )
+    second_key = app.metadata_item_key_prefix(
+        "lookup",
+        {"section": "analysis_recipes", "key": "DEVICE_ALIAS_TO_COLUMN_MAPPING"},
+    )
+
+    assert first_key != second_key
+    assert ":" not in first_key
+    assert ":" not in second_key
+
+
+def test_metadata_item_key_prefix_uses_table_and_filter_identity() -> None:
+    table_key = app.metadata_item_key_prefix("lookup", {"dataset_key": "production_today"})
+    filter_key = app.metadata_item_key_prefix("lookup", {"filter_key": "DATE"})
+
+    assert table_key != filter_key
+    assert "production_today" in table_key
+    assert "DATE" in filter_key
+
+
 def test_intent_summary_renders_pandas_function_case() -> None:
     lines = app.intent_plan_summary_lines(
         {
