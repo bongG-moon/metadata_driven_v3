@@ -45,6 +45,25 @@ python tools\upload_json_to_mongodb.py --metadata-kind table-catalog --metadata-
 python tools\upload_json_to_mongodb.py --metadata-kind table-catalog,main-flow-filter
 ```
 
+## Export From MongoDB
+
+현재 MongoDB에 저장된 metadata를 다른 환경에 one-shot으로 업로드할 seed JSON으로 내려받을 수 있습니다.
+
+```powershell
+# Domain metadata만 MongoDB 기준으로 metadata/domain_items.json에 재생성
+python tools\export_mongodb_metadata_to_json.py --metadata-kind domain
+
+# core metadata 3종을 모두 재생성
+python tools\export_mongodb_metadata_to_json.py
+```
+
+기본 실행은 기존 파일을 덮어쓰기 전에 `metadata/*.before_mongodb_export_YYYYMMDD_HHMMSS.json` 백업을 만듭니다.
+다운로드 후 다른 환경에서는 기존 업로드 명령을 그대로 사용합니다.
+
+```powershell
+python tools\upload_json_to_mongodb.py --metadata-kind domain
+```
+
 ## Stored Document Shape
 
 이 스크립트는 로컬 seed JSON을 MongoDB에 넣기 위한 보조 도구지만, 저장 문서 자체에는 로컬 파일 경로나 upload 출처를 남기지 않는다. 실제 운영 경로는 authoring flow가 받은 자연어 text를 MongoDB metadata item으로 저장하는 방식이므로, seed upload도 loader가 읽는 lean shape에 맞춘다.

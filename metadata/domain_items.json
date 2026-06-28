@@ -34,30 +34,7 @@
       "display_name": "D/A 공정 그룹",
       "aliases": [
         "D/A 공정 그룹",
-        "DA 공정 그룹",
-        "D/A공정",
-        "DA공정",
-        "D/A",
-        "DA"
-      ],
-      "processes": [
-        "D/A1",
-        "D/A2",
-        "D/A3",
-        "D/A4",
-        "D/A5",
-        "D/A6"
-      ]
-    },
-    "DA": {
-      "display_name": "D/A 공정 그룹",
-      "aliases": [
-        "D/A 공정 그룹",
-        "DA 공정 그룹",
-        "D/A공정",
-        "DA공정",
-        "D/A",
-        "DA"
+        "DA 공정 그룹"
       ],
       "processes": [
         "D/A1",
@@ -97,68 +74,7 @@
       "display_name": "DP 또는 D/P 공정 그룹",
       "aliases": [
         "DP 공정 그룹",
-        "D/P 공정 그룹",
-        "DP공정",
-        "D/P공정",
-        "DP",
-        "D/P"
-      ],
-      "processes": [
-        "WET1",
-        "WET2",
-        "L/T1",
-        "L/T2",
-        "B/G1",
-        "B/G2",
-        "H/S1",
-        "H/S2",
-        "W/S1",
-        "W/S2",
-        "WSD1",
-        "WSD2",
-        "WEC1",
-        "WEC2",
-        "WLS1",
-        "WLS2",
-        "WVI",
-        "UV",
-        "C/C1"
-      ],
-      "condition": {
-        "OPER_NAME": {
-          "$in": [
-            "WET1",
-            "WET2",
-            "L/T1",
-            "L/T2",
-            "B/G1",
-            "B/G2",
-            "H/S1",
-            "H/S2",
-            "W/S1",
-            "W/S2",
-            "WSD1",
-            "WSD2",
-            "WEC1",
-            "WEC2",
-            "WLS1",
-            "WLS2",
-            "WVI",
-            "UV",
-            "C/C1"
-          ]
-        }
-      }
-    },
-    "DP": {
-      "display_name": "DP 또는 D/P 공정 그룹",
-      "aliases": [
-        "DP 공정 그룹",
-        "D/P 공정 그룹",
-        "DP공정",
-        "D/P공정",
-        "DP",
-        "D/P"
+        "D/P 공정 그룹"
       ],
       "processes": [
         "WET1",
@@ -356,30 +272,7 @@
       "display_name": "W/B 공정 그룹",
       "aliases": [
         "W/B 공정 그룹",
-        "WB 공정 그룹",
-        "W/B공정",
-        "WB공정",
-        "W/B",
-        "WB"
-      ],
-      "processes": [
-        "W/B1",
-        "W/B2",
-        "W/B3",
-        "W/B4",
-        "W/B5",
-        "W/B6"
-      ]
-    },
-    "WB": {
-      "display_name": "W/B 공정 그룹",
-      "aliases": [
-        "W/B 공정 그룹",
-        "WB 공정 그룹",
-        "W/B공정",
-        "WB공정",
-        "W/B",
-        "WB"
+        "WB 공정 그룹"
       ],
       "processes": [
         "W/B1",
@@ -561,11 +454,8 @@
     "HBM_3DS_TSV_PRODUCT": {
       "display_name": "HBM/3DS/TSV 제품",
       "aliases": [
-        "HBM",
         "HBM 제품",
-        "3DS",
         "3DS 제품",
-        "TSV",
         "TSV 제품"
       ],
       "condition": {
@@ -576,19 +466,11 @@
             ""
           ]
         }
-      },
-      "condition_by_family": {
-        "equipment": {
-          "PKG_TYPE1": {
-            "value": "HBM"
-          }
-        }
       }
     },
     "MOBILE_PRODUCT": {
       "display_name": "MOBILE 제품",
       "aliases": [
-        "MOBILE",
         "MOBILE 제품"
       ],
       "condition": {
@@ -615,7 +497,6 @@
     "POP_PRODUCT": {
       "display_name": "POP 제품",
       "aliases": [
-        "POP",
         "POP 제품"
       ],
       "condition_by_dataset": {
@@ -888,23 +769,6 @@
         "EQP_COUNT"
       ]
     },
-    "lot_count": {
-      "display_name": "Lot 수량",
-      "aliases": [
-        "Lot 수량",
-        "LOT 수량",
-        "lot count"
-      ],
-      "dataset_key": "lot_status",
-      "dataset_family": "lot",
-      "quantity_column": "LOT_ID",
-      "aggregation": "nunique",
-      "output_column": "LOT_COUNT",
-      "source_columns": [
-        "LOT_ID",
-        "LOT_COUNT"
-      ]
-    },
     "INPUT_QUANTITY": {
       "display_name": "투입량",
       "aliases": [
@@ -983,6 +847,38 @@
       "dataset_family": "wip",
       "quantity_column": "WIP",
       "aggregation": "sum"
+    },
+    "DIE_QTY_METRIC": {
+      "display_name": "Die 수량",
+      "aliases": [
+        "DIE_QTY",
+        "die 수량"
+      ],
+      "dataset_family": "lot",
+      "quantity_column": "SUB_PROD_QTY",
+      "aggregation": "sum",
+      "output_column": "DIE_QTY",
+      "output_columns": [
+        "DIE_QTY"
+      ]
+    },
+    "LOT_COUNT_METRIC": {
+      "display_name": "LOT 수량",
+      "aliases": [
+        "LOT_COUNT",
+        "lot 수량",
+        "lot은 몇개"
+      ],
+      "dataset_family": "lot",
+      "quantity_column": "LOT_ID",
+      "aggregation": "nunique",
+      "output_column": "LOT_COUNT",
+      "output_columns": [
+        "LOT_COUNT"
+      ],
+      "source_columns": [
+        "LOT"
+      ]
     },
     "PRODUCTION_ACHIEVEMENT_RATE_METRIC": {
       "display_name": "생산달성률",
@@ -1063,40 +959,21 @@
         "When NETDIE_300_CNT is 0 or null, set WAFER_OUT_QTY to 0 or null according to answer needs and put PRODUCTION into FAIL_UNIT_QTY.",
         "Aggregate WAFER_OUT_QTY and FAIL_UNIT_QTY by the question grain."
       ]
-    }
-  },
-  "pandas_function_cases": {
-    "component_token_product_lookup": {
-      "display_name": "Component token product lookup",
+    },
+    "WF_QTY_METRIC": {
+      "display_name": "Wafer 수량",
       "aliases": [
-        "component token lookup",
-        "product token lookup",
-        "자유 입력 제품 조회",
-        "product list lookup",
-        "제품 토큰 매칭",
-        "제품 찾기",
-        "제품 리스트"
+        "WF_QTY",
+        "wafer 수량",
+        "wafer 몇개"
       ],
-      "required_question_cues": [
-        "제품"
-      ],
-      "question_cues": [
-        "lookup",
-        "find",
-        "list",
-        "match",
-        "token",
-        "조회",
-        "찾",
-        "리스트"
-      ],
-      "function_name": "match_product_tokens",
-      "use_when": "사용자가 등록된 product_terms 제품군이 아니라 자유롭게 입력한 제품 속성 토큰으로 제품 목록이나 제품 범위의 수량을 찾으려 할 때 match_product_tokens helper를 사용한다.",
-      "input_text": "사용자 질문 전체 또는 질문 안의 제품 토큰 표현.",
-      "example": {
-        "input_text": "64G L-269 제품 찾아줘",
-        "result": "match_product_tokens helper가 조회된 제품 DataFrame에서 일치하는 제품 row를 반환한다."
-      }
+      "dataset_family": "lot",
+      "quantity_column": "WF_QTY",
+      "aggregation": "sum",
+      "output_column": "WF_QTY",
+      "output_columns": [
+        "WF_QTY"
+      ]
     }
   },
   "analysis_recipes": {
@@ -1615,136 +1492,260 @@
         "WB공정 생산량/재공",
         "DA WB 생산량 재공"
       ],
+      "required_question_cues": [
+        "DA",
+        "WB",
+        "생산량",
+        "재공"
+      ],
+      "forbidden_question_cues": [
+        "제품별",
+        "제품",
+        "상위",
+        "top",
+        "TOP",
+        "rank"
+      ],
       "required_dataset_families": [
         "production",
         "wip"
       ],
-      "default_analysis_kind": "multi_step_analysis",
-      "grain_policy": "explicit",
+      "metric_terms": [
+        "PRODUCTION_PERFORMANCE_METRIC",
+        "CURRENT_WIP_METRIC"
+      ],
       "step_plan_template": [
         {
-          "step_id": "get_production_data",
-          "analysis_kind": "retrieve_and_aggregate",
+          "step_id": "get_da_production_data",
+          "analysis_kind": "metric_calculation",
+          "metric_term_key": "PRODUCTION_PERFORMANCE_METRIC",
           "dataset_family": "production",
-          "required_columns": [
-            "OPER_NAME",
-            "PRODUCTION"
-          ],
-          "derived_columns": [
-            {
-              "output_column": "OPER_GROUP",
-              "calculation_rule": {
-                "type": "case_when",
-                "conditions": [
-                  {
-                    "when": {
-                      "OPER_NAME": {
-                        "in": "DA_PROCESS_NAMES_PLACEHOLDER"
-                      }
-                    },
-                    "then": "DA"
-                  },
-                  {
-                    "when": {
-                      "OPER_NAME": {
-                        "in": "WB_PROCESS_NAMES_PLACEHOLDER"
-                      }
-                    },
-                    "then": "WB"
-                  }
-                ],
-                "else": null
-              }
-            }
-          ],
-          "group_by": [
-            "OPER_GROUP"
-          ],
-          "metrics": [
-            {
-              "column": "PRODUCTION",
-              "aggregation": "sum",
-              "output_column": "PRODUCTION_QTY"
-            }
-          ],
           "filters": {
-            "OPER_GROUP": {
-              "exists": true,
-              "not_in": [
-                null,
-                ""
+            "OPER_NAME": {
+              "in": [
+                "D/A1",
+                "D/A2",
+                "D/A3",
+                "D/A4",
+                "D/A5",
+                "D/A6"
               ]
             }
-          }
+          },
+          "output_column": "PRODUCTION"
         },
         {
-          "step_id": "get_wip_data",
-          "analysis_kind": "retrieve_and_aggregate",
+          "step_id": "get_da_wip_data",
+          "analysis_kind": "metric_calculation",
+          "metric_term_key": "CURRENT_WIP_METRIC",
           "dataset_family": "wip",
-          "required_columns": [
-            "OPER_NAME",
-            "WIP"
-          ],
-          "derived_columns": [
-            {
-              "output_column": "OPER_GROUP",
-              "calculation_rule": {
-                "type": "case_when",
-                "conditions": [
-                  {
-                    "when": {
-                      "OPER_NAME": {
-                        "in": "DA_PROCESS_NAMES_PLACEHOLDER"
-                      }
-                    },
-                    "then": "DA"
-                  },
-                  {
-                    "when": {
-                      "OPER_NAME": {
-                        "in": "WB_PROCESS_NAMES_PLACEHOLDER"
-                      }
-                    },
-                    "then": "WB"
-                  }
-                ],
-                "else": null
-              }
-            }
-          ],
-          "group_by": [
-            "OPER_GROUP"
-          ],
-          "metrics": [
-            {
-              "column": "WIP",
-              "aggregation": "sum",
-              "output_column": "WIP_QTY"
-            }
-          ],
           "filters": {
-            "OPER_GROUP": {
-              "exists": true,
-              "not_in": [
-                null,
-                ""
+            "OPER_NAME": {
+              "in": [
+                "D/A1",
+                "D/A2",
+                "D/A3",
+                "D/A4",
+                "D/A5",
+                "D/A6"
               ]
             }
-          }
+          },
+          "output_column": "WIP"
         },
         {
-          "step_id": "merge_results",
-          "analysis_kind": "merge_dataframes",
-          "merge_strategy": "outer_join",
-          "left_step_id": "get_production_data",
-          "right_step_id": "get_wip_data",
-          "on": [
-            "OPER_GROUP"
+          "step_id": "get_wb_production_data",
+          "analysis_kind": "metric_calculation",
+          "metric_term_key": "PRODUCTION_PERFORMANCE_METRIC",
+          "dataset_family": "production",
+          "filters": {
+            "OPER_NAME": {
+              "in": [
+                "W/B1",
+                "W/B2",
+                "W/B3",
+                "W/B4",
+                "W/B5",
+                "W/B6"
+              ]
+            }
+          },
+          "output_column": "PRODUCTION"
+        },
+        {
+          "step_id": "get_wb_wip_data",
+          "analysis_kind": "metric_calculation",
+          "metric_term_key": "CURRENT_WIP_METRIC",
+          "dataset_family": "wip",
+          "filters": {
+            "OPER_NAME": {
+              "in": [
+                "W/B1",
+                "W/B2",
+                "W/B3",
+                "W/B4",
+                "W/B5",
+                "W/B6"
+              ]
+            }
+          },
+          "output_column": "WIP"
+        },
+        {
+          "step_id": "combine_and_present",
+          "analysis_kind": "combine_dataframes",
+          "input_steps": [
+            "get_da_production_data",
+            "get_da_wip_data",
+            "get_wb_production_data",
+            "get_wb_wip_data"
           ],
+          "pandas_code_instructions": "For 'get_da_production_data' and 'get_da_wip_data', add an 'OPER_GROUP' column with value 'DA'. For 'get_wb_production_data' and 'get_wb_wip_data', add an 'OPER_GROUP' column with value 'WB'. Then, concatenate these dataframes. Finally, group by 'OPER_GROUP' and sum 'PRODUCTION' and 'WIP' to get the final result."
+        }
+      ]
+    },
+    "equipment_count_for_previous_products": {
+      "display_name": "이전 제품 기준 장비 대수",
+      "aliases": [
+        "이전 제품 장비 대수",
+        "해당 제품 설비 수",
+        "장비 몇 대",
+        "설비 몇 대"
+      ],
+      "default_analysis_kind": "equipment_count_for_previous_products",
+      "intent_type": "followup_transform",
+      "question_cues": [
+        "이 제품",
+        "그 제품",
+        "해당 제품",
+        "장비 대수",
+        "설비 대수",
+        "몇 대",
+        "몇대"
+      ],
+      "required_dataset_families": [
+        "equipment"
+      ],
+      "source_aliases_by_family": {
+        "equipment": "equipment_data"
+      },
+      "grain_policy": "question_or_product_grain",
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "required_columns_by_family": {
+        "equipment": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "EQPID"
+        ]
+      },
+      "output_columns": [
+        "TECH",
+        "DEN",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG_TYPE2",
+        "LEAD",
+        "MCP_NO",
+        "EQP_COUNT"
+      ],
+      "step_plan_template": [
+        {
+          "step_id": "count_equipment_for_previous_products",
+          "operation": "unique_count_by_group",
+          "source_family": "equipment",
+          "group_by": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "count_column": "EQPID",
           "output_columns": [
-            "OPER_GROUP",
-            "PRODUCTION_QTY",
-            "WIP_QTY"
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "EQP_COUNT"
+          ]
+        }
+      ]
+    },
+    "equipment_for_previous_products": {
+      "display_name": "이전 제품 기준 장비 조회",
+      "aliases": [
+        "이전 제품 장비",
+        "해당 제품 장비",
+        "설비 현황",
+        "장비 현황"
+      ],
+      "default_analysis_kind": "equipment_for_previous_products",
+      "intent_type": "followup_transform",
+      "question_cues": [
+        "이 제품",
+        "그 제품",
+        "해당 제품",
+        "장비",
+        "설비",
+        "현황"
+      ],
+      "required_dataset_families": [
+        "equipment"
+      ],
+      "source_aliases_by_family": {
+        "equipment": "equipment_data"
+      },
+      "grain_policy": "question_or_product_grain",
+      "result_mode": "detail_rows",
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "required_columns_by_family": {
+        "equipment": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "EQPID",
+          "EQP_MODEL",
+          "PRESS_CNT",
+          "LOT_ID",
+          "RECIPE_ID"
+        ]
+      },
+      "step_plan_template": [
+        {
+          "step_id": "filter_equipment_for_previous_products",
+          "operation": "detail_rows",
+          "source_family": "equipment",
+          "columns": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "EQPID",
+            "EQP_MODEL",
+            "PRESS_CNT",
+            "LOT_ID",
+            "RECIPE_ID"
           ]
         }
       ]
@@ -1863,6 +1864,792 @@
           ],
           "description": "찾은 제품 키를 기준으로 L/T1, L/T2 공정의 OUTPUT 실적을 조회합니다."
         }
+      ]
+    },
+    "lot_quantity_summary": {
+      "display_name": "LOT 수량 요약",
+      "aliases": [
+        "lot 수량",
+        "lot은 몇개",
+        "wafer 몇개",
+        "die 수량"
+      ],
+      "default_analysis_kind": "lot_quantity_summary",
+      "intent_type": "single_retrieval_analysis",
+      "question_cues": [
+        "lot",
+        "LOT",
+        "wafer",
+        "die",
+        "수량",
+        "몇개"
+      ],
+      "required_dataset_families": [
+        "lot"
+      ],
+      "source_aliases_by_family": {
+        "lot": "lot_data"
+      },
+      "grain_policy": "aggregate_total",
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "override_analysis_kinds": [
+        "aggregate_join",
+        "aggregate",
+        "aggregate_wip_total"
+      ],
+      "required_columns_by_family": {
+        "lot": [
+          "LOT_ID",
+          "OPER_NAME",
+          "LOT_STAT_CD",
+          "WF_QTY",
+          "SUB_PROD_QTY",
+          "IN_TAT",
+          "CUM_TAT"
+        ]
+      },
+      "step_plan_template": [
+        {
+          "step_id": "summarize_lot_quantities",
+          "operation": "aggregate_by_group",
+          "source_family": "lot",
+          "group_by": [
+            "OPER_NAME"
+          ],
+          "metrics": [
+            {
+              "column": "LOT_ID",
+              "aggregation": "nunique",
+              "output_column": "LOT_COUNT"
+            },
+            {
+              "column": "WF_QTY",
+              "aggregation": "sum",
+              "output_column": "WF_QTY"
+            },
+            {
+              "column": "SUB_PROD_QTY",
+              "aggregation": "sum",
+              "output_column": "DIE_QTY"
+            }
+          ],
+          "output_columns": [
+            "OPER_NAME",
+            "LOT_COUNT",
+            "WF_QTY",
+            "DIE_QTY"
+          ]
+        }
+      ]
+    },
+    "product_production_wip_join": {
+      "display_name": "제품별 생산량 재공 결합",
+      "aliases": [
+        "제품별 생산량 재공",
+        "제품별 생산량과 재공",
+        "재공과 생산량",
+        "생산량과 재공",
+        "production wip product join"
+      ],
+      "default_analysis_kind": "aggregate_join",
+      "intent_type": "multi_source_analysis",
+      "question_cues": [
+        "생산량",
+        "재공",
+        "제품별",
+        "공정별",
+        "세부 공정별"
+      ],
+      "required_dataset_families": [
+        "production",
+        "wip"
+      ],
+      "source_aliases_by_family": {
+        "production": "production_data",
+        "wip": "wip_data"
+      },
+      "grain_policy": "question_or_product_grain",
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "override_analysis_kinds": [
+        "rank_top_n",
+        "aggregate_wip_total",
+        "aggregate_join",
+        "generic_aggregate_recipe"
+      ],
+      "required_columns_by_family": {
+        "production": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "OPER_NAME",
+          "PRODUCTION"
+        ],
+        "wip": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "OPER_NAME",
+          "WIP"
+        ]
+      },
+      "step_plan_template": [
+        {
+          "step_id": "aggregate_production_by_requested_grain",
+          "operation": "aggregate_by_group",
+          "source_family": "production",
+          "group_by": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "OPER_NAME"
+          ],
+          "metric": "PRODUCTION",
+          "aggregation": "sum",
+          "output_columns": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "OPER_NAME",
+            "PRODUCTION"
+          ]
+        },
+        {
+          "step_id": "aggregate_wip_by_requested_grain",
+          "operation": "aggregate_by_group",
+          "source_family": "wip",
+          "group_by": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "OPER_NAME"
+          ],
+          "metric": "WIP",
+          "aggregation": "sum",
+          "output_columns": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "OPER_NAME",
+            "WIP"
+          ]
+        },
+        {
+          "step_id": "join_production_and_wip",
+          "operation": "left_join",
+          "left_step_id": "aggregate_production_by_requested_grain",
+          "right_step_id": "aggregate_wip_by_requested_grain",
+          "join_keys": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "OPER_NAME"
+          ],
+          "output_columns": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "OPER_NAME",
+            "PRODUCTION",
+            "WIP"
+          ]
+        }
+      ]
+    },
+    "rank_wip_then_join_production": {
+      "display_name": "재공 상위 제품 생산량 결합",
+      "aliases": [
+        "재공 상위 제품 생산량",
+        "재공 top 제품 실적",
+        "WIP top production"
+      ],
+      "default_analysis_kind": "rank_wip_then_join_production",
+      "intent_type": "multi_step_analysis",
+      "question_cues": [
+        "재공",
+        "상위",
+        "top",
+        "생산량",
+        "실적"
+      ],
+      "required_dataset_families": [
+        "wip",
+        "production"
+      ],
+      "source_aliases_by_family": {
+        "wip": "wip_data",
+        "production": "production_data"
+      },
+      "grain_policy": "question_or_product_grain",
+      "top_n_policy": "question_or_default",
+      "defaults": {
+        "top_n": 3
+      },
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "override_analysis_kinds": [
+        "rank_top_n",
+        "aggregate_join",
+        "generic_aggregate_recipe"
+      ],
+      "required_columns_by_family": {
+        "wip": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "OPER_NAME",
+          "WIP"
+        ],
+        "production": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "OPER_NAME",
+          "PRODUCTION"
+        ]
+      },
+      "rank_group_output_column": "OPER_GROUP",
+      "rank_groups": {
+        "DA": {
+          "OPER_NAME": [
+            "D/A1",
+            "D/A2",
+            "D/A3",
+            "D/A4",
+            "D/A5",
+            "D/A6"
+          ]
+        },
+        "WB": {
+          "OPER_NAME": [
+            "W/B1",
+            "W/B2",
+            "W/B3",
+            "W/B4",
+            "W/B5",
+            "W/B6"
+          ]
+        }
+      },
+      "step_plan_template": [
+        {
+          "step_id": "rank_wip_products_per_process",
+          "operation": "rank_top_n",
+          "source_family": "wip",
+          "rank_group_output_column": "OPER_GROUP",
+          "rank_groups": {
+            "DA": {
+              "OPER_NAME": [
+                "D/A1",
+                "D/A2",
+                "D/A3",
+                "D/A4",
+                "D/A5",
+                "D/A6"
+              ]
+            },
+            "WB": {
+              "OPER_NAME": [
+                "W/B1",
+                "W/B2",
+                "W/B3",
+                "W/B4",
+                "W/B5",
+                "W/B6"
+              ]
+            }
+          },
+          "group_by": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "metric": "WIP",
+          "top_n": "$top_n",
+          "rank_order": "desc",
+          "output_columns": [
+            "OPER_GROUP",
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "WIP"
+          ]
+        },
+        {
+          "step_id": "aggregate_production_for_ranked_products",
+          "operation": "aggregate_by_group",
+          "source_family": "production",
+          "filter_from_step": "rank_wip_products_per_process",
+          "rank_group_output_column": "OPER_GROUP",
+          "rank_groups": {
+            "DA": {
+              "OPER_NAME": [
+                "D/A1",
+                "D/A2",
+                "D/A3",
+                "D/A4",
+                "D/A5",
+                "D/A6"
+              ]
+            },
+            "WB": {
+              "OPER_NAME": [
+                "W/B1",
+                "W/B2",
+                "W/B3",
+                "W/B4",
+                "W/B5",
+                "W/B6"
+              ]
+            }
+          },
+          "join_keys": [
+            "OPER_GROUP",
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "group_by": [
+            "OPER_GROUP",
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "metric": "PRODUCTION",
+          "aggregation": "sum",
+          "output_columns": [
+            "OPER_GROUP",
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "PRODUCTION"
+          ]
+        },
+        {
+          "step_id": "join_ranked_wip_and_production",
+          "operation": "left_join",
+          "left_step_id": "rank_wip_products_per_process",
+          "right_step_id": "aggregate_production_for_ranked_products",
+          "join_keys": [
+            "OPER_GROUP",
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "output_columns": [
+            "OPER_GROUP",
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "WIP",
+            "PRODUCTION"
+          ]
+        }
+      ]
+    },
+    "top_wip_process_hold_lot_in_tat": {
+      "display_name": "재공 상위 공정 HOLD LOT 평균 In TAT",
+      "aliases": [
+        "hold LOT",
+        "in tat",
+        "재공이 많은 세부공정"
+      ],
+      "default_analysis_kind": "top_wip_process_hold_lot_in_tat",
+      "intent_type": "multi_step_analysis",
+      "question_cues": [
+        "재공",
+        "상위",
+        "top",
+        "hold",
+        "HOLD",
+        "IN_TAT",
+        "tat",
+        "TAT"
+      ],
+      "required_question_cues": [
+        "hold",
+        "HOLD",
+        "tat",
+        "TAT"
+      ],
+      "required_dataset_families": [
+        "wip",
+        "lot"
+      ],
+      "source_aliases_by_family": {
+        "wip": "wip_data",
+        "lot": "lot_status_data"
+      },
+      "grain_policy": "recipe_step_grain",
+      "top_n_policy": "question_or_default",
+      "defaults": {
+        "top_n": 3
+      },
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "override_analysis_kinds": [
+        "lot_count_by_process",
+        "aggregate",
+        "aggregate_wip_total"
+      ],
+      "blocked_filter_fields": [
+        "LOT_HOLD_STAT_CD"
+      ],
+      "output_columns": [
+        "OPER_SHORT_DESC",
+        "WIP",
+        "HOLD_LOT_COUNT",
+        "AVG_IN_TAT"
+      ],
+      "required_columns_by_family": {
+        "wip": [
+          "OPER_NAME",
+          "WIP"
+        ],
+        "lot": [
+          "OPER_SHORT_DESC",
+          "LOT_ID",
+          "LOT_HOLD_STAT_CD",
+          "IN_TAT"
+        ]
+      },
+      "step_plan_template": [
+        {
+          "step_id": "rank_top_wip_process",
+          "operation": "rank_top_n",
+          "source_family": "wip",
+          "group_by": "OPER_NAME",
+          "metric": "WIP",
+          "top_n": "$top_n",
+          "rank_order": "desc",
+          "output_columns": [
+            "OPER_NAME",
+            "WIP"
+          ]
+        },
+        {
+          "step_id": "lot_metrics_by_process",
+          "operation": "aggregate_by_group",
+          "source_family": "lot",
+          "filter_from_step": "rank_top_wip_process",
+          "join_keys": {
+            "left": "OPER_SHORT_DESC",
+            "right": "OPER_NAME"
+          },
+          "group_by": "OPER_SHORT_DESC",
+          "filters": {
+            "LOT_HOLD_STAT_CD": {
+              "in": [
+                "HOLD",
+                "ONHOLD"
+              ]
+            }
+          },
+          "metrics": [
+            {
+              "output_column": "HOLD_LOT_COUNT",
+              "source_column": "LOT_ID",
+              "aggregation": "nunique"
+            },
+            {
+              "output_column": "AVG_IN_TAT",
+              "source_column": "IN_TAT",
+              "aggregation": "mean"
+            }
+          ]
+        },
+        {
+          "step_id": "join_wip_and_lot_metrics",
+          "operation": "left_join",
+          "left_step_id": "rank_top_wip_process",
+          "right_step_id": "lot_metrics_by_process",
+          "join_keys": {
+            "left": "OPER_NAME",
+            "right": "OPER_SHORT_DESC"
+          },
+          "output_columns": [
+            "OPER_SHORT_DESC",
+            "WIP",
+            "HOLD_LOT_COUNT",
+            "AVG_IN_TAT"
+          ]
+        }
+      ]
+    },
+    "top_wip_product_oldest_lot": {
+      "display_name": "재공 최다 제품 기준 최장 In TAT LOT",
+      "aliases": [
+        "재공이 가장 많은 제품",
+        "IN TAT가 가장 오래된 LOT"
+      ],
+      "default_analysis_kind": "top_wip_product_oldest_lot",
+      "intent_type": "multi_step_analysis",
+      "required_dataset_families": [
+        "wip",
+        "lot"
+      ],
+      "source_aliases_by_family": {
+        "wip": "wip_data",
+        "lot": "lot_data"
+      },
+      "grain_policy": "question_or_product_grain",
+      "replace_datasets": true,
+      "replace_retrieval_jobs": true,
+      "override_step_plan": true,
+      "output_columns": [
+        "TECH",
+        "DEN",
+        "MODE",
+        "PKG_TYPE1",
+        "PKG_TYPE2",
+        "LEAD",
+        "MCP_NO",
+        "WIP",
+        "LOT_ID",
+        "IN_TAT"
+      ],
+      "required_columns_by_family": {
+        "wip": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "WIP"
+        ],
+        "lot": [
+          "TECH",
+          "DEN",
+          "MODE",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "LOT_ID",
+          "IN_TAT"
+        ]
+      },
+      "step_plan_template": [
+        {
+          "step_id": "rank_top_wip_product",
+          "operation": "rank_top_n",
+          "source_family": "wip",
+          "group_by": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "metric": "WIP",
+          "top_n": 1,
+          "rank_order": "desc"
+        },
+        {
+          "step_id": "find_oldest_lot_for_top_product",
+          "operation": "rank_top_n",
+          "source_family": "lot",
+          "filter_from_step": "rank_top_wip_product",
+          "join_keys": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "group_by": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "LOT_ID"
+          ],
+          "metric": "IN_TAT",
+          "top_n": 1,
+          "rank_order": "desc",
+          "output_columns": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "LOT_ID",
+            "IN_TAT"
+          ]
+        },
+        {
+          "step_id": "join_top_product_and_oldest_lot",
+          "operation": "left_join",
+          "left_step_id": "rank_top_wip_product",
+          "right_step_id": "find_oldest_lot_for_top_product",
+          "join_keys": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO"
+          ],
+          "output_columns": [
+            "TECH",
+            "DEN",
+            "MODE",
+            "PKG_TYPE1",
+            "PKG_TYPE2",
+            "LEAD",
+            "MCP_NO",
+            "WIP",
+            "LOT_ID",
+            "IN_TAT"
+          ]
+        }
+      ]
+    }
+  },
+  "pandas_function_cases": {
+    "component_token_product_lookup": {
+      "display_name": "제품 속성 토큰 검색",
+      "aliases": [
+        "자유로운 제품 속성 토큰 검색",
+        "제품 검색",
+        "제품 찾아줘"
+      ],
+      "function_name": "match_product_tokens",
+      "use_when": "사용자가 제품의 여러 속성(TECH, DEN, MODE 등)을 혼합하여 자유로운 형태로 제품을 검색할 때",
+      "input_text": "사용자가 입력한 자유로운 제품 속성 토큰 (예: '512M A-134 제품')",
+      "required_source_columns": [
+        "TECH",
+        "DEN",
+        "MODE",
+        "ORG",
+        "PKG_TYPE1",
+        "PKG_TYPE2",
+        "LEAD",
+        "MCP_NO",
+        "DEVICE"
+      ],
+      "token_columns": [
+        "TECH",
+        "DEN",
+        "DENSITY",
+        "DEN_TYP",
+        "MODE",
+        "PROD_TYP",
+        "ORG",
+        "ORGANIZ_CD",
+        "PKG_TYPE1",
+        "PKG1",
+        "PKG_TYP1",
+        "PKG_TYP",
+        "PKG_TYPE2",
+        "PKG2",
+        "PKG_TYP2",
+        "PKG_TYP_2",
+        "LEAD",
+        "LEAD_CNT",
+        "MCP_NO",
+        "MCP NO",
+        "MCP_SALES_NO",
+        "MCP_SALE_CD",
+        "MCPSALENO",
+        "PROD_GRP_ID",
+        "DEVICE",
+        "DEVICE_DESC"
+      ],
+      "pandas_code_instructions": [
+        "이 케이스는 'match_product_tokens' 헬퍼 함수를 사용하여 조회된 제품 데이터의 TECH",
+        "DEN/DENSITY",
+        "MODE",
+        "ORG",
+        "PKG1/PKG_TYPE1",
+        "PKG2/PKG_TYPE2",
+        "LEAD",
+        "MCP_NO 컬럼 값과 입력 토큰을 매칭합니다. 헬퍼 함수의 실제 구현은 별도의 메타데이터 시드 또는 함수 케이스 패키지에서 관리됩니다."
       ]
     }
   },

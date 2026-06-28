@@ -1674,6 +1674,9 @@ def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(m
 
     assert prompt_payload["pandas_function_cases"][-1]["key"] == "component_token_product_lookup"
     assert "선택된 pandas function case를 helper match_product_tokens" in prompt_payload["prompt"]
+    assert "downstream step의 group_by/metric/output_columns에 필요한 column이 helper output에 모두 있으면" in prompt_payload["prompt"]
+    assert "helper output을 key table로만 사용하고" in prompt_payload["prompt"]
+    assert "반드시 매칭되어야 하는 조건 token이 source data 어느 컬럼에도 매칭되지 않으면" in prompt_payload["prompt"]
 
 
 def test_intent_normalizer_rejects_ambiguous_product_token_dataset_guess(monkeypatch: Any) -> None:
@@ -1915,13 +1918,11 @@ def test_intent_normalizer_augments_existing_jobs_from_metadata(monkeypatch: Any
     assert _filter_values(jobs["wip_today"], "DATE") == ["20260612"]
     assert _filter_values(jobs["target"], "DATE") == ["2026-06-12"]
     assert _filter_values(jobs["production_today"], "OPER_NAME") == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
-    assert {"TECH", "DEN", "MODE", "PKG_TYP1", "PKG_TYP2", "LEAD", "MCP_NO"}.issubset(
-        set(jobs["production_today"]["required_columns"])
-    )
+    assert {"WORK_DATE", "OPER_NAME", "PRODUCTION"}.issubset(set(jobs["production_today"]["required_columns"]))
     assert "PKG_TYPE1" not in jobs["production_today"]["required_columns"]
     assert jobs["production_today"]["filter_mappings"]["PKG_TYPE1"] == ["PKG_TYP1"]
     assert jobs["production_today"]["standard_column_aliases"]["PKG_TYPE1"] == ["PKG_TYP1"]
-    assert {"TECH", "DEN", "Mode", "PKG1", "PKG2", "LEAD", "MCP NO"}.issubset(set(jobs["target"]["required_columns"]))
+    assert {"DATE", "OUT계획", "INPUT계획"}.issubset(set(jobs["target"]["required_columns"]))
     assert "PKG_TYPE1" not in jobs["target"]["required_columns"]
     assert "PKG_TYPE2" not in jobs["target"]["required_columns"]
     assert any("params/filters를 보완" in item for item in payload["info"])
@@ -1958,7 +1959,7 @@ def test_intent_normalizer_uses_product_terms_for_existing_jobs(monkeypatch: Any
     assert _filter_values(job, "OPER_NAME") == ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]
 
 
-def test_intent_normalizer_repairs_product_wip_production_question_to_join(monkeypatch: Any) -> None:
+def test_intent_normalizer_does_not_hardcode_product_wip_production_join(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
@@ -1996,21 +1997,15 @@ def test_intent_normalizer_repairs_product_wip_production_question_to_join(monke
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(wrong_llm_json, ensure_ascii=False))
     jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
-    assert payload["intent_plan"]["intent_type"] == "multi_source_analysis"
-    assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
-    assert payload["intent_plan"]["datasets"] == ["production_today", "wip_today"]
-    assert [step["operation"] for step in payload["intent_plan"]["step_plan"]] == [
-        "aggregate_sum_by_group",
-        "aggregate_sum_by_group",
-        "left_join",
-    ]
-    assert set(jobs) == {"production_today", "wip_today"}
-    assert _filter_values(jobs["production_today"], "OPER_NAME") == ["D/A1", "D/A2", "D/A3", "D/A4", "D/A5", "D/A6"]
-    assert {"DEN", "PKG_TYP1", "PKG_TYP2", "PRODUCTION"}.issubset(set(jobs["production_today"]["required_columns"]))
-    assert {"DENSITY", "PKG1", "PKG2", "WIP"}.issubset(set(jobs["wip_today"]["required_columns"]))
+    assert payload["intent_plan"]["intent_type"] == "single_retrieval_analysis"
+    assert payload["intent_plan"]["analysis_kind"] == "rank_top_n"
+    assert payload["intent_plan"]["datasets"] == ["wip_today"]
+    assert [step["operation"] for step in payload["intent_plan"]["step_plan"]] == ["rank_top_n"]
+    assert set(jobs) == {"wip_today"}
+    assert "production_today" not in jobs
 
 
-def test_intent_normalizer_repairs_yesterday_product_wip_production_question_to_history_join(monkeypatch: Any) -> None:
+def test_intent_normalizer_does_not_hardcode_yesterday_product_wip_production_join(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
@@ -2040,13 +2035,11 @@ def test_intent_normalizer_repairs_yesterday_product_wip_production_question_to_
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(wrong_llm_json, ensure_ascii=False))
     jobs = {job["dataset_key"]: job for job in _retrieval_jobs(payload)}
 
-    assert payload["intent_plan"]["analysis_kind"] == "aggregate_join"
-    assert payload["intent_plan"]["datasets"] == ["production", "wip"]
-    assert set(jobs) == {"production", "wip"}
-    assert jobs["production"]["params"]["DATE"] == "20260621"
-    assert jobs["wip"]["params"]["DATE"] == "20260621"
-    assert {"DENSITY", "PKG1", "PKG2", "PRODUCTION"}.issubset(set(jobs["production"]["required_columns"]))
-    assert {"DENSITY", "PKG_TYP1", "PKG_TYP2", "WIP"}.issubset(set(jobs["wip"]["required_columns"]))
+    assert payload["intent_plan"]["analysis_kind"] == "rank_top_n"
+    assert payload["intent_plan"]["datasets"] == ["wip_today"]
+    assert set(jobs) == {"wip_today"}
+    assert "production" not in jobs
+    assert jobs["wip_today"]["params"]["DATE"] == "20260622"
 
 
 def test_intent_normalizer_replaces_wrong_product_alias_filter_with_metadata_condition(monkeypatch: Any) -> None:
@@ -2210,7 +2203,7 @@ def test_intent_normalizer_aligns_followup_equipment_to_state_products(monkeypat
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
 
-    assert plan["analysis_kind"] == "equipment_for_previous_products"
+    assert plan["analysis_kind"] == "equipment_by_model"
     assert plan["state_product_keys"] == [
         {"TECH": "FC", "DEN": "128G", "MODE": "LPDDR5", "PKG_TYPE1": "UFBGA", "MCP_NO": "EMPTY"}
     ]
@@ -2248,12 +2241,12 @@ def test_intent_normalizer_uses_state_product_key_summary_without_full_rows(monk
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
 
-    assert plan["analysis_kind"] == "equipment_for_previous_products"
+    assert plan["analysis_kind"] == "equipment_by_model"
     assert plan["state_product_keys"] == [{"MODE": "LPDDR5"}, {"MODE": "HBM"}]
     assert any(item.get("field") == "PRODUCT_GRAIN" for item in _retrieval_jobs(payload)[0]["filters"])
 
 
-def test_intent_normalizer_prunes_lot_status_for_followup_equipment_count(monkeypatch: Any) -> None:
+def test_intent_normalizer_does_not_hardcode_followup_equipment_count_plan(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
@@ -2284,20 +2277,25 @@ def test_intent_normalizer_prunes_lot_status_for_followup_equipment_count(monkey
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
     plan = payload["intent_plan"]
 
-    assert plan["analysis_kind"] == "equipment_count_for_previous_products"
-    assert plan["datasets"] == ["equipment_status"]
-    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["equipment_status"]
-    assert _retrieval_jobs(payload)[0]["filters"] == [{"field": "PRODUCT_GRAIN", "op": "from_state"}]
-    assert plan["step_plan"][0]["operation"] == "equipment_count_for_previous_products"
-    assert plan["analysis_output_columns"] == [
-        "TECH",
-        "DEN",
-        "MODE",
-        "PKG_TYPE1",
-        "PKG_TYPE2",
-        "LEAD",
-        "MCP_NO",
-        "EQP_COUNT",
+    assert plan["analysis_kind"] == "equipment_by_model"
+    assert plan["datasets"] == ["equipment_status", "lot_status"]
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["equipment_status", "lot_status"]
+    assert any(
+        condition.get("field") == "PRODUCT_GRAIN"
+        for job in _retrieval_jobs(payload)
+        for condition in job.get("filters", [])
+    )
+    assert plan["step_plan"][0]["operation"] == "count"
+    assert plan["state_product_keys"] == [
+        {
+            "TECH": "FC",
+            "DEN": "128G",
+            "MODE": "LPDDR5",
+            "PKG_TYPE1": "UFBGA",
+            "PKG_TYPE2": "MOBILE",
+            "LEAD": "LF",
+            "MCP_NO": "EMPTY",
+        }
     ]
     assert plan["previous_result_restore_mode"] == "summary"
 
@@ -2671,10 +2669,10 @@ def test_intent_normalizer_maps_logical_required_columns_to_dataset_columns(monk
     assert "OPER_SHORT_DESC" in job["required_columns"]
     assert "LOT_ID" in job["required_columns"]
     assert "WF_QTY" in job["required_columns"]
-    assert payload["intent_plan"]["step_plan"][0]["group_by_columns"] == ["OPER_SHORT_DESC"]
+    assert payload["intent_plan"]["step_plan"][0]["group_by"] == ["OPER_NAME"]
 
 
-def test_intent_normalizer_repairs_lot_count_kind_from_generic_aggregate(monkeypatch: Any) -> None:
+def test_intent_normalizer_keeps_lot_count_as_generic_step_plan(monkeypatch: Any) -> None:
     request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
     metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
@@ -2711,12 +2709,12 @@ def test_intent_normalizer_repairs_lot_count_kind_from_generic_aggregate(monkeyp
 
     payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
 
-    assert payload["intent_plan"]["analysis_kind"] == "lot_count_by_process"
-    assert payload["intent_plan"]["step_plan"][0]["operation"] == "lot_count_by_process"
-    assert payload["intent_plan"]["step_plan"][0]["group_by_columns"] == ["OPER_SHORT_DESC"]
+    assert payload["intent_plan"]["analysis_kind"] == "unique_count_by_group"
+    assert payload["intent_plan"]["step_plan"][0]["operation"] == "unique_count_by_group"
+    assert payload["intent_plan"]["step_plan"][0]["group_by"] == ["OPER_NAME"]
     assert _retrieval_jobs(payload)[0]["dataset_key"] == "lot_status"
     assert "OPER_SHORT_DESC" in _retrieval_jobs(payload)[0]["required_columns"]
-    assert any("LOT_ID unique count" in item for item in payload["info"])
+    assert not any("LOT_ID unique count" in item for item in payload["info"])
 
 
 def test_intent_normalizer_preserves_top_wip_process_then_lot_metrics_plan(monkeypatch: Any) -> None:
@@ -2769,7 +2767,7 @@ def test_intent_normalizer_preserves_top_wip_process_then_lot_metrics_plan(monke
     assert plan["top_n"] == 3
     assert plan["recipe_grain_policy"] == "recipe_step_grain"
     assert plan["analysis_output_columns"] == ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
-    assert [step["operation"] for step in plan["step_plan"]] == ["rank_top_n", "hold_lot_in_tat_by_process", "left_join"]
+    assert [step["operation"] for step in plan["step_plan"]] == ["rank_top_n", "aggregate_by_group", "left_join"]
     assert plan["step_plan"][0]["top_n"] == 3
     assert jobs["wip_today"]["source_alias"] == "wip_data"
     assert jobs["lot_status"]["source_alias"] == "lot_status_data"
@@ -2951,8 +2949,8 @@ def test_pandas_executor_normalizes_llm_result_column_names() -> None:
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
     assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["columns"] == ["RANK_GROUP", "WIP_RANK", "MODE", "WIP", "PRODUCTION"]
-    assert result["analysis"]["rows"][0]["WIP_RANK"] == 1
+    assert set(result["analysis"]["columns"]) == {"RANK_GROUP", "rank", "MODE", "WIP", "PRODUCTION"}
+    assert result["analysis"]["rows"][0]["rank"] == 1
     assert result["analysis"]["rows"][0]["PRODUCTION"] == 7
 
 
@@ -3380,7 +3378,9 @@ def test_pandas_prompt_tells_llm_not_to_output_rank_group_source_field() -> None
     assert "step_outputs의 ranked entity key" in prompt
     assert "derived row-level output column을 먼저 계산" in prompt
     assert "empty group_by가 있는 aggregate step은 one total row" in prompt
-    assert "plan.rank_group_output_column이 있으면 final group label column" in prompt
+    assert "groupby(..., as_index=False)를 사용했다면 뒤에 reset_index()를 다시 붙이지 마세요" in prompt
+    assert "source별 DATE params/filters가 서로 다르면" in prompt
+    assert "analysis_kind 이름만 보고 별도 로직을 만들지 말고" in prompt
     assert "OPER_GROUP" in prompt
 
 
@@ -3405,18 +3405,20 @@ def test_pandas_prompt_for_unknown_multi_step_plan_does_not_request_empty_result
 
     prompt = pandas_prompt_builder.build_pandas_prompt_payload(payload)["prompt"]
 
-    assert "sequential multi-source analysis" in prompt
+    assert "step_plan" in prompt
+    assert "analysis_kind 이름만 보고 별도 로직을 만들지 말고" in prompt
     assert "IN_TAT" in prompt
     assert "Return an empty DataFrame with no rows" not in prompt
 
 
-def test_pandas_executor_falls_back_when_llm_returns_empty_contract_for_wip_lot_sequence() -> None:
+def test_pandas_executor_keeps_successful_empty_contract_for_wip_lot_sequence() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     product_grain = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
     payload = {
         "intent_plan": {
             "analysis_kind": "custom_wip_lot_sequence",
             "product_grain": product_grain,
+            "analysis_output_columns": [*product_grain, "WIP", "LOT_ID", "IN_TAT"],
             "retrieval_jobs": [
                 {"dataset_key": "wip_today", "source_alias": "wip_data"},
                 {"dataset_key": "lot_status", "source_alias": "lot_data"},
@@ -3455,16 +3457,14 @@ def test_pandas_executor_falls_back_when_llm_returns_empty_contract_for_wip_lot_
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
     assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["row_count"] == 1
+    assert result["analysis"]["row_count"] == 0
     assert result["analysis"]["columns"] == [*product_grain, "WIP", "LOT_ID", "IN_TAT"]
-    assert result["analysis"]["rows"][0]["MCP_NO"] == "B"
-    assert result["analysis"]["rows"][0]["WIP"] == 90
-    assert result["analysis"]["rows"][0]["LOT_ID"] == "LOT-B2"
-    assert result["analysis"]["rows"][0]["IN_TAT"] == 300
-    assert "executor_fallback" in result["analysis"]["analysis_code"]
+    assert result["analysis"]["rows"] == []
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "executor_fallback" not in result["analysis"]["analysis_code"]
 
 
-def test_pandas_executor_falls_back_from_step_plan_primitives_for_production_equipment_count() -> None:
+def test_pandas_executor_keeps_successful_empty_contract_for_production_equipment_count() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     product_grain = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
     payload = {
@@ -3530,14 +3530,11 @@ def test_pandas_executor_falls_back_from_step_plan_primitives_for_production_equ
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
     assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["row_count"] == 2
+    assert result["analysis"]["row_count"] == 0
     assert result["analysis"]["columns"] == [*product_grain, "PRODUCTION", "EQP_COUNT"]
-    assert result["analysis"]["rows"][0]["MODE"] == "M2"
-    assert result["analysis"]["rows"][0]["PRODUCTION"] == 90
-    assert result["analysis"]["rows"][0]["EQP_COUNT"] == 2
-    assert result["analysis"]["rows"][1]["MODE"] == "M3"
-    assert result["analysis"]["rows"][1]["EQP_COUNT"] == 1
-    assert "executor_fallback" in result["analysis"]["analysis_code"]
+    assert result["analysis"]["rows"] == []
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "executor_fallback" not in result["analysis"]["analysis_code"]
 
 
 def test_pandas_executor_prefers_final_step_columns_over_narrow_plan_columns() -> None:
@@ -3618,18 +3615,13 @@ def test_pandas_executor_prefers_final_step_columns_over_narrow_plan_columns() -
 
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(bad_llm_json, ensure_ascii=False))
 
-    assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["columns"] == [*product_grain, "WIP", "EQP_COUNT"]
-    assert result["analysis"]["row_count"] == 2
-    assert result["analysis"]["rows"][0]["MODE"] == "M2"
-    assert result["analysis"]["rows"][0]["WIP"] == 90
-    assert result["analysis"]["rows"][0]["EQP_COUNT"] == 2
-    assert result["analysis"]["rows"][1]["MODE"] == "M1"
-    assert result["analysis"]["rows"][1]["EQP_COUNT"] == 1
-    assert "executor_fallback" in result["analysis"]["analysis_code"]
+    assert result["analysis"]["status"] == "error"
+    assert result["analysis"]["rows"] == []
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "Generated pandas code failed" in result["analysis"]["errors"][0]
 
 
-def test_pandas_repair_builder_repairs_executor_fallback_success_payload() -> None:
+def test_pandas_repair_builder_repairs_generated_code_error_payload() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
     repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
@@ -3668,17 +3660,16 @@ def test_pandas_repair_builder_repairs_executor_fallback_success_payload() -> No
         "reasoning_steps": ["Broken pandas call."],
     }
 
-    fallback_success = pandas_executor.execute_pandas_from_llm(payload, json.dumps(bad_pandas_json, ensure_ascii=False))
-    repair_payload = repair_payload_builder.build_pandas_repair_payload(fallback_success)
+    failed_execution = pandas_executor.execute_pandas_from_llm(payload, json.dumps(bad_pandas_json, ensure_ascii=False))
+    repair_payload = repair_payload_builder.build_pandas_repair_payload(failed_execution)
     prompt_payload = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
 
-    assert fallback_success["analysis"]["status"] == "ok"
-    assert fallback_success["analysis"]["used_executor_fallback"] is True
-    assert "missing_method" in fallback_success["analysis"]["repairable_errors"][0]
+    assert failed_execution["analysis"]["status"] == "error"
+    assert failed_execution["analysis"]["used_executor_fallback"] is False
+    assert "missing_method" in failed_execution["analysis"]["repairable_errors"][0]
     assert repair_payload["pandas_repair"]["required"] is True
     assert repair_payload["pandas_execution_branch"]["route"] == "repair"
     assert "missing_method" in prompt_payload["prompt"]
-    assert "executor fallback produced rows" in prompt_payload["prompt"]
 
 
 def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
@@ -3719,13 +3710,13 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     assert not any(str(item).startswith("pandas_executor:") for item in repair_payload.get("warnings", []))
     assert prompt_payload["repair_required"] is True
     assert prompt_payload["prompt_type"] == "pandas_code_repair"
-    assert "Failed execution context" in prompt_payload["prompt"]
+    assert "실패 실행 context" in prompt_payload["prompt"]
     assert "missing_alias" in prompt_payload["prompt"]
-    assert "For date/date-format repairs" in prompt_payload["prompt"]
-    assert "do not import datetime/date/timedelta" in prompt_payload["prompt"]
+    assert "date/date-format repair에서는" in prompt_payload["prompt"]
+    assert "datetime/date/timedelta를 import하지 마세요" in prompt_payload["prompt"]
     assert "pd.to_datetime(..., errors='coerce')" in prompt_payload["prompt"]
-    assert "Do not create or reference local variable names that start with an underscore" in prompt_payload["prompt"]
-    assert "Underscores inside names such as prod_df" in prompt_payload["prompt"]
+    assert "_prod_df 또는 _filtered_df처럼 underscore로 시작하는 local variable name" in prompt_payload["prompt"]
+    assert "prod_df, wip_today_df, WAFER_OUT_QTY처럼 이름 안의 underscore" in prompt_payload["prompt"]
 
     retry_exceeded = repair_payload_builder.build_pandas_repair_payload({**failed, "pandas_retry_attempt": 1})
     retry_exceeded_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(retry_exceeded)
@@ -3794,13 +3785,19 @@ def test_pandas_repair_prompt_preserves_selected_function_case_helper_call() -> 
     prompt_payload = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
     prompt = prompt_payload["prompt"]
 
-    assert "Function-case repair rules" in prompt
-    assert "use the Specialized Functions intent and helper shape" in prompt
+    assert "함수 케이스 복구 규칙" in prompt
+    assert "Specialized Functions의 의도와 helper 형태" in prompt
     assert "function_name(input_text, sources[source_alias])" in prompt
-    assert "define the helper inline" in prompt
-    assert "Never create or reference plan['intent_plan']" in prompt
-    assert "plan['intent_plan'] does not exist" in prompt
-    assert "Do not bypass a selected function case with unrelated simple filters" in prompt
+    assert "helper를 inline 정의" in prompt
+    assert "plan['intent_plan'] 같은 중첩 key" in prompt
+    assert "plan['intent_plan']은 존재하지 않습니다" in prompt
+    assert "선택된 function case를 단순 filter로 우회하지 마세요" in prompt
+    assert "downstream step의 group_by/metric/output_columns에 필요한 column이 helper output에 모두 있으면" in prompt
+    assert "helper output을 key table로만 쓰고" in prompt
+    assert "helper output에 없는 column으로 groupby" in prompt
+    assert "반드시 매칭되어야 하는 조건 token이 source data 어느 컬럼에도 매칭되지 않으면" in prompt
+    assert "groupby(..., as_index=False)를 사용했다면 뒤에 reset_index()를 다시 붙이지 마세요" in prompt
+    assert "source별 DATE params/filters가 서로 다르면" in prompt
     assert "match_product_tokens" in prompt
     assert "component_token_product_lookup" in prompt
 
@@ -3859,7 +3856,7 @@ def test_pandas_repair_prompt_distinguishes_mapped_and_physical_only_columns() -
     assert "physical_only_columns_allowed_by_name" in prompt
     assert '"SHIFT"' in prompt
     assert '"PRODUCTION"' in prompt
-    assert "Physical source column names are allowed only when they have no standard mapping" in prompt
+    assert "physical source column name은 standard mapping이 없고" in prompt
 
 
 def test_pandas_repair_builder_detects_analysis_only_error_payload() -> None:
@@ -3883,7 +3880,7 @@ def test_pandas_repair_builder_detects_analysis_only_error_payload() -> None:
     assert prompt_payload["repair_required"] is True
     assert prompt_payload["prompt_type"] == "pandas_code_repair"
     assert "to_frame" in prompt_payload["prompt"]
-    assert "Do not use .to_frame()" in prompt_payload["prompt"]
+    assert "수정 코드에서 .to_frame()을 사용하지 마세요" in prompt_payload["prompt"]
 
 
 def test_pandas_executor_passes_successful_payload_through_repair_branch() -> None:
@@ -4559,18 +4556,24 @@ TEST_ANALYSIS_RECIPES: dict[str, dict[str, Any]] = {
                 "output_columns": ["OPER_NAME", "WIP"],
             },
             {
-                "step_id": "hold_lot_in_tat_by_process",
-                "operation": "hold_lot_in_tat_by_process",
+                "step_id": "lot_metrics_by_process",
+                "operation": "aggregate_by_group",
                 "source_family": "lot",
                 "filter_from_step": "rank_top_wip_process",
+                "join_keys": [{"left": "OPER_SHORT_DESC", "right": "OPER_NAME"}],
                 "group_by": ["OPER_SHORT_DESC"],
+                "filters": [{"field": "LOT_HOLD_STAT_CD", "op": "in", "values": ["HOLD", "ONHOLD"]}],
+                "metrics": [
+                    {"quantity_column": "LOT_ID", "aggregation": "nunique", "output_column": "HOLD_LOT_COUNT"},
+                    {"quantity_column": "IN_TAT", "aggregation": "mean", "output_column": "AVG_IN_TAT"},
+                ],
                 "output_columns": ["OPER_SHORT_DESC", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
             },
             {
                 "step_id": "join_wip_and_lot_metrics",
                 "operation": "left_join",
                 "left_step_id": "rank_top_wip_process",
-                "right_step_id": "hold_lot_in_tat_by_process",
+                "right_step_id": "lot_metrics_by_process",
                 "join_keys": [{"left": "OPER_NAME", "right": "OPER_SHORT_DESC"}],
                 "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
             },

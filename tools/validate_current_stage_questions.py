@@ -65,7 +65,14 @@ CASES: list[dict[str, Any]] = [
         "id": "yesterday_top_production_then_current_wip",
         "question": "어제 생산량 상위 5개 제품을 찾고, 그 제품들의 현재 재공 수량도 같이 보여줘",
         "expected_datasets": {"production", "wip_today"},
-        "expected_columns_any": {"PRODUCTION", "WIP", "YESTERDAY_PRODUCTION_QTY", "CURRENT_WIP_QTY"},
+        "expected_columns_any": {
+            "PRODUCTION",
+            "WIP",
+            "YESTERDAY_PRODUCTION",
+            "YESTERDAY_PRODUCTION_QTY",
+            "CURRENT_WIP_QUANTITY",
+            "CURRENT_WIP_QTY",
+        },
         "forbid_function_case": True,
     },
     {

@@ -447,17 +447,21 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
     assert product_change_steps[0]["filters"]["DATE"] == "yesterday"
     assert product_change_steps[1]["filters"]["DATE"] == "today"
     assert docs["domain:analysis_recipes:input_lt_out_analysis"]["payload"]["step_plan_template"][1]["join_source_step_id"] == "find_input_product_keys"
-    assert docs["domain:analysis_recipes:da_wb_process_analysis"]["payload"]["step_plan_template"][-1]["output_columns"] == [
-        "OPER_GROUP",
-        "PRODUCTION_QTY",
-        "WIP_QTY",
+    da_wb_last_step = docs["domain:analysis_recipes:da_wb_process_analysis"]["payload"]["step_plan_template"][-1]
+    assert da_wb_last_step["step_id"] == "combine_and_present"
+    assert da_wb_last_step["input_steps"] == [
+        "get_da_production_data",
+        "get_da_wip_data",
+        "get_wb_production_data",
+        "get_wb_wip_data",
     ]
+    assert "group by 'OPER_GROUP'" in da_wb_last_step["pandas_code_instructions"]
     product_lookup_case = docs["domain:pandas_function_cases:component_token_product_lookup"]["payload"]
     assert product_lookup_case["function_name"] == "match_product_tokens"
-    assert "token_columns" not in product_lookup_case
+    assert "MCP_NO" in product_lookup_case["token_columns"]
     assert "output_columns" not in product_lookup_case
     assert "function_code" not in product_lookup_case
-    assert "pandas_code_instructions" not in product_lookup_case
+    assert "pandas_code_instructions" in product_lookup_case
     assert docs["domain:status_terms:SHIFT_A"]["payload"]["condition"] == {"SHIFT": "1"}
 
 

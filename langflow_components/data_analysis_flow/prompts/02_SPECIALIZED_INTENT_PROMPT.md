@@ -20,7 +20,9 @@
 제품 token/function-case 규칙:
 - 사용자가 "64G L-269P1Q 제품 찾아줘"처럼 제품 속성 token을 자유롭게 섞어서 제품을 찾으면 pandas_function_cases.component_token_product_lookup / match_product_tokens를 사용한다.
 - lpddr4 lc 64g처럼 mode/density/package/lead/MCP-style 값이 여러 개 나열되고 product_terms로 정의된 제품군이 아니면 MODE/DEN/PKG_TYPE filter를 임의 생성하지 않는다.
-- 이런 경우 pandas_function_case=component_token_product_lookup을 설정하고 aggregate/rank/detail step 전에 apply_pandas_function_case step을 추가한다.
+- 이런 경우 pandas_function_case=component_token_product_lookup을 설정하고 aggregate/rank/detail/join step 전에 apply_pandas_function_case step을 추가한다.
+- 생산량+재공, 공정별 집계, history/current 조인처럼 analysis_recipes를 쓰는 복합 질문이어도 등록 product_terms가 아닌 자유 제품 token이 있으면 recipe step_plan 앞에 component_token_product_lookup step을 먼저 둔다.
+- 이때 recipe의 production/wip/lot/equipment step은 helper가 식별한 제품 key를 기준으로 source row를 제한한 뒤 기존 recipe의 aggregate/rank/detail/join을 수행하도록 계획한다.
 - product-token function case에서는 retrieval_jobs가 helper에 필요한 제품 컬럼을 조회해야 하며, token match를 retrieval_jobs[].filters만으로 표현하지 않는다.
 - 단, "64G L-269 ASSY 제품 찾아줘"처럼 제품 token과 찾기/조회 의도만 있고 생산/재공/Lot/Hold/장비/dataset 같은 source family 단서가 없으면 wip_today나 production_today를 임의로 선택하지 않는다. 이 경우 dataset 선택이 불명확하다고 reasoning_steps에 남기고 retrieval_jobs를 만들지 않는다.
 - POP, MOBILE, HBM, AUTO향 같은 등록 product_terms는 ordinary metadata-backed filter condition이다. 이 제품군 조건은 pandas function case가 아니다.
@@ -65,7 +67,9 @@ Lot/Hold/상태 규칙:
 
 rank/dependent lookup 특화 규칙:
 - rank_wip_then_join_production은 반드시 multi_step_analysis로 계획한다.
+- rank_wip_then_join_production은 재공/WIP를 먼저 rank하고 같은 제품의 생산량/실적을 dependent step으로 붙이는 질문에만 사용한다.
 - 재공 상위 제품을 먼저 뽑고 같은 제품의 생산량/실적을 붙이는 질문은 rank_wip_then_join_production recipe를 우선 검토한다.
+- 생산량 상위 제품을 먼저 뽑고 같은 제품의 현재 재공/WIP를 붙이는 질문은 rank 기준 source가 production이므로 analysis_kind를 rank_wip_then_join_production으로 설정하지 않는다. analysis_kind는 일반 multi_step_analysis로 두고, production rank step을 먼저 만들고, ranked product key로 current wip source를 제한한 뒤 left_join한다.
 - top/bottom/rank 뒤에 dependent lookup, count, detail, oldest/longest selection이 이어지면 metadata analysis_recipes를 우선 검토하고 rank step을 dependent step보다 먼저 둔다.
 - DA/WB 같은 그룹별 rank 질문은 rank_groups를 사용하고, rank_group_output_column/output_columns에 OPER_GROUP 같은 사용자-facing label column을 둔다.
 - rank_groups[].field는 raw metadata-backed field에만 사용하고, 사용자가 raw breakdown axis를 명시하지 않는 한 final output_columns에는 넣지 않는다.
@@ -75,5 +79,6 @@ rank/dependent lookup 특화 규칙:
 source scope 분리 예시:
 - "어제 DP공정에서 생산량이 가장 많은 제품의 오늘 DA공정 재공"처럼 source별 scope가 다르면 첫 retrieval job은 DP/yesterday scope만, 두 번째 retrieval job은 DA/today scope만 갖는다.
 - 전일/금일 같은 표현이 한 질문에 같이 있어도 source_scope에 따라 각 source의 date scope를 분리한다.
+- "어제 생산량 상위 5개 제품을 찾고, 그 제품들의 현재 재공 수량도 같이 보여줘"는 production retrieval_job에 source_scope.date_scope=yesterday 및 어제 DATE를 적용하고, wip retrieval_job에 source_scope.date_scope=current/today 및 오늘/현재 DATE를 적용한다.
 - today_input, yesterday_input, DA production, WB wip, input source, comparison source, all-process wip 같은 source-local hint는 retrieval_jobs[].source_scope에 남기고 해당 job의 params/filters에만 반영한다.
 ```

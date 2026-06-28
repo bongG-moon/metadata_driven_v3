@@ -383,18 +383,54 @@ INPUT 공정 실적 대비 특정 공정 실적을 제품별로 물으면 INPUT 
 <!-- single_recipe_da_wb_production_wip:start -->
 ```text
 DA공정 생산량/재공과 WB공정 생산량/재공을 각각 보여주는 분석 패턴을 등록해줘.
+section은 analysis_recipes이고 key는 da_wb_process_analysis야.
+표시 이름은 DA/WB 공정별 생산량/재공 분석이야.
+유의어는 DA공정 생산량/재공, WB공정 생산량/재공, DA WB 생산량 재공이야.
+required_question_cues는 DA, WB, 생산량, 재공이야. DA와 WB를 둘 다 명시한 질문에서만 이 recipe를 사용해.
+forbidden_question_cues는 제품별, 제품, 상위, top, TOP, rank야.
 이 블록은 analysis_recipes만 등록하고, DA/WB 공정 그룹이나 production/wip 수량 용어는 새로 만들지 마.
 DA공정 생산량/재공과 WB공정 생산량/재공을 각각 보여달라고 하면 DA production, DA wip, WB production, WB wip를 각각 독립 source 또는 독립 step으로 집계하고, 최종 결과는 OPER_GROUP별로 PRODUCTION과 WIP를 모두 포함해.
 ```
 <!-- single_recipe_da_wb_production_wip:end -->
+
+<!-- single_recipe_product_production_wip_join:start -->
+```text
+제품별 생산량과 재공을 같이 보여주는 분석 recipe를 등록해줘.
+section은 analysis_recipes이고 key는 product_production_wip_join야.
+표시 이름은 제품별 생산량 재공 결합이고, 유의어는 제품별 생산량 재공, 제품별 생산량과 재공, 재공과 생산량, 생산량과 재공, production wip product join이야.
+default_analysis_kind는 aggregate_join이고 intent_type은 multi_source_analysis야.
+question_cues는 생산량, 재공, 제품별, 공정별, 세부 공정별이야.
+사용자가 "오늘 DA공정에서 재공과 생산량을 제품별로 알려줘" 또는 "어제 512G G-777 제품의 생산량과 재공을 세부 공정별로 알려줘"처럼 production 계열 수량과 wip 계열 수량을 같이 묻고 같은 제품/공정 기준으로 붙여야 하면 이 recipe를 사용해.
+required_dataset_families는 production, wip야.
+source_aliases_by_family는 production=production_data, wip=wip_data로 저장해.
+grain_policy는 question_or_product_grain이고, replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+override_analysis_kinds는 rank_top_n, aggregate_wip_total, aggregate_join, generic_aggregate_recipe야.
+required_columns_by_family는 production에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, PRODUCTION을 넣고, wip에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, WIP를 넣어.
+step_plan_template은 generic step만 사용해.
+첫 번째 step은 step_id=aggregate_production_by_requested_grain, operation=aggregate_by_group, source_family=production, group_by는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, metric=PRODUCTION, aggregation=sum, output_columns는 group_by 컬럼과 PRODUCTION이야.
+두 번째 step은 step_id=aggregate_wip_by_requested_grain, operation=aggregate_by_group, source_family=wip, group_by는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, metric=WIP, aggregation=sum, output_columns는 group_by 컬럼과 WIP야.
+세 번째 step은 step_id=join_production_and_wip, operation=left_join, left_step_id=aggregate_production_by_requested_grain, right_step_id=aggregate_wip_by_requested_grain, join_keys는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME이고, output_columns는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, PRODUCTION, WIP야.
+```
+<!-- single_recipe_product_production_wip_join:end -->
 
 <!-- single_recipe_rank_wip_then_join_production:start -->
 ```text
 재공 상위 제품을 먼저 찾고 해당 제품의 생산량을 붙이는 분석 패턴을 등록해줘.
 section은 analysis_recipes이고 key는 rank_wip_then_join_production야.
 표시 이름은 재공 상위 제품 생산량 결합이고, 유의어는 재공 상위 제품 생산량, 재공 top 제품 실적, WIP top production이야.
+default_analysis_kind는 rank_wip_then_join_production이고 intent_type은 multi_step_analysis야.
+question_cues는 재공, 상위, top, 생산량, 실적이야.
 사용자가 "오늘 DA, WB공정에서 각각 재공 상위 3개 제품을 뽑아주고 해당 제품들의 오늘 생산량도 보여줘"처럼 공정 그룹별 WIP rank 이후 production을 이어서 물으면 이 recipe를 사용해.
-wip 계열 데이터에서 공정 scope별 제품 키 기준 WIP 상위 N개를 먼저 찾고, production 계열 데이터에서 같은 제품 키의 PRODUCTION을 집계한 뒤 제품 키 기준으로 left join하도록 계획해.
+required_dataset_families는 wip, production이고 source_aliases_by_family는 wip=wip_data, production=production_data야.
+grain_policy는 question_or_product_grain이고 top_n_policy는 question_or_default이며 defaults.top_n은 3이야.
+replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+override_analysis_kinds는 rank_top_n, aggregate_join, generic_aggregate_recipe야.
+required_columns_by_family는 wip에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, WIP를 넣고, production에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER_NAME, PRODUCTION을 넣어.
+step_plan_template은 generic step을 사용해.
+공정 그룹별로 각각 rank해야 하는 질문을 위해 rank_group_output_column은 OPER_GROUP이고 rank_groups는 DA=OPER_NAME in D/A1,D/A2,D/A3,D/A4,D/A5,D/A6 그리고 WB=OPER_NAME in W/B1,W/B2,W/B3,W/B4,W/B5,W/B6로 저장해.
+첫 번째 step은 step_id=rank_wip_products_per_process, operation=rank_top_n, source_family=wip, rank_group_output_column=OPER_GROUP, rank_groups는 위 DA/WB 정의를 사용하고, group_by는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, metric=WIP, top_n=$top_n, rank_order=desc, output_columns는 OPER_GROUP, TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, WIP야.
+두 번째 step은 step_id=aggregate_production_for_ranked_products, operation=aggregate_by_group, source_family=production, filter_from_step=rank_wip_products_per_process, rank_group_output_column=OPER_GROUP, rank_groups는 위 DA/WB 정의를 사용하고, join_keys는 OPER_GROUP, TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, group_by는 OPER_GROUP, TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, metric=PRODUCTION, aggregation=sum, output_columns는 OPER_GROUP, TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, PRODUCTION이야.
+세 번째 step은 step_id=join_ranked_wip_and_production, operation=left_join, left_step_id=rank_wip_products_per_process, right_step_id=aggregate_production_for_ranked_products, join_keys는 OPER_GROUP, TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO이고, output_columns는 OPER_GROUP, TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, WIP, PRODUCTION이야.
 ```
 <!-- single_recipe_rank_wip_then_join_production:end -->
 
@@ -403,8 +439,18 @@ wip 계열 데이터에서 공정 scope별 제품 키 기준 WIP 상위 N개를 
 LOT 수량 요약 분석 패턴을 등록해줘.
 section은 analysis_recipes이고 key는 lot_quantity_summary야.
 표시 이름은 LOT 수량 요약이고, 유의어는 lot 수량, lot은 몇개, wafer 몇개, die 수량이야.
+default_analysis_kind는 lot_quantity_summary이고 intent_type은 single_retrieval_analysis야.
+question_cues는 lot, LOT, wafer, die, 수량, 몇개야.
 사용자가 "DA공정에서 재공 lot은 몇개고 wafer와 die 수량은 몇개야?"처럼 공정 scope와 Lot/Wafer/Die 수량을 함께 물으면 lot_status 계열 데이터를 사용해.
-LOT_COUNT는 LOT_ID 중복 제거 개수, WF_QTY는 WF_QTY 합계, DIE_QTY는 SUB_PROD_QTY 또는 DIE_QTY 합계로 계산하도록 계획해.
+required_dataset_families는 lot이고 source_aliases_by_family는 lot=lot_data야.
+grain_policy는 aggregate_total이고 replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+override_analysis_kinds는 aggregate_join, aggregate, aggregate_wip_total이야.
+required_columns_by_family는 lot에 LOT_ID, OPER_NAME, LOT_STAT_CD, WF_QTY, SUB_PROD_QTY, IN_TAT, CUM_TAT를 넣어.
+step_plan_template은 하나의 generic aggregate_by_group step으로 저장해.
+step_id는 summarize_lot_quantities, operation은 aggregate_by_group, source_family는 lot이야.
+공정별이라고 물으면 group_by는 표준 컬럼 OPER_NAME을 사용하고, 전체 수량이면 group_by는 비워둬.
+metrics는 LOT_ID nunique 결과 LOT_COUNT, WF_QTY sum 결과 WF_QTY, SUB_PROD_QTY sum 결과 DIE_QTY야.
+output_columns는 LOT_COUNT, WF_QTY, DIE_QTY이고 공정별이면 OPER_NAME을 앞에 포함해.
 ```
 <!-- single_recipe_lot_quantity_summary:end -->
 
@@ -413,8 +459,23 @@ LOT_COUNT는 LOT_ID 중복 제거 개수, WF_QTY는 WF_QTY 합계, DIE_QTY는 SU
 재공 상위 공정의 Hold LOT와 IN_TAT를 같이 보는 분석 패턴을 등록해줘.
 section은 analysis_recipes이고 key는 top_wip_process_hold_lot_in_tat야.
 표시 이름은 재공 상위 공정 HOLD LOT 평균 In TAT이고, 유의어는 hold LOT, in tat, 재공이 많은 세부공정이야.
+default_analysis_kind는 top_wip_process_hold_lot_in_tat이고 intent_type은 multi_step_analysis야.
+question_cues는 재공, 상위, top, hold, HOLD, IN_TAT, tat, TAT야.
 사용자가 "현재 재공이 많은 세부공정 top 3을 찾고 해당 공정의 hold LOT 수와 평균 IN_TAT도 보여줘"처럼 재공 상위 공정과 Hold/IN_TAT 정보를 같이 물으면 이 recipe를 사용해.
-wip 계열 데이터에서 OPER_NAME별 WIP 상위 공정을 먼저 찾고, lot 계열 데이터에서 해당 공정의 HOLD LOT 수와 평균 IN_TAT를 구한 뒤 공정 기준으로 left join하도록 계획해.
+required_question_cues는 hold/HOLD와 tat/TAT야.
+required_dataset_families는 wip, lot이고 source_aliases_by_family는 wip=wip_data, lot=lot_status_data야.
+grain_policy는 recipe_step_grain이고 top_n_policy는 question_or_default이며 defaults.top_n은 3이야.
+replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+override_analysis_kinds는 lot_count_by_process, aggregate, aggregate_wip_total이야.
+blocked_filter_fields는 LOT_HOLD_STAT_CD야. HOLD 조건은 조회 필터가 아니라 lot metrics step의 filters로 처리해.
+output_columns는 OPER_SHORT_DESC, WIP, HOLD_LOT_COUNT, AVG_IN_TAT야.
+required_columns_by_family는 wip에 OPER_NAME, WIP를 넣고, lot에 OPER_SHORT_DESC, LOT_ID, LOT_HOLD_STAT_CD, IN_TAT를 넣어.
+step_plan_template은 generic step만 사용해.
+첫 번째 step은 step_id=rank_top_wip_process, operation=rank_top_n, source_family=wip, group_by=OPER_NAME, metric=WIP, top_n=$top_n, rank_order=desc, output_columns=OPER_NAME,WIP야.
+두 번째 step은 step_id=lot_metrics_by_process, operation=aggregate_by_group, source_family=lot, filter_from_step=rank_top_wip_process, join_keys는 left=OPER_SHORT_DESC right=OPER_NAME, group_by=OPER_SHORT_DESC야.
+두 번째 step filters는 LOT_HOLD_STAT_CD in HOLD, ONHOLD야.
+두 번째 step metrics는 LOT_ID nunique 결과 HOLD_LOT_COUNT, IN_TAT mean 결과 AVG_IN_TAT야.
+세 번째 step은 step_id=join_wip_and_lot_metrics, operation=left_join, left_step_id=rank_top_wip_process, right_step_id=lot_metrics_by_process, join_keys는 left=OPER_NAME right=OPER_SHORT_DESC, output_columns는 OPER_SHORT_DESC, WIP, HOLD_LOT_COUNT, AVG_IN_TAT야.
 ```
 <!-- single_recipe_top_wip_process_hold_lot_in_tat:end -->
 
@@ -423,8 +484,17 @@ wip 계열 데이터에서 OPER_NAME별 WIP 상위 공정을 먼저 찾고, lot 
 재공이 가장 많은 제품의 IN_TAT가 가장 오래된 LOT를 찾는 분석 패턴을 등록해줘.
 section은 analysis_recipes이고 key는 top_wip_product_oldest_lot야.
 표시 이름은 재공 최다 제품 기준 최장 In TAT LOT이고, 유의어는 재공이 가장 많은 제품, IN TAT가 가장 오래된 LOT야.
+default_analysis_kind는 top_wip_product_oldest_lot이고 intent_type은 multi_step_analysis야.
+question_cues는 재공, 가장 많은, IN_TAT, 오래된, LOT야.
 사용자가 "재공이 가장 많은 제품을 찾고 그 제품의 IN_TAT가 가장 오래된 LOT를 보여줘"처럼 제품 rank 이후 LOT detail을 이어서 물으면 이 recipe를 사용해.
-wip 계열 데이터에서 제품 키 기준 WIP 1위 제품을 먼저 찾고, lot 계열 데이터에서 그 제품 키와 일치하는 LOT 중 IN_TAT가 가장 큰 LOT를 찾은 뒤 제품 키 기준으로 left join하도록 계획해.
+required_dataset_families는 wip, lot이고 source_aliases_by_family는 wip=wip_data, lot=lot_data야.
+grain_policy는 question_or_product_grain이고 replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+output_columns는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, WIP, LOT_ID, IN_TAT야.
+required_columns_by_family는 wip에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, WIP를 넣고, lot에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, LOT_ID, IN_TAT를 넣어.
+step_plan_template은 generic step만 사용해.
+첫 번째 step은 step_id=rank_top_wip_product, operation=rank_top_n, source_family=wip, group_by=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO, metric=WIP, top_n=1, rank_order=desc야.
+두 번째 step은 step_id=find_oldest_lot_for_top_product, operation=rank_top_n, source_family=lot, filter_from_step=rank_top_wip_product, join_keys=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO, group_by=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO,LOT_ID, metric=IN_TAT, top_n=1, rank_order=desc, output_columns=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO,LOT_ID,IN_TAT야.
+세 번째 step은 step_id=join_top_product_and_oldest_lot, operation=left_join, left_step_id=rank_top_wip_product, right_step_id=find_oldest_lot_for_top_product, join_keys=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO, output_columns=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO,WIP,LOT_ID,IN_TAT야.
 ```
 <!-- single_recipe_top_wip_product_oldest_lot:end -->
 
@@ -433,7 +503,15 @@ wip 계열 데이터에서 제품 키 기준 WIP 1위 제품을 먼저 찾고, l
 이전 결과 제품 기준 장비 조회 분석 패턴을 등록해줘.
 section은 analysis_recipes이고 key는 equipment_for_previous_products야.
 표시 이름은 이전 제품 기준 장비 조회이고, 유의어는 이전 제품 장비, 해당 제품 장비, 설비 현황, 장비 현황이야.
+default_analysis_kind는 equipment_for_previous_products이고 intent_type은 followup_transform이야.
+question_cues는 이 제품, 그 제품, 해당 제품, 장비, 설비, 현황이야.
 사용자가 이전 답변에서 나온 제품들에 대해 "이 제품들의 장비 현황 보여줘"처럼 후속 질문을 하면 previous result의 제품 키를 사용해 equipment_status 계열 데이터를 조회해.
+required_dataset_families는 equipment이고 source_aliases_by_family는 equipment=equipment_data야.
+grain_policy는 question_or_product_grain이고 result_mode는 detail_rows야.
+replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+required_columns_by_family는 equipment에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, EQPID, EQP_MODEL, PRESS_CNT, LOT_ID, RECIPE_ID를 넣어.
+step_plan_template은 step_id=filter_equipment_for_previous_products, operation=detail_rows, source_family=equipment, columns=TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO,EQPID,EQP_MODEL,PRESS_CNT,LOT_ID,RECIPE_ID로 저장해.
+이 recipe는 이전 결과의 제품 key를 사용하는 것이 핵심이며, 코드 fallback이 아니라 metadata recipe와 PRODUCT_GRAIN from_state 필터를 통해 동작해야 해.
 ```
 <!-- single_recipe_followup_equipment_for_previous_products:end -->
 
@@ -442,7 +520,15 @@ section은 analysis_recipes이고 key는 equipment_for_previous_products야.
 이전 결과 제품 기준 장비 대수 집계 분석 패턴을 등록해줘.
 section은 analysis_recipes이고 key는 equipment_count_for_previous_products야.
 표시 이름은 이전 제품 기준 장비 대수이고, 유의어는 이전 제품 장비 대수, 해당 제품 설비 수, 장비 몇 대, 설비 몇 대야.
+default_analysis_kind는 equipment_count_for_previous_products이고 intent_type은 followup_transform이야.
+question_cues는 이 제품, 그 제품, 해당 제품, 장비 대수, 설비 대수, 몇 대, 몇대야.
 사용자가 이전 답변에서 나온 제품들에 대해 "이 제품들의 장비는 몇 대야?"처럼 후속 질문을 하면 previous result의 제품 키를 사용해 equipment_status 계열 데이터를 조회해.
-EQP_COUNT는 EQPID 또는 EQP_ID 중복 제거 개수로 계산하고, 제품 키 기준 group by가 있으면 제품별 EQP_COUNT를 반환하도록 계획해.
+required_dataset_families는 equipment이고 source_aliases_by_family는 equipment=equipment_data야.
+grain_policy는 question_or_product_grain이고 replace_datasets, replace_retrieval_jobs, override_step_plan은 true로 저장해.
+required_columns_by_family는 equipment에 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, EQPID를 넣어.
+output_columns는 TECH, DEN, MODE, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, EQP_COUNT야.
+step_plan_template은 하나의 generic unique_count_by_group step으로 저장해.
+step_id는 count_equipment_for_previous_products, operation은 unique_count_by_group, source_family는 equipment, group_by는 TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO, count_column은 EQPID, output_columns는 TECH,DEN,MODE,PKG_TYPE1,PKG_TYPE2,LEAD,MCP_NO,EQP_COUNT야.
+이 recipe는 이전 결과의 제품 key를 사용하는 것이 핵심이며, 코드 fallback이 아니라 metadata recipe와 PRODUCT_GRAIN from_state 필터를 통해 동작해야 해.
 ```
 <!-- single_recipe_followup_equipment_count_for_previous_products:end -->

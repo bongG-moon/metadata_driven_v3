@@ -20,9 +20,15 @@
 ```text
 제품 토큰으로 제품 리스트나 제품 조건 기반 metric을 찾는 질문에서는 match_product_tokens helper를 사용한다.
 이 helper는 조회된 제품 데이터에서 TECH, DEN/DENSITY, MODE, PKG1/PKG_TYPE1, PKG2/PKG_TYPE2, LEAD, MCP_NO 값을 입력 토큰과 비교해서 일치하는 행을 반환한다.
+제품 검색에서는 의미 있는 제품 속성 토큰이 모두 매칭되어야 한다. 예를 들어 `lpddr4 lc 64g`에서 `64g`만 DEN에 매칭되고 `lpddr4`, `lc`가 어떤 제품 컬럼에도 매칭되지 않으면 부분 매칭 결과를 반환하지 말고 빈 DataFrame을 반환한다.
+helper는 비교 전에 DENSITY를 DEN으로, PKG1/PKG_TYP1을 PKG_TYPE1로, PKG2/PKG_TYP2를 PKG_TYPE2로 맞춘 표준 컬럼을 만든다.
+따라서 helper output을 downstream join/filter에 쓸 때는 DEN, PKG_TYPE1, PKG_TYPE2 같은 표준 product key를 사용한다.
+제품 리스트만 보여주는 질문이 아니라 생산량/재공/공정별 집계 같은 metric 질문이면 helper output은 product key만 남기지 말고 원본 source row의 OPER_NAME, PRODUCTION, WIP 같은 후속 집계 column을 보존해야 한다.
+만약 생성 코드에서 helper output이 product key column만 가진 DataFrame이 되었다면, 그 output을 직접 groupby하지 말고 product key table로만 사용해서 원본 sources[source_alias]를 다시 filter/merge한 뒤 집계한다.
 MCP_NO는 사용자가 L-269처럼 앞부분만 입력해도 실제 L-269P1Q 같은 값과 startswith로 매칭한다.
 G-777제품처럼 제품 토큰 뒤에 한국어 명사/동사가 붙어도 G-777 token으로 정리해서 매칭한다.
 어떤 입력 토큰이 어떤 컬럼 조건으로 해석됐는지 기록하기 위해 반환 DataFrame의 attrs["matched_conditions"]에 token, column, match_type, value를 남긴다.
+matched_conditions에 match_type="unmatched"가 남은 의미 있는 제품 속성 토큰이 있으면 해당 제품 표현은 source data에 정확히 존재하지 않는 것으로 보고 빈 DataFrame을 반환한다.
 pandas 생성 코드는 이 helper 예시 형태를 참고해서 작성하고, helper를 호출할 때는 match_product_tokens(input_text, sources[source_alias])처럼 positional argument를 사용한다.
 ```
 
@@ -30,29 +36,66 @@ pandas 생성 코드는 이 helper 예시 형태를 참고해서 작성하고, h
 
 ```python
 def match_product_tokens(input_text, source_df):
-    token_columns = ["TECH", "DEN", "DENSITY", "MODE", "PKG_TYPE1", "PKG1", "PKG_TYPE2", "PKG2", "LEAD", "MCP_NO"]
-    output_columns = ["TECH", "DEN", "DENSITY", "PKG_TYPE1", "PKG1", "LEAD", "PKG_TYPE2", "PKG2", "MODE", "MCP_NO"]
+    token_columns = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"]
+    product_key_columns = ["TECH", "DEN", "PKG_TYPE1", "LEAD", "PKG_TYPE2", "MODE", "MCP_NO"]
     if source_df is None:
         return pd.DataFrame()
 
     result = source_df.copy()
+    alias_candidates = {
+        "DEN": ["DENSITY", "DEN_TYP"],
+        "PKG_TYPE1": ["PKG1", "PKG_TYP1", "PKG_TYP"],
+        "PKG_TYPE2": ["PKG2", "PKG_TYP2", "PKG_TYP_2"],
+        "MODE": ["PROD_TYP"],
+        "LEAD": ["LEAD_CNT"],
+        "MCP_NO": ["PROD_GRP_ID", "MCP_SALE_CD"],
+        "TECH": ["TECH_NM"],
+    }
+    for standard_column, candidates in alias_candidates.items():
+        if standard_column in result.columns:
+            continue
+        for candidate in candidates:
+            if candidate in result.columns:
+                result[standard_column] = result[candidate]
+                break
 
     def normalize_token(value):
         return str(value or "").strip().upper()
 
     def clean_input_token(token):
         token = normalize_token(token)
-        for suffix in ["제품의", "제품", "생산량", "수량", "실적", "리스트", "목록", "조회", "찾아줘", "보여줘", "알려줘"]:
+        for suffix in ["제품의", "제품", "생산량", "수량", "실적", "리스트", "목록", "조회", "찾아줘", "보여줘", "알려줘", "찾아", "보여", "알려"]:
             normalized_suffix = normalize_token(suffix)
             if token.endswith(normalized_suffix):
                 token = token[: -len(normalized_suffix)]
         return token
+
+    ignored_tokens = {
+        "오늘",
+        "현재",
+        "어제",
+        "금일",
+        "전일",
+        "제품",
+        "생산량",
+        "수량",
+        "실적",
+        "리스트",
+        "목록",
+        "조회",
+        "찾아줘",
+        "보여줘",
+        "알려줘",
+    }
+    ignored_tokens = {normalize_token(token) for token in ignored_tokens}
 
     matched_conditions = []
     cleaned_text = str(input_text or "").replace(",", " ")
     for raw_token in cleaned_text.split():
         normalized_token = clean_input_token(raw_token)
         if not normalized_token:
+            continue
+        if normalized_token in ignored_tokens:
             continue
         matched = False
         for column in token_columns:
@@ -72,6 +115,12 @@ def match_product_tokens(input_text, source_df):
             matched_conditions.append({"token": raw_token, "column": "", "match_type": "unmatched", "value": normalized_token})
 
     filter_conditions = [condition for condition in matched_conditions if condition["column"]]
+    unmatched_conditions = [condition for condition in matched_conditions if condition["match_type"] == "unmatched"]
+    if unmatched_conditions:
+        empty_result = source_df.head(0).copy()
+        empty_result.attrs["matched_conditions"] = matched_conditions
+        return empty_result
+
     for condition in filter_conditions:
         column = condition["column"]
         normalized_token = condition["value"]
@@ -87,9 +136,11 @@ def match_product_tokens(input_text, source_df):
         empty_result.attrs["matched_conditions"] = matched_conditions
         return empty_result
 
-    selected_columns = [column for column in output_columns if column in result.columns]
+    selected_columns = [column for column in product_key_columns if column in result.columns]
     extra_columns = [column for column in source_df.columns if column not in selected_columns and column != "ORG"]
     if selected_columns:
+        # 제품 metric/공정별 집계에서 OPER_NAME, PRODUCTION, WIP 같은 원본 컬럼이 필요하므로
+        # product key만 남기지 말고 원본 source의 나머지 컬럼도 보존한다.
         result = result[[*selected_columns, *extra_columns]]
     result = result.drop_duplicates().reset_index(drop=True)
     result.attrs["matched_conditions"] = matched_conditions

@@ -156,42 +156,22 @@ def _execute_generated_pandas_code(
             raise ValueError("Generated code must assign a pandas DataFrame to result_df.")
         result_df = result_df.copy()
         result_df = _normalize_result_columns(result_df, plan)
-        fallback_df = _fallback_result_df(plan, runtime_sources)
-        if _should_replace_empty_generated_result(result_df, fallback_df):
-            result_df = _normalize_result_columns(fallback_df, plan)
-            fallback_error = "Generated pandas code returned an empty contract result; executor fallback was used."
-            repairable_errors.append(fallback_error)
-            code = code + "\n# executor_fallback: generated code returned an empty contract result"
-        elif _should_replace_incomplete_generated_result(result_df, fallback_df, plan):
-            result_df = _normalize_result_columns(fallback_df, plan)
-            fallback_error = "Generated pandas code missed required plan output columns; executor fallback was used."
-            repairable_errors.append(fallback_error)
-            code = code + "\n# executor_fallback: generated code missed required plan output columns"
-        elif _should_replace_filter_mismatched_generated_result(result_df, fallback_df, plan):
-            result_df = _normalize_result_columns(fallback_df, plan)
-            fallback_error = "Generated pandas code did not match pandas-applied source filters; executor fallback was used."
-            repairable_errors.append(fallback_error)
-            code = code + "\n# executor_fallback: generated code did not match pandas-applied source filters"
         result_df = _normalize_result_columns(_collapse_over_detailed_aggregate_result(result_df, plan), plan)
     except Exception as exc:
-        fallback_df = _fallback_result_df(plan, runtime_sources)
-        if fallback_df is None:
-            return {
-                "status": "error",
-                "analysis_kind": plan.get("analysis_kind"),
-                "analysis_code": code,
-                "columns": [],
-                "rows": [],
-                "row_count": 0,
-                "intermediate_refs": {},
-                "errors": [f"Generated pandas code failed: {exc}"],
-                "safety_passed": True,
-                "executed": False,
-            }
-        result_df = _normalize_result_columns(fallback_df, plan)
-        repairable_errors.append(f"Generated pandas code failed before executor fallback: {exc}")
-        code = code + f"\n# executor_fallback: {exc}"
-        function_case_trace = {}
+        return {
+            "status": "error",
+            "analysis_kind": plan.get("analysis_kind"),
+            "analysis_code": code,
+            "columns": [],
+            "rows": [],
+            "row_count": 0,
+            "intermediate_refs": {},
+            "errors": [f"Generated pandas code failed: {exc}"],
+            "repairable_errors": [f"Generated pandas code failed: {exc}"],
+            "used_executor_fallback": False,
+            "safety_passed": True,
+            "executed": False,
+        }
 
     rows = result_df.to_dict(orient="records")
     product_key_columns = _product_key_columns(plan, list(result_df.columns))
@@ -487,6 +467,23 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
             alias = f"{base_name}{suffix}"
             if base_name not in result.columns and alias in result.columns:
                 rename_map[alias] = base_name
+    plan_metric = str(plan.get("metric") or "").strip().upper()
+    if plan_metric == "PRODUCTION" and "PRODUCTION" not in result.columns:
+        for column in result.columns:
+            column_text = str(column or "").strip()
+            column_key = column_text.upper()
+            if (
+                column_key.endswith("_PRODUCTION_QTY")
+                or column_key.endswith("_PRODUCTION_QUANTITY")
+                or (
+                    "PRODUCTION" in column_key
+                    and "RATE" not in column_key
+                    and "ACHIEVEMENT" not in column_key
+                    and "BALANCE" not in column_key
+                )
+            ):
+                rename_map[column_text] = "PRODUCTION"
+                break
 
     structural_alias_map = {
         "WIP": ["TOTAL_WIP", "WIP_TOTAL", "WIP_SUM", "SUM_WIP", "WIP_QUANTITY", "WIP_QTY"],
@@ -505,19 +502,6 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
             if alias in result.columns:
                 rename_map[alias] = standard_name
                 break
-    if analysis_kind == "lot_quantity_summary" and "DIE_QTY" not in result.columns and "SUB_PROD_QTY" in result.columns:
-        rename_map["SUB_PROD_QTY"] = "DIE_QTY"
-    if analysis_kind == "top_wip_process_hold_lot_in_tat" and "HOLD_LOT_COUNT" not in result.columns and "LOT_COUNT" in result.columns:
-        rename_map["LOT_COUNT"] = "HOLD_LOT_COUNT"
-    if analysis_kind in {"lot_count_by_process", "top_wip_process_hold_lot_in_tat"} and "OPER_SHORT_DESC" not in result.columns and "OPER_NAME" in result.columns:
-        rename_map["OPER_NAME"] = "OPER_SHORT_DESC"
-
-    if analysis_kind == "rank_wip_then_join_production":
-        if "WIP_RANK" not in result.columns and "rank" in result.columns:
-            rename_map["rank"] = "WIP_RANK"
-        if "PRODUCTION" not in result.columns and "PRODUCTION_total" in result.columns:
-            rename_map["PRODUCTION_total"] = "PRODUCTION"
-
     alias_map = {
         "PRODUCTION": ["생산량", "생산 수량", "실적", "생산실적"],
         "WIP": ["재공", "재공 수량", "재공수량"],
@@ -575,14 +559,6 @@ def _fallback_result_df(plan: dict[str, Any], runtime_sources: dict[str, Any]) -
     step_plan_result = _fallback_from_step_plan(plan, runtime_sources)
     if step_plan_result is not None:
         return step_plan_result
-    if str(plan.get("analysis_kind") or "") == "rank_wip_then_join_production":
-        ranked_join = _fallback_rank_wip_then_join_production(plan, runtime_sources)
-        if ranked_join is not None:
-            return ranked_join
-    if _is_top_wip_process_hold_lot_in_tat_plan(plan):
-        return _fallback_top_wip_process_hold_lot_in_tat(plan, runtime_sources)
-    if _is_top_wip_product_oldest_lot_plan(plan):
-        return _fallback_top_wip_product_oldest_lot(plan, runtime_sources)
     if str(plan.get("analysis_kind") or "") == "aggregate_previous_source":
         alias = _primary_source_alias(plan, runtime_sources)
         rows = runtime_sources.get(alias) if alias else None
@@ -605,20 +581,7 @@ def _fallback_result_df(plan: dict[str, Any], runtime_sources: dict[str, Any]) -
         if group_by:
             return clean.groupby(group_by, dropna=False, as_index=False)[metric].sum()
         return pd.DataFrame([{metric: clean[metric].sum()}])
-    if str(plan.get("analysis_kind") or "") != "lot_quantity_summary":
-        return None
-    alias = _primary_source_alias(plan, runtime_sources)
-    rows = runtime_sources.get(alias) if alias else None
-    if not isinstance(rows, list):
-        return None
-    frame = _source_dataframe(rows, [], str(plan.get("analysis_kind") or ""))
-    frame = _standardize_source_frame_for_alias(frame, alias, plan)
-    frame = _apply_source_filters_for_alias(frame, alias, plan)
-    lot_count = frame["LOT_ID"].nunique() if "LOT_ID" in frame.columns else 0
-    wf_qty = frame["WF_QTY"].sum() if "WF_QTY" in frame.columns else 0
-    die_source = "SUB_PROD_QTY" if "SUB_PROD_QTY" in frame.columns else "DIE_QTY"
-    die_qty = frame[die_source].sum() if die_source in frame.columns else 0
-    return pd.DataFrame([{"LOT_COUNT": lot_count, "WF_QTY": wf_qty, "DIE_QTY": die_qty}])
+    return None
 
 
 def _fallback_from_step_plan(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> pd.DataFrame | None:
@@ -637,16 +600,12 @@ def _fallback_from_step_plan(plan: dict[str, Any], runtime_sources: dict[str, An
             frame = _fallback_step_aggregate(step, plan, runtime_sources, frames_by_step)
         elif operation in {
             "equipment_count_by_product",
-            "equipment_count_for_previous_products",
-            "lot_count_by_process",
             "unique_count_by_group",
             "nunique_by_group",
         }:
             frame = _fallback_step_unique_count(step, plan, runtime_sources, frames_by_step)
-        elif operation in {"detail_rows", "detail_rows_for_product_keys"}:
+        elif operation == "detail_rows":
             frame = _fallback_step_detail_rows(step, plan, runtime_sources, frames_by_step)
-        elif operation == "hold_lot_in_tat_by_process":
-            frame = _fallback_step_hold_lot_in_tat(step, plan, runtime_sources, frames_by_step)
         elif operation == "left_join":
             frame = _fallback_step_left_join(step, frames_by_step)
         else:
@@ -668,10 +627,11 @@ def _fallback_step_rank_top_n(
     runtime_sources: dict[str, Any],
     frames_by_step: dict[str, pd.DataFrame],
 ) -> pd.DataFrame | None:
-    frame = _frame_for_step_source(step, runtime_sources, plan)
+    frame = _frame_for_step_source(step, runtime_sources, plan, frames_by_step)
     if frame is None:
         return None
     frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
+    frame = _apply_step_filters(frame, step)
     metric = str(step.get("metric") or plan.get("metric") or "").strip()
     if not metric or metric not in frame.columns:
         return None
@@ -695,28 +655,41 @@ def _fallback_step_aggregate(
     runtime_sources: dict[str, Any],
     frames_by_step: dict[str, pd.DataFrame],
 ) -> pd.DataFrame | None:
-    frame = _frame_for_step_source(step, runtime_sources, plan)
+    frame = _frame_for_step_source(step, runtime_sources, plan, frames_by_step)
     if frame is None:
         return None
     frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
-    metrics = _step_metric_columns(step, plan, frame)
-    if not metrics:
-        return None
-    aggregation = _step_aggregation(step)
-    if not aggregation:
+    frame = _apply_step_filters(frame, step)
+    metric_specs = _step_metric_specs(step, plan, frame)
+    if not metric_specs:
         return None
     group_by = _available_columns(frame, step.get("group_by"))
     work = frame.copy()
-    if aggregation in {"sum", "mean", "max", "min"}:
-        for metric in metrics:
-            work[metric] = pd.to_numeric(work[metric], errors="coerce")
-        if aggregation == "sum":
-            work[metrics] = work[metrics].fillna(0)
+    for spec in metric_specs:
+        if spec["aggregation"] in {"sum", "mean", "max", "min"}:
+            work[spec["source_column"]] = pd.to_numeric(work[spec["source_column"]], errors="coerce")
+            if spec["aggregation"] == "sum":
+                work[spec["source_column"]] = work[spec["source_column"]].fillna(0)
     if group_by:
-        result = work.groupby(group_by, dropna=False, as_index=False)[metrics].agg(aggregation)
+        result: pd.DataFrame | None = None
+        for spec in metric_specs:
+            piece = (
+                work.groupby(group_by, dropna=False)[spec["source_column"]]
+                .agg(spec["aggregation"])
+                .reset_index(name=spec["output_column"])
+            )
+            result = piece if result is None else result.merge(piece, on=group_by, how="outer")
+        if result is None:
+            return None
     else:
-        result = pd.DataFrame([{metric: _aggregate_series(work[metric], aggregation) for metric in metrics}])
-    result = _apply_metric_output_aliases(result, step, metrics, group_by)
+        result = pd.DataFrame(
+            [
+                {
+                    spec["output_column"]: _aggregate_series(work[spec["source_column"]], spec["aggregation"])
+                    for spec in metric_specs
+                }
+            ]
+        )
     result = _apply_step_renames(result, step)
     return _select_step_columns(result, _step_output_columns(step))
 
@@ -802,15 +775,14 @@ def _fallback_step_unique_count(
     runtime_sources: dict[str, Any],
     frames_by_step: dict[str, pd.DataFrame],
 ) -> pd.DataFrame | None:
-    frame = _frame_for_step_source(step, runtime_sources, plan)
+    frame = _frame_for_step_source(step, runtime_sources, plan, frames_by_step)
     if frame is None:
         return None
     frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
+    frame = _apply_step_filters(frame, step)
     count_column = str(step.get("count_column") or "").strip()
     if not count_column:
-        operation = str(step.get("operation") or "").strip()
-        candidates = ["LOT_ID"] if operation == "lot_count_by_process" else ["EQPID", "EQP_ID"]
-        count_column = next((column for column in candidates if column in frame.columns), "")
+        count_column = next((column for column in ["EQPID", "EQP_ID", "LOT_ID"] if column in frame.columns), "")
     if not count_column or count_column not in frame.columns:
         return None
     group_by = _available_columns(frame, step.get("group_by") or step.get("group_by_columns"))
@@ -828,47 +800,19 @@ def _fallback_step_detail_rows(
     runtime_sources: dict[str, Any],
     frames_by_step: dict[str, pd.DataFrame],
 ) -> pd.DataFrame | None:
-    frame = _frame_for_step_source(step, runtime_sources, plan)
+    frame = _frame_for_step_source(step, runtime_sources, plan, frames_by_step)
     if frame is None:
         return None
     frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
+    frame = _apply_step_filters(frame, step)
     output_columns = _step_output_columns(step)
     if not output_columns:
         output_columns = _column_names_from_output_specs(step.get("columns", []) if isinstance(step.get("columns"), list) else [])
+    if not output_columns:
+        output_columns = _column_names_from_output_specs(
+            step.get("required_columns", []) if isinstance(step.get("required_columns"), list) else []
+        )
     return _select_step_columns(frame.drop_duplicates().reset_index(drop=True), output_columns)
-
-
-def _fallback_step_hold_lot_in_tat(
-    step: dict[str, Any],
-    plan: dict[str, Any],
-    runtime_sources: dict[str, Any],
-    frames_by_step: dict[str, pd.DataFrame],
-) -> pd.DataFrame | None:
-    frame = _frame_for_step_source(step, runtime_sources, plan)
-    if frame is None:
-        return None
-    frame = _filter_frame_from_previous_step(frame, step, frames_by_step)
-    group_by = _available_columns(frame, step.get("group_by"))
-    if not group_by:
-        return None
-    count_column = str(step.get("count_column") or "LOT_ID").strip()
-    tat_column = str(step.get("tat_column") or "IN_TAT").strip()
-    status_column = str(step.get("hold_status_column") or "LOT_HOLD_STAT_CD").strip()
-    if count_column not in frame.columns or tat_column not in frame.columns:
-        return None
-    work = frame.copy()
-    work[tat_column] = pd.to_numeric(work[tat_column], errors="coerce")
-    base = work[group_by].drop_duplicates()
-    if status_column in work.columns:
-        status = work[status_column].astype(str).str.upper().str.replace(" ", "", regex=False)
-        hold_mask = status.isin({"HOLD", "ONHOLD", "Y", "YES", "TRUE"})
-    else:
-        hold_mask = pd.Series(False, index=work.index)
-    hold_counts = work[hold_mask].groupby(group_by, dropna=False)[count_column].nunique().reset_index(name="HOLD_LOT_COUNT")
-    avg_in_tat = work.groupby(group_by, dropna=False)[tat_column].mean().reset_index(name="AVG_IN_TAT")
-    result = base.merge(hold_counts, on=group_by, how="left").merge(avg_in_tat, on=group_by, how="left")
-    result["HOLD_LOT_COUNT"] = result["HOLD_LOT_COUNT"].fillna(0).astype(int)
-    return _select_step_columns(result, _step_output_columns(step))
 
 
 def _fallback_step_left_join(step: dict[str, Any], frames_by_step: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
@@ -893,7 +837,16 @@ def _fallback_step_left_join(step: dict[str, Any], frames_by_step: dict[str, pd.
     return _select_step_columns(result, _step_output_columns(step))
 
 
-def _frame_for_step_source(step: dict[str, Any], runtime_sources: dict[str, Any], plan: dict[str, Any]) -> pd.DataFrame | None:
+def _frame_for_step_source(
+    step: dict[str, Any],
+    runtime_sources: dict[str, Any],
+    plan: dict[str, Any],
+    frames_by_step: dict[str, pd.DataFrame] | None = None,
+) -> pd.DataFrame | None:
+    frames = frames_by_step or {}
+    input_step_id = str(step.get("input_step_id") or step.get("source_step_id") or step.get("source_data_step_id") or "").strip()
+    if input_step_id and input_step_id in frames:
+        return frames[input_step_id].copy()
     alias = str(step.get("source_alias") or "").strip()
     if alias and alias in runtime_sources:
         rows = runtime_sources.get(alias)
@@ -915,15 +868,64 @@ def _filter_frame_from_previous_step(
         previous = next(reversed(frames_by_step.values()))
     else:
         previous = frames_by_step[previous_step_id]
-    join_keys = _step_join_keys(step, frame, previous)
-    if not join_keys:
+    join_pairs = _step_join_key_pairs(step, frame, previous)
+    if not join_pairs:
         default_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP"]
-        join_keys = [column for column in default_keys if column in frame.columns and column in previous.columns]
-    if not join_keys:
+        join_pairs = [(column, column) for column in default_keys if column in frame.columns and column in previous.columns]
+    if not join_pairs:
         return frame
-    right_columns = join_keys + [column for column in previous.columns if column not in frame.columns]
+    left_on = [pair[0] for pair in join_pairs]
+    right_on = [pair[1] for pair in join_pairs]
+    right_columns = _unique_columns([*right_on, *[column for column in previous.columns if column not in frame.columns]])
     selected = previous[right_columns].drop_duplicates()
-    return frame.merge(selected, on=join_keys, how="inner")
+    if left_on == right_on:
+        return frame.merge(selected, on=left_on, how="inner")
+    return frame.merge(selected, left_on=left_on, right_on=right_on, how="inner")
+
+
+def _apply_step_filters(frame: pd.DataFrame, step: dict[str, Any]) -> pd.DataFrame:
+    filters = step.get("filters")
+    if frame.empty or not filters:
+        return frame
+    conditions: list[dict[str, Any]] = []
+    if isinstance(filters, list):
+        conditions = [item for item in filters if isinstance(item, dict)]
+    elif isinstance(filters, dict):
+        for field, condition in filters.items():
+            if isinstance(condition, dict):
+                next_condition = {"field": field, **condition}
+            else:
+                next_condition = {"field": field, "op": "eq", "value": condition}
+            conditions.append(next_condition)
+    result = frame.copy()
+    for condition in conditions:
+        field = str(condition.get("field") or "").strip()
+        if not field or field not in result.columns:
+            continue
+        series = result[field]
+        if condition.get("exists") is True or str(condition.get("op") or "").lower() in {"exists", "not_empty"}:
+            result = result[series.notna() & (series.astype(str).str.strip() != "")]
+            series = result[field]
+        values = condition.get("values")
+        if values is None and "value" in condition:
+            values = [condition.get("value")]
+        if values is None and "not_in" in condition:
+            values = condition.get("not_in")
+            normalized_values = {_normalize_compare_value(value) for value in (values if isinstance(values, list) else [values])}
+            result = result[~series.map(_normalize_compare_value).isin(normalized_values)]
+            continue
+        if values is None:
+            continue
+        value_list = values if isinstance(values, list) else [values]
+        normalized_values = {_normalize_compare_value(value) for value in value_list}
+        op = str(condition.get("op") or "eq").lower()
+        if op in {"eq", "="}:
+            result = result[series.map(_normalize_compare_value).isin(normalized_values)]
+        elif op in {"ne", "!=", "not_in"}:
+            result = result[~series.map(_normalize_compare_value).isin(normalized_values)]
+        elif op == "in":
+            result = result[series.map(_normalize_compare_value).isin(normalized_values)]
+    return result
 
 
 def _apply_source_filters_for_alias(frame: pd.DataFrame, alias: str, plan: dict[str, Any]) -> pd.DataFrame:
@@ -1088,8 +1090,48 @@ def _step_metric_columns(step: dict[str, Any], plan: dict[str, Any], frame: pd.D
     return _unique_columns([str(column) for column in candidates if str(column) in frame.columns])
 
 
+def _step_metric_specs(step: dict[str, Any], plan: dict[str, Any], frame: pd.DataFrame) -> list[dict[str, str]]:
+    specs: list[dict[str, str]] = []
+    raw_metrics = step.get("metrics") if isinstance(step.get("metrics"), list) else []
+    for metric in raw_metrics:
+        if isinstance(metric, dict):
+            source_column = str(
+                metric.get("quantity_column")
+                or metric.get("source_column")
+                or metric.get("column")
+                or metric.get("metric")
+                or ""
+            ).strip()
+            aggregation = _normalize_aggregation(metric.get("aggregation") or metric.get("agg") or step.get("aggregation"))
+            output_column = str(metric.get("output_column") or metric.get("name") or source_column).strip()
+        else:
+            source_column = str(metric or "").strip()
+            aggregation = _step_aggregation(step)
+            output_column = source_column
+        if source_column and source_column in frame.columns and aggregation:
+            specs.append(
+                {
+                    "source_column": source_column,
+                    "aggregation": aggregation,
+                    "output_column": output_column or source_column,
+                }
+            )
+    if specs:
+        return specs
+    aggregation = _step_aggregation(step)
+    return [
+        {"source_column": column, "aggregation": aggregation, "output_column": column}
+        for column in _step_metric_columns(step, plan, frame)
+        if aggregation
+    ]
+
+
 def _step_aggregation(step: dict[str, Any]) -> str:
-    raw_value = str(step.get("aggregation") or step.get("agg") or step.get("agg_func") or "sum").strip().lower()
+    return _normalize_aggregation(step.get("aggregation") or step.get("agg") or step.get("agg_func") or "sum")
+
+
+def _normalize_aggregation(value: Any) -> str:
+    raw_value = str(value or "sum").strip().lower()
     aliases = {
         "avg": "mean",
         "average": "mean",
@@ -1235,362 +1277,6 @@ def _frames_equal_on_fallback_columns(result_df: pd.DataFrame, fallback_df: pd.D
     return _json_ready(left.to_dict(orient="records")) == _json_ready(right.to_dict(orient="records"))
 
 
-def _fallback_rank_wip_then_join_production(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> pd.DataFrame | None:
-    rank_groups = _rank_groups_for_plan(plan)
-    if not rank_groups:
-        return None
-    wip_alias = _source_alias_for_dataset(plan, runtime_sources, "wip")
-    production_alias = _source_alias_for_dataset(plan, runtime_sources, "production")
-    if not wip_alias or not production_alias:
-        return None
-    wip_rows = runtime_sources.get(wip_alias)
-    production_rows = runtime_sources.get(production_alias)
-    if not isinstance(wip_rows, list) or not isinstance(production_rows, list):
-        return None
-
-    wip_df = _source_dataframe(wip_rows, [], str(plan.get("analysis_kind") or ""))
-    production_df = _source_dataframe(production_rows, [], str(plan.get("analysis_kind") or ""))
-    wip_df = _standardize_source_frame_for_alias(wip_df, wip_alias, plan)
-    production_df = _standardize_source_frame_for_alias(production_df, production_alias, plan)
-    wip_df = _apply_source_filters_for_alias(wip_df, wip_alias, plan)
-    production_df = _apply_source_filters_for_alias(production_df, production_alias, plan)
-    if wip_df.empty or "WIP" not in wip_df.columns:
-        return pd.DataFrame(columns=_preferred_columns(plan))
-
-    wip_df = _assign_rank_group(wip_df, rank_groups)
-    if "RANK_GROUP" not in wip_df.columns:
-        return None
-    wip_df = wip_df[wip_df["RANK_GROUP"].notna() & (wip_df["RANK_GROUP"].astype(str) != "")]
-    if wip_df.empty:
-        return pd.DataFrame(columns=_preferred_columns(plan))
-
-    product_keys = _rank_join_product_keys(plan, wip_df, production_df)
-    if not product_keys:
-        return None
-    rank_step = _rank_step_for_plan(plan)
-    top_n = _top_n_for_step(rank_step, plan)
-    ascending = str(rank_step.get("rank_order") or plan.get("rank_order") or "desc").lower() in {"asc", "ascending"}
-
-    wip_work = wip_df.copy()
-    wip_work["WIP"] = pd.to_numeric(wip_work["WIP"], errors="coerce").fillna(0)
-    ranked = (
-        wip_work.groupby(["RANK_GROUP", *product_keys], dropna=False, as_index=False)["WIP"]
-        .sum()
-        .sort_values(["RANK_GROUP", "WIP"], ascending=[True, ascending])
-    )
-    ranked["WIP_RANK"] = ranked.groupby("RANK_GROUP")["WIP"].rank(method="first", ascending=ascending).astype(int)
-    ranked = ranked[ranked["WIP_RANK"] <= top_n]
-    if ranked.empty:
-        return pd.DataFrame(columns=["RANK_GROUP", "WIP_RANK", *product_keys, "WIP", "PRODUCTION"])
-
-    if production_df.empty or "PRODUCTION" not in production_df.columns:
-        ranked["PRODUCTION"] = 0
-    else:
-        production_work = _assign_rank_group(production_df.copy(), rank_groups)
-        if "RANK_GROUP" in production_work.columns:
-            production_work = production_work[
-                production_work["RANK_GROUP"].notna() & (production_work["RANK_GROUP"].astype(str) != "")
-            ]
-            production_keys = ["RANK_GROUP", *product_keys]
-        else:
-            production_keys = product_keys
-        production_work["PRODUCTION"] = pd.to_numeric(production_work["PRODUCTION"], errors="coerce").fillna(0)
-        product_scope = ranked[["RANK_GROUP", *product_keys]].drop_duplicates()
-        merge_keys = [key for key in production_keys if key in production_work.columns and key in product_scope.columns]
-        if merge_keys:
-            production_work = production_work.merge(product_scope[merge_keys].drop_duplicates(), on=merge_keys, how="inner")
-        production_sum = (
-            production_work.groupby(production_keys, dropna=False, as_index=False)["PRODUCTION"].sum()
-            if production_keys
-            else pd.DataFrame([{"PRODUCTION": production_work["PRODUCTION"].sum()}])
-        )
-        join_keys = [key for key in ["RANK_GROUP", *product_keys] if key in ranked.columns and key in production_sum.columns]
-        ranked = ranked.merge(production_sum, on=join_keys, how="left") if join_keys else ranked
-        if "PRODUCTION" not in ranked.columns:
-            ranked["PRODUCTION"] = 0
-        ranked["PRODUCTION"] = pd.to_numeric(ranked["PRODUCTION"], errors="coerce").fillna(0)
-
-    ranked["WIP_RANK"] = ranked["WIP_RANK"].astype(int)
-    ranked = ranked.sort_values(["RANK_GROUP", "WIP_RANK"], ascending=[True, True])
-    columns = ["RANK_GROUP", "WIP_RANK", *product_keys, "WIP", "PRODUCTION"]
-    return ranked[columns]
-
-
-def _rank_groups_for_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
-    candidates: list[Any] = []
-    if isinstance(plan.get("rank_groups"), list):
-        candidates.extend(plan["rank_groups"])
-    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
-        if isinstance(step, dict) and isinstance(step.get("rank_groups"), list):
-            candidates.extend(step["rank_groups"])
-    result: list[dict[str, Any]] = []
-    for item in candidates:
-        if not isinstance(item, dict):
-            continue
-        label = str(item.get("label") or "").strip()
-        field = str(item.get("field") or "OPER_NAME").strip()
-        values = [str(value or "").strip() for value in item.get("values", []) if str(value or "").strip()]
-        if label and field and values:
-            result.append({"label": label, "field": field, "values": values})
-    return result
-
-
-def _assign_rank_group(frame: pd.DataFrame, rank_groups: list[dict[str, Any]]) -> pd.DataFrame:
-    result = frame.copy()
-    if result.empty or not rank_groups:
-        return result
-    result["RANK_GROUP"] = None
-    for group in rank_groups:
-        field = str(group.get("field") or "").strip()
-        if field not in result.columns:
-            continue
-        values = {str(value or "").strip().upper() for value in group.get("values", []) if str(value or "").strip()}
-        if not values:
-            continue
-        mask = result[field].astype(str).str.strip().str.upper().isin(values)
-        result.loc[mask, "RANK_GROUP"] = str(group.get("label") or "").strip()
-    return result
-
-
-def _rank_join_product_keys(plan: dict[str, Any], wip_df: pd.DataFrame, production_df: pd.DataFrame) -> list[str]:
-    plan_keys = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
-    process_columns = {"OPER_NAME", "OPER_SHORT_DESC", "OPER_ID", "OPER_DESC", "OPER_NUM"}
-    candidates = [
-        str(column)
-        for column in plan_keys
-        if str(column or "").strip() and str(column) not in process_columns and str(column) in wip_df.columns
-    ]
-    shared = [column for column in candidates if production_df.empty or column in production_df.columns]
-    if shared:
-        return shared
-    default_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP"]
-    return [column for column in default_keys if column in wip_df.columns and (production_df.empty or column in production_df.columns)]
-
-
-def _rank_step_for_plan(plan: dict[str, Any]) -> dict[str, Any]:
-    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
-        if not isinstance(step, dict):
-            continue
-        operation = str(step.get("operation") or "")
-        metric = str(step.get("metric") or "").upper()
-        if operation in {"rank_top_n", "rank_bottom_n", "rank_top_n_per_filter_group"} or metric == "WIP":
-            return step
-    return {}
-
-
-def _fallback_top_wip_process_hold_lot_in_tat(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> pd.DataFrame:
-    wip_alias = _source_alias_for_dataset(plan, runtime_sources, "wip")
-    lot_alias = _source_alias_for_dataset(plan, runtime_sources, "lot")
-    wip_rows = runtime_sources.get(wip_alias) if wip_alias else None
-    lot_rows = runtime_sources.get(lot_alias) if lot_alias else None
-    if not isinstance(wip_rows, list) or not isinstance(lot_rows, list):
-        return pd.DataFrame()
-
-    wip_df = _source_dataframe(wip_rows, [], str(plan.get("analysis_kind") or ""))
-    lot_df = _source_dataframe(lot_rows, [], str(plan.get("analysis_kind") or ""))
-    wip_df = _standardize_source_frame_for_alias(wip_df, wip_alias, plan)
-    lot_df = _standardize_source_frame_for_alias(lot_df, lot_alias, plan)
-    wip_df = _apply_source_filters_for_alias(wip_df, wip_alias, plan)
-    lot_df = _apply_source_filters_for_alias(lot_df, lot_alias, plan)
-    if wip_df.empty or "WIP" not in wip_df.columns:
-        return pd.DataFrame()
-
-    wip_process_column = _process_column(wip_df)
-    if not wip_process_column:
-        return pd.DataFrame()
-
-    top_n = _top_n_for_process_plan(plan)
-    wip_work = wip_df.copy()
-    wip_work["OPER_SHORT_DESC"] = wip_work[wip_process_column].astype(str)
-    wip_work["WIP"] = pd.to_numeric(wip_work["WIP"], errors="coerce").fillna(0)
-    ranked = (
-        wip_work.groupby("OPER_SHORT_DESC", dropna=False, as_index=False)["WIP"]
-        .sum()
-        .sort_values("WIP", ascending=False)
-        .head(top_n)
-    )
-    if ranked.empty:
-        return pd.DataFrame(columns=["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"])
-
-    if lot_df.empty:
-        ranked["HOLD_LOT_COUNT"] = 0
-        ranked["AVG_IN_TAT"] = None
-        return ranked[["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]]
-
-    lot_process_column = _process_column(lot_df)
-    if not lot_process_column:
-        ranked["HOLD_LOT_COUNT"] = 0
-        ranked["AVG_IN_TAT"] = None
-        return ranked[["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]]
-
-    selected_processes = set(ranked["OPER_SHORT_DESC"].astype(str))
-    lot_work = lot_df.copy()
-    lot_work["OPER_SHORT_DESC"] = lot_work[lot_process_column].astype(str)
-    lot_work = lot_work[lot_work["OPER_SHORT_DESC"].isin(selected_processes)].copy()
-    if lot_work.empty:
-        ranked["HOLD_LOT_COUNT"] = 0
-        ranked["AVG_IN_TAT"] = None
-        return ranked[["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]]
-
-    lot_work["IN_TAT"] = pd.to_numeric(lot_work["IN_TAT"], errors="coerce") if "IN_TAT" in lot_work.columns else None
-    status = lot_work["LOT_HOLD_STAT_CD"].astype(str).str.upper().str.replace(" ", "", regex=False) if "LOT_HOLD_STAT_CD" in lot_work.columns else pd.Series("", index=lot_work.index)
-    hold_mask = status.isin({"HOLD", "ONHOLD", "Y", "YES", "TRUE"})
-    lot_id_column = "LOT_ID" if "LOT_ID" in lot_work.columns else ""
-    if lot_id_column:
-        hold_counts = lot_work[hold_mask].groupby("OPER_SHORT_DESC")[lot_id_column].nunique()
-    else:
-        hold_counts = lot_work[hold_mask].groupby("OPER_SHORT_DESC").size()
-    avg_in_tat = lot_work.groupby("OPER_SHORT_DESC")["IN_TAT"].mean() if "IN_TAT" in lot_work.columns else pd.Series(dtype="float64")
-    metrics = pd.DataFrame({"OPER_SHORT_DESC": list(selected_processes)})
-    metrics["HOLD_LOT_COUNT"] = metrics["OPER_SHORT_DESC"].map(hold_counts).fillna(0).astype(int)
-    metrics["AVG_IN_TAT"] = metrics["OPER_SHORT_DESC"].map(avg_in_tat)
-
-    result = ranked.merge(metrics, on="OPER_SHORT_DESC", how="left")
-    result["HOLD_LOT_COUNT"] = result["HOLD_LOT_COUNT"].fillna(0).astype(int)
-    return result[["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]]
-
-
-def _process_column(frame: pd.DataFrame) -> str:
-    for column in ["OPER_SHORT_DESC", "OPER_NAME", "OPER_ID"]:
-        if column in frame.columns:
-            return column
-    return ""
-
-
-def _top_n_for_process_plan(plan: dict[str, Any]) -> int:
-    if isinstance(plan.get("top_n"), int) and plan["top_n"] > 0:
-        return int(plan["top_n"])
-    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
-        if not isinstance(step, dict):
-            continue
-        value = step.get("top_n")
-        if isinstance(value, int) and value > 0:
-            return value
-        if isinstance(value, str) and value.isdigit() and int(value) > 0:
-            return int(value)
-    return 3
-
-
-def _fallback_top_wip_product_oldest_lot(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> pd.DataFrame:
-    wip_alias = _source_alias_for_dataset(plan, runtime_sources, "wip")
-    lot_alias = _source_alias_for_dataset(plan, runtime_sources, "lot")
-    wip_rows = runtime_sources.get(wip_alias) if wip_alias else None
-    lot_rows = runtime_sources.get(lot_alias) if lot_alias else None
-    if not isinstance(wip_rows, list) or not isinstance(lot_rows, list):
-        return pd.DataFrame()
-    wip_df = _source_dataframe(wip_rows, [], str(plan.get("analysis_kind") or ""))
-    lot_df = _source_dataframe(lot_rows, [], str(plan.get("analysis_kind") or ""))
-    wip_df = _standardize_source_frame_for_alias(wip_df, wip_alias, plan)
-    lot_df = _standardize_source_frame_for_alias(lot_df, lot_alias, plan)
-    wip_df = _apply_source_filters_for_alias(wip_df, wip_alias, plan)
-    lot_df = _apply_source_filters_for_alias(lot_df, lot_alias, plan)
-    if wip_df.empty or lot_df.empty or "WIP" not in wip_df.columns or "IN_TAT" not in lot_df.columns or "LOT_ID" not in lot_df.columns:
-        return pd.DataFrame()
-
-    product_keys = _shared_product_keys(plan, wip_df, lot_df)
-    if not product_keys:
-        return pd.DataFrame()
-
-    wip_work = wip_df.copy()
-    wip_work["WIP"] = pd.to_numeric(wip_work["WIP"], errors="coerce").fillna(0)
-    top_product = (
-        wip_work.groupby(product_keys, dropna=False, as_index=False)["WIP"]
-        .sum()
-        .sort_values("WIP", ascending=False)
-        .head(1)
-    )
-    if top_product.empty:
-        return pd.DataFrame()
-
-    lot_work = lot_df.copy()
-    mask = pd.Series(True, index=lot_work.index)
-    top_row = top_product.iloc[0]
-    for column in product_keys:
-        mask = mask & (lot_work[column].astype(str) == str(top_row[column]))
-    lot_work = lot_work[mask].copy()
-    if lot_work.empty:
-        return pd.DataFrame(columns=[*product_keys, "WIP", "LOT_ID", "IN_TAT"])
-    lot_work["IN_TAT"] = pd.to_numeric(lot_work["IN_TAT"], errors="coerce")
-    lot_work = lot_work.sort_values("IN_TAT", ascending=False).head(1)
-    lot_work["WIP"] = top_row["WIP"]
-    for column in product_keys:
-        lot_work[column] = top_row[column]
-    return lot_work[[*product_keys, "WIP", "LOT_ID", "IN_TAT"]]
-
-
-def _source_alias_for_dataset(plan: dict[str, Any], runtime_sources: dict[str, Any], token: str) -> str:
-    for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
-        if not isinstance(job, dict):
-            continue
-        text = " ".join(str(job.get(key) or "") for key in ("dataset_key", "source_alias", "purpose")).lower()
-        if token in text:
-            alias = str(job.get("source_alias") or job.get("dataset_key") or "")
-            if alias in runtime_sources:
-                return alias
-    for alias in runtime_sources:
-        if token in str(alias).lower():
-            return str(alias)
-    return ""
-
-
-def _shared_product_keys(plan: dict[str, Any], wip_df: pd.DataFrame, lot_df: pd.DataFrame) -> list[str]:
-    plan_keys = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
-    candidates = [str(column) for column in plan_keys if str(column) in wip_df.columns and str(column) in lot_df.columns]
-    if candidates:
-        return candidates
-    default_keys = ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO", "TSV_DIE_TYP"]
-    return [column for column in default_keys if column in wip_df.columns and column in lot_df.columns]
-
-
-def _is_top_wip_product_oldest_lot_plan(plan: dict[str, Any]) -> bool:
-    kind = str(plan.get("analysis_kind") or "").lower()
-    recipe = str(plan.get("matched_analysis_recipe") or "").lower()
-    if kind == "top_wip_process_hold_lot_in_tat":
-        return False
-    if kind in {
-        "top_wip_product_oldest_lot",
-        "wip_top_product_oldest_lot",
-        "top_wip_product_lot_in_tat",
-        "oldest_lot_for_top_wip_product",
-    } or recipe in {
-        "top_wip_product_oldest_lot",
-        "wip_top_product_oldest_lot",
-        "top_wip_product_lot_in_tat",
-        "oldest_lot_for_top_wip_product",
-    }:
-        return True
-    return _step_plan_has_operations(plan, {"rank_top_n"}) and _step_plan_mentions(plan, {"IN_TAT", "WIP"})
-
-
-def _is_top_wip_process_hold_lot_in_tat_plan(plan: dict[str, Any]) -> bool:
-    kind = str(plan.get("analysis_kind") or "").lower()
-    recipe = str(plan.get("matched_analysis_recipe") or "").lower()
-    if kind == "top_wip_process_hold_lot_in_tat" or recipe == "top_wip_process_hold_lot_in_tat":
-        return True
-    return _step_plan_has_operations(plan, {"hold_lot_in_tat_by_process"})
-
-
-def _step_plan_has_operations(plan: dict[str, Any], operations: set[str]) -> bool:
-    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
-    for step in steps:
-        if not isinstance(step, dict):
-            continue
-        operation = str(step.get("operation") or "").strip()
-        if operation in operations:
-            return True
-    return False
-
-
-def _step_plan_mentions(plan: dict[str, Any], tokens: set[str]) -> bool:
-    step_text = json.dumps(plan.get("step_plan") or [], ensure_ascii=False).upper()
-    return all(token.upper() in step_text for token in tokens)
-
-
-def _job_text_contains(job: dict[str, Any], token: str) -> bool:
-    text = " ".join(str(job.get(key) or "") for key in ("dataset_key", "source_alias", "purpose")).lower()
-    return token in text
-
-
 def _primary_source_alias(plan: dict[str, Any], runtime_sources: dict[str, Any]) -> str:
     for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
         if isinstance(step, dict) and step.get("source_alias") in runtime_sources:
@@ -1673,22 +1359,21 @@ def _product_key_values(rows: list[dict[str, Any]], product_key_columns: list[st
 
 
 def _preferred_columns(plan: dict[str, Any]) -> list[str]:
+    if isinstance(plan.get("analysis_output_columns"), list):
+        explicit = _column_names_from_output_specs(plan["analysis_output_columns"])
+        if explicit:
+            return explicit
+    final_step_columns = _final_step_output_columns(plan)
+    if final_step_columns:
+        return final_step_columns
     product_keys = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
     kind = plan.get("analysis_kind")
-    if kind == "rank_wip_then_join_production":
-        return ["RANK_GROUP", "WIP_RANK", *product_keys, "WIP", "PRODUCTION"]
     if kind == "aggregate_join":
         return [*product_keys, "PRODUCTION", "WIP"]
     if kind == "production_wip_target_rate":
         return [*product_keys, "WIP", "PRODUCTION", "OUT_PLAN", "ACHIEVEMENT_RATE"]
     if kind == "low_output_vs_target":
         return [*product_keys, "PRODUCTION", "TARGET_QTY", "ACHIEVEMENT_RATE", "BALANCE", "LOW_OUTPUT_FLAG"]
-    if kind == "lot_count_by_process":
-        return ["OPER_SHORT_DESC", "LOT_COUNT"]
-    if kind == "top_wip_process_hold_lot_in_tat":
-        return ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
-    if kind == "lot_quantity_summary":
-        return ["LOT_COUNT", "WF_QTY", "DIE_QTY"]
     if kind == "aggregate_wip_total":
         return ["SCOPE", "WIP"]
     if kind == "overall_production_wip_target":
@@ -1697,10 +1382,6 @@ def _preferred_columns(plan: dict[str, Any]) -> list[str]:
         return [*product_keys, "PRODUCTION", "OUT_PLAN", "BALANCE"]
     if kind == "equipment_by_model":
         return ["EQP_MODEL", "EQP_COUNT", "PRESS_CNT"]
-    if kind == "equipment_count_for_previous_products":
-        return [*product_keys, "EQP_COUNT"]
-    if _is_top_wip_product_oldest_lot_plan(plan):
-        return [*product_keys, "WIP", "LOT_ID", "IN_TAT"]
     return []
 
 

@@ -128,7 +128,7 @@ def test_pandas_executor_datetime_import_error_guides_repair() -> None:
     assert "Use pd.to_datetime and pandas string/date operations instead of importing datetime." in result["analysis"]["errors"]
 
 
-def test_pandas_executor_normalizes_lot_process_column_alias() -> None:
+def test_pandas_executor_keeps_process_columns_without_recipe_specific_aliasing() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
         "intent_plan": {"analysis_kind": "lot_count_by_process"},
@@ -144,11 +144,47 @@ def test_pandas_executor_normalizes_lot_process_column_alias() -> None:
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
     assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["columns"] == ["OPER_SHORT_DESC", "LOT_COUNT"]
-    assert result["analysis"]["rows"][0]["OPER_SHORT_DESC"] == "D/A1"
+    assert result["analysis"]["columns"] == ["OPER_NAME", "LOT_COUNT"]
+    assert result["analysis"]["rows"][0]["OPER_NAME"] == "D/A1"
 
 
-def test_pandas_executor_replaces_incomplete_top_wip_process_lot_metrics_result() -> None:
+def test_pandas_executor_normalizes_metric_prefixed_production_quantity_column() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "metric": "PRODUCTION",
+            "analysis_output_columns": ["HBM_PRODUCTION_QTY"],
+        },
+        "state": {},
+        "runtime_sources": {},
+    }
+    pandas_llm_json = {
+        "code": "result_df = pd.DataFrame([{'HBM_PRODUCTION_QTY': 100, 'PRODUCT_GROUP': 'HBM'}])",
+        "output_columns": ["HBM_PRODUCTION_QTY", "PRODUCT_GROUP"],
+        "reasoning_steps": [],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert "PRODUCTION" in result["analysis"]["columns"]
+    assert "HBM_PRODUCTION_QTY" not in result["analysis"]["columns"]
+    assert result["analysis"]["rows"][0]["PRODUCTION"] == 100
+
+    total_alias_json = {
+        "code": "result_df = pd.DataFrame([{'TOTAL_PRODUCTION_PERFORMANCE': 120}])",
+        "output_columns": ["TOTAL_PRODUCTION_PERFORMANCE"],
+        "reasoning_steps": [],
+    }
+    alias_result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(total_alias_json, ensure_ascii=False))
+
+    assert alias_result["analysis"]["status"] == "ok"
+    assert alias_result["analysis"]["columns"] == ["PRODUCTION"]
+    assert alias_result["analysis"]["rows"][0]["PRODUCTION"] == 120
+
+
+def test_pandas_executor_keeps_incomplete_success_result_for_prompt_repair_visibility() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
         "intent_plan": {
@@ -160,8 +196,37 @@ def test_pandas_executor_replaces_incomplete_top_wip_process_lot_metrics_result(
                 {"dataset_key": "lot_status", "source_alias": "lot_status_data"},
             ],
             "step_plan": [
-                {"operation": "rank_top_n", "source_alias": "wip_data", "metric": "WIP", "group_by": ["OPER_NAME"], "top_n": 3},
-                {"operation": "hold_lot_in_tat_by_process", "source_alias": "lot_status_data"},
+                {
+                    "step_id": "rank_top_wip_process",
+                    "operation": "rank_top_n",
+                    "source_alias": "wip_data",
+                    "metric": "WIP",
+                    "group_by": ["OPER_NAME"],
+                    "top_n": 3,
+                    "output_columns": ["OPER_NAME", "WIP"],
+                },
+                {
+                    "step_id": "lot_metrics_by_process",
+                    "operation": "aggregate_by_group",
+                    "source_alias": "lot_status_data",
+                    "filter_from_step": "rank_top_wip_process",
+                    "join_keys": [{"left": "OPER_SHORT_DESC", "right": "OPER_NAME"}],
+                    "group_by": ["OPER_SHORT_DESC"],
+                    "filters": [{"field": "LOT_HOLD_STAT_CD", "op": "in", "values": ["HOLD", "ONHOLD"]}],
+                    "metrics": [
+                        {"quantity_column": "LOT_ID", "aggregation": "nunique", "output_column": "HOLD_LOT_COUNT"},
+                        {"quantity_column": "IN_TAT", "aggregation": "mean", "output_column": "AVG_IN_TAT"},
+                    ],
+                    "output_columns": ["OPER_SHORT_DESC", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+                },
+                {
+                    "step_id": "join_wip_and_lot_metrics",
+                    "operation": "left_join",
+                    "left_step_id": "rank_top_wip_process",
+                    "right_step_id": "lot_metrics_by_process",
+                    "join_keys": [{"left": "OPER_NAME", "right": "OPER_SHORT_DESC"}],
+                    "output_columns": ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"],
+                },
             ],
         },
         "state": {},
@@ -196,13 +261,14 @@ def test_pandas_executor_replaces_incomplete_top_wip_process_lot_metrics_result(
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
     assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["columns"] == ["OPER_SHORT_DESC", "WIP", "HOLD_LOT_COUNT", "AVG_IN_TAT"]
+    assert result["analysis"]["columns"] == ["OPER_SHORT_DESC", "LOT_COUNT"]
     assert result["analysis"]["rows"] == [
-        {"OPER_SHORT_DESC": "D/A3", "WIP": 150, "HOLD_LOT_COUNT": 1, "AVG_IN_TAT": 15.0},
-        {"OPER_SHORT_DESC": "D/A1", "WIP": 100, "HOLD_LOT_COUNT": 1, "AVG_IN_TAT": 10.0},
-        {"OPER_SHORT_DESC": "D/A2", "WIP": 80, "HOLD_LOT_COUNT": 1, "AVG_IN_TAT": 30.0},
+        {"OPER_SHORT_DESC": "D/A1", "LOT_COUNT": 2},
+        {"OPER_SHORT_DESC": "D/A2", "LOT_COUNT": 2},
+        {"OPER_SHORT_DESC": "D/A3", "LOT_COUNT": 2},
     ]
-    assert "missed required plan output columns" in result["analysis"]["analysis_code"]
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "executor_fallback" not in result["analysis"]["analysis_code"]
 
 
 def test_pandas_executor_does_not_apply_specific_lot_fallback_without_recipe_or_step() -> None:
@@ -382,12 +448,25 @@ def test_pandas_executor_does_not_derive_rank_group_without_rank_groups() -> Non
     assert "RANK_GROUP" not in result["analysis"]["rows"][0]
 
 
-def test_pandas_executor_falls_back_for_lot_quantity_summary_to_frame_error() -> None:
+def test_pandas_executor_returns_error_for_lot_quantity_summary_to_frame_error() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
         "intent_plan": {
             "analysis_kind": "lot_quantity_summary",
-            "step_plan": [{"source_alias": "lot_data"}],
+            "analysis_output_columns": ["LOT_COUNT", "WF_QTY", "DIE_QTY"],
+            "step_plan": [
+                {
+                    "step_id": "summarize_lot_quantities",
+                    "operation": "aggregate_by_group",
+                    "source_alias": "lot_data",
+                    "metrics": [
+                        {"quantity_column": "LOT_ID", "aggregation": "nunique", "output_column": "LOT_COUNT"},
+                        {"quantity_column": "WF_QTY", "aggregation": "sum", "output_column": "WF_QTY"},
+                        {"quantity_column": "SUB_PROD_QTY", "aggregation": "sum", "output_column": "DIE_QTY"},
+                    ],
+                    "output_columns": ["LOT_COUNT", "WF_QTY", "DIE_QTY"],
+                }
+            ],
         },
         "state": {},
         "runtime_sources": {
@@ -415,11 +494,13 @@ def test_pandas_executor_falls_back_for_lot_quantity_summary_to_frame_error() ->
 
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
-    assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["rows"][0] == {"LOT_COUNT": 2, "WF_QTY": 9, "DIE_QTY": 60}
+    assert result["analysis"]["status"] == "error"
+    assert result["analysis"]["rows"] == []
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "Generated pandas code failed" in result["analysis"]["errors"][0]
 
 
-def test_pandas_executor_falls_back_for_previous_source_aggregation() -> None:
+def test_pandas_executor_returns_error_for_previous_source_aggregation_failure() -> None:
     payload = {
         "intent_plan": {
             "analysis_kind": "aggregate_previous_source",
@@ -455,14 +536,13 @@ def test_pandas_executor_falls_back_for_previous_source_aggregation() -> None:
         pandas_executor = load_component(executor_path)
         result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
 
-        assert result["analysis"]["status"] == "ok"
-        assert result["analysis"]["rows"] == [
-            {"MODE": "LPDDR5", "DEVICE": "D1", "PRODUCTION": 25},
-            {"MODE": "LPDDR5", "DEVICE": "D2", "PRODUCTION": 20},
-        ]
+        assert result["analysis"]["status"] == "error"
+        assert result["analysis"]["rows"] == []
+        assert result["analysis"]["used_executor_fallback"] is False
+        assert "missing_previous_source_df" in result["analysis"]["errors"][0]
 
 
-def test_pandas_executor_falls_back_from_generic_aggregate_step_primitive() -> None:
+def test_pandas_executor_keeps_successful_empty_generic_aggregate_result() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
         "intent_plan": {
@@ -499,11 +579,9 @@ def test_pandas_executor_falls_back_from_generic_aggregate_step_primitive() -> N
 
     assert result["analysis"]["status"] == "ok"
     assert result["analysis"]["columns"] == ["MODE", "DEVICE", "PRODUCTION", "WIP"]
-    assert result["analysis"]["rows"] == [
-        {"MODE": "A", "DEVICE": "D1", "PRODUCTION": 15, "WIP": 5},
-        {"MODE": "B", "DEVICE": "D2", "PRODUCTION": 7, "WIP": 4},
-    ]
-    assert "executor_fallback" in result["analysis"]["analysis_code"]
+    assert result["analysis"]["rows"] == []
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "executor_fallback" not in result["analysis"]["analysis_code"]
 
 
 def test_pandas_executor_collapses_over_detailed_metric_aggregate_result() -> None:
@@ -694,7 +772,7 @@ def test_pandas_prompt_tells_llm_to_apply_retrieval_filters_in_pandas() -> None:
     assert result["source_filters"] == {"wip_data": [{"field": "OPER_NAME", "op": "in", "values": ["W/B1", "W/B2"]}]}
 
 
-def test_pandas_executor_replaces_unfiltered_rank_result_with_filtered_step_fallback() -> None:
+def test_pandas_executor_keeps_successful_unfiltered_rank_result_for_repair_visibility() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
         "intent_plan": {
@@ -739,5 +817,6 @@ def test_pandas_executor_replaces_unfiltered_rank_result_with_filtered_step_fall
     result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(unfiltered_llm_json, ensure_ascii=False))
 
     assert result["analysis"]["status"] == "ok"
-    assert result["analysis"]["rows"] == [{"MODE": "WB_PRODUCT", "WIP": 10}]
-    assert "pandas-applied source filters" in result["analysis"]["analysis_code"]
+    assert result["analysis"]["rows"] == [{"MODE": "DA_PRODUCT", "WIP": 999}]
+    assert result["analysis"]["used_executor_fallback"] is False
+    assert "executor_fallback" not in result["analysis"]["analysis_code"]

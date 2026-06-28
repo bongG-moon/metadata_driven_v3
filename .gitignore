@@ -20,6 +20,7 @@ __pycache__/
 validation_runs/
 streamlit_web*.log
 *.log
+metadata/*.before_mongodb_export_*.json
 
 .DS_Store
 Thumbs.db

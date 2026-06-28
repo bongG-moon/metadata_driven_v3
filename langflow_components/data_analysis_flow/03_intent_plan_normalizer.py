@@ -47,7 +47,6 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
         _apply_analysis_recipe(plan, recipe_key, recipe, metadata, question, request_date, notes)
     _repair_metric_grain_plan(plan, metadata, question, notes)
     _repair_quantity_term_plan(plan, metadata, question, notes)
-    _repair_product_production_wip_join_plan(plan, metadata, question, request_date, notes)
     _repair_explicit_grain_plan(plan, metadata, question, notes)
     normalized_jobs = []
     raw_jobs = plan.get("retrieval_jobs", [])
@@ -57,9 +56,6 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
             notes.append("retrieval_jobs가 없어 LLM이 지정한 datasets, 메타데이터, 요청 문맥을 기준으로 조회 작업을 보완했습니다.")
         else:
             errors.append("retrieval_jobs가 없고 LLM이 지정한 datasets도 없어 조회 작업을 보완할 수 없습니다.")
-    raw_jobs = _repair_lot_count_plan(plan, raw_jobs, catalog, question, notes)
-    raw_jobs = _repair_followup_equipment_plan(plan, raw_jobs, catalog, question, notes)
-    _repair_followup_analysis_kind(plan, raw_jobs, catalog, notes)
     raw_jobs = _normalize_pandas_function_case_intent(plan, raw_jobs, metadata, question, notes, errors)
     for index, raw_job in enumerate(raw_jobs):
         if not isinstance(raw_job, dict):
@@ -302,6 +298,8 @@ def _matching_analysis_recipe(question: str, metadata: dict[str, Any], plan: dic
     for recipe_key, recipe in recipes.items():
         if not isinstance(recipe, dict):
             continue
+        if _recipe_direction_conflicts_with_explicit_plan(recipe, plan, metadata):
+            continue
         forbidden = recipe.get("forbidden_question_cues") if isinstance(recipe.get("forbidden_question_cues"), list) else []
         if forbidden and _mentions_any(question, forbidden):
             continue
@@ -314,6 +312,67 @@ def _matching_analysis_recipe(question: str, metadata: dict[str, Any], plan: dic
             best_recipe = recipe
             best_score = score
     return (best_key, best_recipe) if best_score >= 3 else ("", {})
+
+
+def _recipe_direction_conflicts_with_explicit_plan(recipe: dict[str, Any], plan: dict[str, Any], metadata: dict[str, Any]) -> bool:
+    plan_steps = [step for step in plan.get("step_plan", []) if isinstance(step, dict)]
+    recipe_steps = [step for step in recipe.get("step_plan_template", []) if isinstance(step, dict)]
+    if not plan_steps or not recipe_steps:
+        return False
+    plan_step = _first_directional_step(plan_steps)
+    recipe_step = _first_directional_step(recipe_steps)
+    if not plan_step or not recipe_step:
+        return False
+    plan_family = _step_source_family(plan_step, plan, metadata)
+    recipe_family = str(recipe_step.get("source_family") or recipe_step.get("dataset_family") or "").strip()
+    if plan_family and recipe_family and plan_family != recipe_family:
+        return True
+    plan_metric = str(plan_step.get("metric") or "").strip().upper()
+    recipe_metric = str(recipe_step.get("metric") or "").strip().upper()
+    if plan_metric and recipe_metric and plan_metric != recipe_metric:
+        return True
+    return False
+
+
+def _first_directional_step(steps: list[dict[str, Any]]) -> dict[str, Any]:
+    for step in steps:
+        operation = str(step.get("operation") or step.get("analysis_kind") or "").strip()
+        if operation in {"rank_top_n", "rank_bottom_n", "aggregate_by_group", "aggregate_sum", "retrieve_and_aggregate"}:
+            return step
+    return steps[0] if steps else {}
+
+
+def _step_source_family(step: dict[str, Any], plan: dict[str, Any], metadata: dict[str, Any]) -> str:
+    explicit_family = str(step.get("source_family") or step.get("dataset_family") or "").strip()
+    if explicit_family:
+        return explicit_family
+    source_alias = str(step.get("source_alias") or "").strip()
+    dataset_key = ""
+    for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
+        if not isinstance(job, dict):
+            continue
+        if source_alias and source_alias == str(job.get("source_alias") or job.get("dataset_key") or "").strip():
+            dataset_key = str(job.get("dataset_key") or "").strip()
+            break
+    if not dataset_key and source_alias:
+        dataset_key = source_alias
+    catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
+    dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
+    family = str(dataset_catalog.get("dataset_family") or "").strip()
+    if family:
+        return family
+    return _metric_family_hint(str(step.get("metric") or ""))
+
+
+def _metric_family_hint(metric: str) -> str:
+    text = str(metric or "").strip().upper()
+    if text in {"WIP", "WIP_QTY", "WIP_QUANTITY"}:
+        return "wip"
+    if text in {"PRODUCTION", "PRODUCTION_QTY", "OUTPUT", "OUT_QTY"}:
+        return "production"
+    if text in {"LOT_ID", "LOT_COUNT", "IN_TAT", "HOLD_TM"}:
+        return "lot"
+    return ""
 
 
 def _recipe_match_score(
@@ -576,125 +635,6 @@ def _source_required_columns(columns: list[Any], dataset_catalog: dict[str, Any]
     return _unique(result)
 
 
-def _repair_product_production_wip_join_plan(
-    plan: dict[str, Any],
-    metadata: dict[str, Any],
-    question: str,
-    request_date: str,
-    notes: list[str],
-) -> None:
-    if not _product_production_wip_join_requested(question):
-        return
-    if plan.get("matched_analysis_recipe") and _plan_has_production_wip_contract(plan, metadata):
-        return
-    process_values = _metadata_process_values(question, metadata)
-    if not process_values:
-        return
-    catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
-    use_history = _mentions_any(question, ["어제", "전일", "yesterday", "history"]) and not _mentions_any(question, ["오늘", "현재", "금일", "today", "current"])
-    production_key = "production" if use_history and "production" in catalog else "production_today"
-    wip_key = "wip" if use_history and "wip" in catalog else "wip_today"
-    if production_key not in catalog or wip_key not in catalog:
-        return
-    date_value = _shift_date(request_date, -1) if use_history else request_date
-    product_grain = _unique(plan.get("product_grain", []))
-    if not product_grain:
-        domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
-        product_grain = _unique(domain.get("product_key_columns", []))
-    filters = [{"field": "OPER_NAME", "op": "in", "values": process_values}]
-    plan["original_analysis_kind"] = plan.get("analysis_kind")
-    plan["intent_type"] = "multi_source_analysis"
-    plan["analysis_kind"] = "aggregate_join"
-    plan["datasets"] = [production_key, wip_key]
-    plan["product_grain"] = product_grain
-    plan["requested_measures"] = [
-        {"metric": "PRODUCTION", "dataset_key": production_key, "aggregation": "sum"},
-        {"metric": "WIP", "dataset_key": wip_key, "aggregation": "sum"},
-    ]
-    plan["analysis_output_columns"] = [*product_grain, "PRODUCTION", "WIP"]
-    plan["retrieval_jobs"] = [
-        {
-            "job_id": f"job_{production_key}_product_production_wip",
-            "dataset_key": production_key,
-            "source_alias": "production_data",
-            "purpose": "제품별 생산량 집계를 위한 생산 데이터 조회",
-            "params": {"DATE": _date_param(production_key, date_value, catalog.get(production_key, {}))},
-            "filters": deepcopy(filters),
-            "required_columns": ["DATE", "OPER_NAME", *product_grain, "PRODUCTION"],
-        },
-        {
-            "job_id": f"job_{wip_key}_product_production_wip",
-            "dataset_key": wip_key,
-            "source_alias": "wip_data",
-            "purpose": "제품별 재공 집계를 위한 WIP 데이터 조회",
-            "params": {"DATE": _date_param(wip_key, date_value, catalog.get(wip_key, {}))},
-            "filters": deepcopy(filters),
-            "required_columns": ["DATE", "OPER_NAME", *product_grain, "WIP"],
-        },
-    ]
-    plan["step_plan"] = [
-        {
-            "step_id": "aggregate_production_by_product",
-            "operation": "aggregate_sum_by_group",
-            "source_alias": "production_data",
-            "group_by": product_grain,
-            "metrics": ["PRODUCTION"],
-            "aggregation": "sum",
-            "output_columns": [*product_grain, "PRODUCTION"],
-        },
-        {
-            "step_id": "aggregate_wip_by_product",
-            "operation": "aggregate_sum_by_group",
-            "source_alias": "wip_data",
-            "group_by": product_grain,
-            "metrics": ["WIP"],
-            "aggregation": "sum",
-            "output_columns": [*product_grain, "WIP"],
-        },
-        {
-            "step_id": "join_production_and_wip_by_product",
-            "operation": "left_join",
-            "left_step": "aggregate_production_by_product",
-            "right_step": "aggregate_wip_by_product",
-            "join_keys": product_grain,
-            "output_columns": [*product_grain, "PRODUCTION", "WIP"],
-        },
-    ]
-    _append_once(notes, "생산량과 재공을 제품별로 함께 묻는 공정 범위 질문을 production/wip 제품 grain 조인 계획으로 보정했습니다.")
-
-
-def _plan_has_production_wip_contract(plan: dict[str, Any], metadata: dict[str, Any]) -> bool:
-    catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
-    families: set[str] = set()
-    for dataset_key in plan.get("datasets", []) if isinstance(plan.get("datasets"), list) else []:
-        dataset_catalog = catalog.get(str(dataset_key)) if isinstance(catalog.get(str(dataset_key)), dict) else {}
-        family = str(dataset_catalog.get("dataset_family") or "").strip()
-        if family:
-            families.add(family)
-    for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
-        if not isinstance(job, dict):
-            continue
-        dataset_key = str(job.get("dataset_key") or "")
-        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
-        family = str(dataset_catalog.get("dataset_family") or "").strip()
-        if family:
-            families.add(family)
-    return {"production", "wip"}.issubset(families)
-
-
-def _product_production_wip_join_requested(question: str) -> bool:
-    text = str(question or "")
-    if not (_mentions_any(text, ["재공", "wip"]) and _mentions_any(text, ["생산", "생산량", "실적", "production"])):
-        return False
-    if not _mentions_any(text, ["제품별", "제품", "product"]):
-        return False
-    if _mentions_any(text, ["목표", "계획", "달성", "target", "plan"]):
-        return False
-    if _mentions_any(text, ["상위", "하위", "top", "rank", "랭크", "랭킹", "가장", "많은", "적은", "최대", "최소"]):
-        return False
-    return True
-
-
 def _matched_metric_terms(question: str, metadata: dict[str, Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
     domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
     metric_terms = domain.get("metric_terms") if isinstance(domain.get("metric_terms"), dict) else {}
@@ -908,7 +848,7 @@ def _apply_analysis_recipe(
     if jobs_to_add or replace_retrieval_jobs:
         plan["retrieval_jobs"] = [*existing_jobs, *jobs_to_add]
     if not detail_requested and (not plan.get("step_plan") or bool(recipe.get("override_step_plan"))):
-        steps = _recipe_step_plan(plan, recipe_key, recipe, question)
+        steps = _recipe_step_plan(plan, recipe_key, recipe, metadata, question)
         if steps:
             plan["step_plan"] = steps
     if selected or jobs_to_add:
@@ -1152,7 +1092,13 @@ def _recipe_required_columns(
     return _unique(columns)
 
 
-def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, Any], question: str) -> list[dict[str, Any]]:
+def _recipe_step_plan(
+    plan: dict[str, Any],
+    recipe_key: str,
+    recipe: dict[str, Any],
+    metadata: dict[str, Any],
+    question: str,
+) -> list[dict[str, Any]]:
     template = recipe.get("step_plan_template") if isinstance(recipe.get("step_plan_template"), list) else []
     if template:
         aliases = _recipe_source_aliases_by_family(recipe, recipe_key, plan)
@@ -1168,7 +1114,7 @@ def _recipe_step_plan(plan: dict[str, Any], recipe_key: str, recipe: dict[str, A
             if source_family and not step.get("source_alias"):
                 step["source_alias"] = str(aliases.get(source_family) or "")
             step = _expand_recipe_step_value(step, top_n, plan)
-            step = _normalize_recipe_step_template(step)
+            step = _normalize_recipe_step_template(step, metadata)
             steps.append(step)
         return steps
     if not _recipe_has_execution_contract(recipe):
@@ -1206,8 +1152,10 @@ def _recipe_source_aliases_by_family(recipe: dict[str, Any], recipe_key: str, pl
     return aliases
 
 
-def _normalize_recipe_step_template(step: dict[str, Any]) -> dict[str, Any]:
+def _normalize_recipe_step_template(step: dict[str, Any], metadata: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(step)
+    _expand_metric_term_refs(result, metadata)
+    _normalize_previous_step_refs(result)
     if not result.get("operation"):
         result["operation"] = _operation_from_recipe_analysis_kind(result)
     group_by = _recipe_step_columns(result.get("group_by")) or _recipe_step_columns(result.get("group_by_columns"))
@@ -1224,17 +1172,82 @@ def _normalize_recipe_step_template(step: dict[str, Any]) -> dict[str, Any]:
     top_n = result.get("top_n")
     if isinstance(top_n, dict):
         result["top_n"] = top_n.get("n") or top_n.get("top") or "$top_n"
+    if isinstance(result.get("post_aggregation_filters"), dict):
+        _normalize_rank_filter(result)
     sort_by = result.get("sort_by") if isinstance(result.get("sort_by"), list) else []
     if sort_by and isinstance(sort_by[0], dict):
         result.setdefault("rank_order", sort_by[0].get("order") or sort_by[0].get("direction"))
+        result.setdefault("metric", sort_by[0].get("column"))
+    order_by = result.get("order_by") if isinstance(result.get("order_by"), list) else []
+    if order_by and isinstance(order_by[0], dict):
+        result["operation"] = "rank_top_n"
+        result.setdefault("metric", order_by[0].get("column"))
+        result.setdefault("rank_order", order_by[0].get("direction") or order_by[0].get("order"))
+        result.setdefault("top_n", result.get("limit_per_group") or result.get("limit") or 1)
     if result.get("operation") == "left_join" and not result.get("join_keys"):
         result["join_keys"] = _recipe_join_keys_from_step(result)
-    if _looks_like_hold_lot_in_tat_step(result):
-        result["operation"] = "hold_lot_in_tat_by_process"
-        result.setdefault("count_column", "LOT_ID")
-        result.setdefault("tat_column", "IN_TAT")
-        result.setdefault("hold_status_column", "LOT_HOLD_STAT_CD")
     return result
+
+
+def _expand_metric_term_refs(step: dict[str, Any], metadata: dict[str, Any]) -> None:
+    metrics = step.get("metrics") if isinstance(step.get("metrics"), list) else []
+    if not metrics:
+        return
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    metric_terms = domain.get("metric_terms") if isinstance(domain.get("metric_terms"), dict) else {}
+    expanded = []
+    for metric in metrics:
+        if not isinstance(metric, dict):
+            expanded.append(metric)
+            continue
+        metric_key = str(metric.get("metric_term_key") or "").strip()
+        term = metric_terms.get(metric_key) if metric_key and isinstance(metric_terms.get(metric_key), dict) else {}
+        if term:
+            next_metric = {
+                **deepcopy(metric),
+                "quantity_column": metric.get("quantity_column") or term.get("quantity_column"),
+                "aggregation": metric.get("aggregation") or term.get("aggregation"),
+                "output_column": metric.get("output_column") or term.get("output_column"),
+            }
+            expanded.append(next_metric)
+        else:
+            expanded.append(metric)
+    step["metrics"] = expanded
+
+
+def _normalize_previous_step_refs(step: dict[str, Any]) -> None:
+    source_step_id = str(step.get("source_step_id") or step.get("source_data_step_id") or "").strip()
+    if source_step_id and not step.get("input_step_id"):
+        step["input_step_id"] = source_step_id
+    previous = step.get("input_from_previous_step") if isinstance(step.get("input_from_previous_step"), dict) else {}
+    previous_step_id = str(previous.get("step_id") or "").strip()
+    if previous_step_id and not step.get("filter_from_step"):
+        step["filter_from_step"] = previous_step_id
+    join = step.get("join_with_previous_step") if isinstance(step.get("join_with_previous_step"), dict) else {}
+    join_step_id = str(join.get("step_id") or "").strip()
+    if join_step_id and not step.get("filter_from_step"):
+        step["filter_from_step"] = join_step_id
+    join_on = join.get("on") if isinstance(join.get("on"), dict) else {}
+    if join_on and not step.get("join_keys"):
+        step["join_keys"] = [
+            {"left": str(right_column), "right": str(left_column)}
+            for left_column, right_column in join_on.items()
+            if str(left_column or "").strip() and str(right_column or "").strip()
+        ]
+
+
+def _normalize_rank_filter(step: dict[str, Any]) -> None:
+    filters = step.get("post_aggregation_filters") if isinstance(step.get("post_aggregation_filters"), dict) else {}
+    for column, condition in filters.items():
+        if not isinstance(condition, dict):
+            continue
+        rank = condition.get("rank") if isinstance(condition.get("rank"), dict) else {}
+        if not rank:
+            continue
+        step.setdefault("metric", column)
+        step.setdefault("rank_order", rank.get("order") or rank.get("direction") or "desc")
+        step["top_n"] = rank.get("top") or rank.get("n") or step.get("top_n") or 1
+        break
 
 
 def _operation_from_recipe_analysis_kind(step: dict[str, Any]) -> str:
@@ -1282,13 +1295,6 @@ def _recipe_join_keys_from_step(step: dict[str, Any]) -> list[dict[str, str] | s
             if column:
                 join_keys.append(column)
     return join_keys
-
-
-def _looks_like_hold_lot_in_tat_step(step: dict[str, Any]) -> bool:
-    if str(step.get("operation") or "") == "hold_lot_in_tat_by_process":
-        return True
-    text = json.dumps(step, ensure_ascii=False).upper()
-    return "LOT_ID" in text and "IN_TAT" in text and "HOLD" in text
 
 
 def _recipe_has_execution_contract(recipe: dict[str, Any]) -> bool:
@@ -1484,26 +1490,41 @@ def _column_identity(value: Any) -> str:
 
 
 def _required_product_grain(plan: dict[str, Any], catalog: dict[str, Any]) -> list[str]:
-    kind = str(plan.get("analysis_kind") or "")
-    product_grain_kinds = {
-        "rank_wip_then_join_production",
-        "rank_top_n",
-        "aggregate_join",
-        "aggregate_sum",
-        "generic_aggregate_recipe",
-        "production_wip_target_rate",
-        "low_output_vs_target",
-        "date_split_production_plan_gap",
-        "equipment_for_previous_products",
-        "equipment_count_for_previous_products",
-    }
-    if kind not in product_grain_kinds:
+    product_grain = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
+    if not product_grain:
+        return []
+    if not _plan_references_product_grain(plan, product_grain):
         return []
     mappings = catalog.get("filter_mappings") if isinstance(catalog.get("filter_mappings"), dict) else {}
     standard_aliases = catalog.get("standard_column_aliases") if isinstance(catalog.get("standard_column_aliases"), dict) else {}
-    product_grain = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
     catalog_columns = _unique(catalog.get("columns", []))
     return [column for column in product_grain if column in mappings or column in standard_aliases or column in catalog_columns]
+
+
+def _plan_references_product_grain(plan: dict[str, Any], product_grain: list[Any]) -> bool:
+    grain = {str(item) for item in product_grain if str(item or "").strip()}
+    if not grain:
+        return False
+    values: list[Any] = []
+    for key in ("analysis_output_columns", "group_by", "join_keys", "required_columns"):
+        value = plan.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
+        if not isinstance(step, dict):
+            continue
+        for key in ("group_by", "join_keys", "output_columns", "columns", "required_columns"):
+            value = step.get(key)
+            if isinstance(value, list):
+                values.extend(value)
+    for value in values:
+        if isinstance(value, dict):
+            if any(str(item) in grain for item in value.values()):
+                return True
+            continue
+        if str(value) in grain:
+            return True
+    return False
 
 
 def _attach_column_standardization_contract(job: dict[str, Any], dataset_catalog: dict[str, Any]) -> None:
@@ -1955,8 +1976,6 @@ def _infer_filters(
     process_values = _metadata_process_values(text, metadata)
     if process_values and _metadata_has_filter(metadata, "OPER_NAME") and _catalog_has_filter(catalog, "OPER_NAME"):
         filters.append({"field": "OPER_NAME", "op": "in", "values": _unique(process_values)})
-    if str(analysis_kind or "") == "equipment_for_previous_products":
-        filters.append({"field": "PRODUCT_GRAIN", "op": "from_state"})
     return _dedupe_filters(filters)
 
 
@@ -1966,8 +1985,7 @@ def _attach_state_product_keys(plan: dict[str, Any], payload: dict[str, Any]) ->
     request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
     question = str(request.get("question") or "")
     needs_state_products = (
-        plan.get("analysis_kind") == "equipment_for_previous_products"
-        or plan.get("intent_type") == "followup_transform"
+        plan.get("intent_type") == "followup_transform"
         or _mentions_any(question, ["이 제품", "그 제품", "해당 제품", "앞의 제품", "위 제품", "previous products"])
     )
     if not needs_state_products:
@@ -2064,193 +2082,6 @@ def _product_keys_from_state_summary(current_data: dict[str, Any], product_grain
         if product and product not in product_rows:
             product_rows.append(product)
     return product_rows
-
-
-def _repair_followup_analysis_kind(
-    plan: dict[str, Any],
-    raw_jobs: list[Any],
-    catalog: dict[str, Any],
-    notes: list[str],
-) -> None:
-    if plan.get("intent_type") != "followup_transform" or not plan.get("state_product_keys"):
-        return
-    families = []
-    for raw_job in raw_jobs:
-        if not isinstance(raw_job, dict):
-            continue
-        dataset_key = str(raw_job.get("dataset_key") or "")
-        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
-        family = str(dataset_catalog.get("dataset_family") or "")
-        if family:
-            families.append(family)
-    if any(family in {"equipment", "capacity"} for family in families):
-        if str(plan.get("analysis_kind") or "") in {"equipment_by_model", "detail_rows", "none"}:
-            plan["analysis_kind"] = "equipment_for_previous_products"
-            _append_once(notes, "후속 질문 계획을 이전 state의 제품 key 기준으로 조정했습니다.")
-
-
-def _repair_lot_count_plan(
-    plan: dict[str, Any],
-    raw_jobs: list[Any],
-    catalog: dict[str, Any],
-    question: str,
-    notes: list[str],
-) -> list[Any]:
-    if not _is_lot_count_by_process_question(plan, raw_jobs, catalog, question):
-        return raw_jobs
-    if plan.get("matched_analysis_recipe") and plan.get("step_plan"):
-        return raw_jobs
-
-    lot_jobs = [deepcopy(job) for job in raw_jobs if isinstance(job, dict) and str(job.get("dataset_key") or "") == "lot_status"]
-    if not lot_jobs:
-        lot_jobs = [{"dataset_key": "lot_status", "source_alias": "lot_status", "filters": [], "params": {}}]
-    primary_job = lot_jobs[0]
-    primary_job["dataset_key"] = "lot_status"
-    primary_job["source_alias"] = str(primary_job.get("source_alias") or "lot_status")
-    primary_job.setdefault("params", {})
-    filters = primary_job.get("filters") if isinstance(primary_job.get("filters"), list) else []
-    primary_job["filters"] = deepcopy(filters)
-    required_columns = primary_job.get("required_columns") if isinstance(primary_job.get("required_columns"), list) else []
-    primary_job["required_columns"] = _unique([*required_columns, "OPER_SHORT_DESC", "LOT_ID", "LOT_STAT_CD"])
-
-    plan["intent_type"] = "single_retrieval_analysis"
-    plan["analysis_kind"] = "lot_count_by_process"
-    plan["datasets"] = ["lot_status"]
-    plan["product_grain"] = []
-    plan["analysis_output_columns"] = ["OPER_SHORT_DESC", "LOT_COUNT"]
-    plan["step_plan"] = [
-        {
-            "step_id": "count_lots_by_process",
-            "operation": "lot_count_by_process",
-            "source_alias": primary_job["source_alias"],
-            "group_by_columns": ["OPER_SHORT_DESC"],
-            "count_column": "LOT_ID",
-            "output_columns": ["OPER_SHORT_DESC", "LOT_COUNT"],
-        }
-    ]
-    _append_once(notes, "Lot 상태/수량 질문은 lot_status의 LOT_ID unique count 기준 공정별 집계로 정리했습니다.")
-    return [primary_job]
-
-
-def _is_lot_count_by_process_question(
-    plan: dict[str, Any],
-    raw_jobs: list[Any],
-    catalog: dict[str, Any],
-    question: str,
-) -> bool:
-    if plan.get("matched_analysis_recipe") and str(plan.get("analysis_kind") or "") != "lot_count_by_process":
-        return False
-    if str(plan.get("analysis_kind") or "") == "lot_count_by_process":
-        return True
-    datasets = {str(item) for item in plan.get("datasets", []) if str(item or "").strip()}
-    has_lot_status = "lot_status" in datasets
-    has_lot_status = has_lot_status or any(isinstance(job, dict) and str(job.get("dataset_key") or "") == "lot_status" for job in raw_jobs)
-    if not has_lot_status:
-        return False
-    if not (
-        _mentions_any(question, ["작업대기", "작업중", "Lot 수량", "LOT 수량", "Lot 개수", "lot count"])
-        or _raw_jobs_include_filter(raw_jobs, "LOT_STAT_CD")
-        or _plan_mentions_lot_count(plan)
-    ):
-        return False
-    if _mentions_any(question, ["wafer", "Wafer", "die", "Die", "DIE"]):
-        return False
-    return True
-
-
-def _raw_jobs_include_filter(raw_jobs: list[Any], field: str) -> bool:
-    for job in raw_jobs:
-        if not isinstance(job, dict):
-            continue
-        filters = job.get("filters") if isinstance(job.get("filters"), list) else []
-        if any(isinstance(item, dict) and str(item.get("field") or "") == field for item in filters):
-            return True
-    return False
-
-
-def _plan_mentions_lot_count(plan: dict[str, Any]) -> bool:
-    values: list[Any] = [
-        plan.get("metric"),
-        plan.get("quantity_column"),
-        plan.get("count_column"),
-        *(plan.get("analysis_output_columns") if isinstance(plan.get("analysis_output_columns"), list) else []),
-    ]
-    for step in plan.get("step_plan", []) if isinstance(plan.get("step_plan"), list) else []:
-        if isinstance(step, dict):
-            values.extend([step.get("metric"), step.get("count_column"), step.get("aggregation")])
-            if isinstance(step.get("output_columns"), list):
-                values.extend(step["output_columns"])
-    text = " ".join(str(item or "") for item in values)
-    return any(token in text for token in ["LOT_COUNT", "nunique"])
-
-
-def _repair_followup_equipment_plan(
-    plan: dict[str, Any],
-    raw_jobs: list[Any],
-    catalog: dict[str, Any],
-    question: str,
-    notes: list[str],
-) -> list[Any]:
-    if plan.get("intent_type") != "followup_transform" or not plan.get("state_product_keys"):
-        return raw_jobs
-    if not _is_followup_equipment_question(question, raw_jobs, catalog, plan):
-        return raw_jobs
-
-    count_requested = _is_equipment_count_question(question, plan)
-    if plan.get("matched_analysis_recipe") and plan.get("step_plan") and not count_requested:
-        return raw_jobs
-    analysis_kind = "equipment_count_for_previous_products" if count_requested else "equipment_for_previous_products"
-    plan["analysis_kind"] = analysis_kind
-
-    equipment_jobs = []
-    for raw_job in raw_jobs:
-        if not isinstance(raw_job, dict):
-            continue
-        dataset_key = str(raw_job.get("dataset_key") or "")
-        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
-        if str(dataset_catalog.get("dataset_family") or "") == "equipment":
-            equipment_jobs.append(deepcopy(raw_job))
-    if not equipment_jobs:
-        equipment_jobs = [{"dataset_key": "equipment_status", "source_alias": "equipment_for_previous_products", "filters": [], "params": {}}]
-
-    primary_job = equipment_jobs[0]
-    primary_job["dataset_key"] = "equipment_status"
-    primary_job["source_alias"] = str(primary_job.get("source_alias") or "equipment_for_previous_products")
-    primary_job["filters"] = [{"field": "PRODUCT_GRAIN", "op": "from_state"}]
-    primary_job.setdefault("params", {})
-
-    product_grain = [str(item) for item in plan.get("product_grain", []) if str(item or "").strip()]
-    if count_requested:
-        primary_job["purpose"] = "followup_equipment_count"
-        primary_job["required_columns"] = ["EQPID", *product_grain]
-        plan["analysis_output_columns"] = [*deepcopy(product_grain), "EQP_COUNT"]
-        plan["step_plan"] = [
-            {
-                "step_id": "count_equipment_for_previous_products",
-                "operation": "equipment_count_for_previous_products",
-                "source_alias": primary_job["source_alias"],
-                "group_by": deepcopy(product_grain),
-                "count_column": "EQPID",
-                "output_columns": [*deepcopy(product_grain), "EQP_COUNT"],
-            }
-        ]
-    else:
-        primary_job["purpose"] = "followup_equipment_detail_rows"
-        primary_job["required_columns"] = ["EQPID", "EQP_MODEL", "PRESS_CNT", *product_grain, "LOT_ID", "RECIPE_ID"]
-        plan["analysis_output_columns"] = ["EQPID", "EQP_MODEL", "PRESS_CNT", "LOT_ID", "RECIPE_ID"]
-        plan["step_plan"] = [
-            {
-                "step_id": "filter_equipment_for_previous_products",
-                "operation": "detail_rows_for_product_keys",
-                "source_alias": primary_job["source_alias"],
-                "columns": ["EQPID", "EQP_MODEL", "PRESS_CNT", *deepcopy(product_grain), "LOT_ID", "RECIPE_ID"],
-                "output_ref": "final_result",
-            }
-        ]
-
-    plan["datasets"] = ["equipment_status"]
-    _append_once(notes, "후속 장비 질문은 이전 제품 key와 equipment_status만 사용하도록 조회 작업을 정리했습니다.")
-    return [primary_job]
 
 
 def _normalize_pandas_function_case_intent(
@@ -2749,48 +2580,6 @@ def _explicit_previous_reference_requested(question: str) -> bool:
     )
 
 
-def _is_followup_equipment_question(
-    question: str,
-    raw_jobs: list[Any],
-    catalog: dict[str, Any],
-    plan: dict[str, Any],
-) -> bool:
-    if _mentions_any(question, ["장비", "설비", "EQP", "equipment", "Equipment"]):
-        return True
-    if str(plan.get("analysis_kind") or "") in {"equipment_for_previous_products", "equipment_count_for_previous_products", "equipment_by_model"}:
-        return True
-    for raw_job in raw_jobs:
-        if not isinstance(raw_job, dict):
-            continue
-        dataset_key = str(raw_job.get("dataset_key") or "")
-        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
-        if str(dataset_catalog.get("dataset_family") or "") == "equipment":
-            return True
-    return False
-
-
-def _is_equipment_count_question(question: str, plan: dict[str, Any]) -> bool:
-    if str(plan.get("analysis_kind") or "") == "equipment_count_for_previous_products":
-        return True
-    return _mentions_any(
-        question,
-        [
-            "장비 대수",
-            "설비 대수",
-            "장비 수",
-            "설비 수",
-            "장비수",
-            "설비수",
-            "몇 대",
-            "몇대",
-            "대수",
-            "count",
-            "number of equipment",
-            "equipment count",
-        ],
-    )
-
-
 def _mark_previous_result_restore_need(
     plan: dict[str, Any],
     payload: dict[str, Any],
@@ -3029,13 +2818,31 @@ def _previous_source_metric(state: dict[str, Any], question: str) -> str:
 
 
 def _state_product_keys_are_enough(plan: dict[str, Any], question: str) -> bool:
-    if str(plan.get("analysis_kind") or "") not in {"equipment_for_previous_products", "equipment_count_for_previous_products"}:
-        return False
     if not plan.get("state_product_keys"):
+        return False
+    if not _plan_uses_state_product_filter(plan):
         return False
     if _mentions_any(question, ["전체", "모든", "상세", "세부", "원본", "row", "rows", "records", "full"]):
         return False
     return True
+
+
+def _plan_uses_state_product_filter(plan: dict[str, Any]) -> bool:
+    filter_groups: list[Any] = []
+    if isinstance(plan.get("filters"), list):
+        filter_groups.append(plan["filters"])
+    for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
+        if isinstance(job, dict) and isinstance(job.get("filters"), list):
+            filter_groups.append(job["filters"])
+    for filters in filter_groups:
+        for condition in filters:
+            if not isinstance(condition, dict):
+                continue
+            field = str(condition.get("field") or "").strip()
+            op = str(condition.get("op") or "").strip()
+            if field == "PRODUCT_GRAIN" and op == "from_state":
+                return True
+    return False
 
 
 def _followup_needs_previous_rows(plan: dict[str, Any], question: str) -> bool:
@@ -3748,7 +3555,13 @@ def _normalize_intent_type_for_analysis(plan: dict[str, Any], normalized_jobs: l
     if analysis_kind == "aggregate_join" and job_count > 1:
         plan["intent_type"] = "multi_source_analysis"
         return
-    if analysis_kind in {"rank_top_n", "aggregate_wip_total", "lot_count_by_process", "lot_quantity_summary", "equipment_by_model"} and job_count <= 1:
+    has_analysis_contract = bool(
+        analysis_kind and analysis_kind != "none"
+        or plan.get("step_plan")
+        or plan.get("metric")
+        or plan.get("analysis_output_columns")
+    )
+    if has_analysis_contract and job_count <= 1:
         plan["intent_type"] = "single_retrieval_analysis"
 
 

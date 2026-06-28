@@ -265,11 +265,17 @@ def _domain_item_docs(path: Path) -> list[dict[str, Any]]:
     ]:
         for key, payload in data.get(section, {}).items():
             docs.append(_doc(f"domain:{section}:{key}", path, {"section": section, "key": key, "payload": payload}))
+    product_key_columns = data.get("product_key_columns", [])
     docs.append(
         _doc(
-            "domain:product_key_columns",
+            "domain:product_key_columns:DEFAULT_PRODUCT_JOIN_KEYS",
             path,
-            {"section": "product_key_columns", "key": "product_key_columns", "columns": data.get("product_key_columns", [])},
+            {
+                "section": "product_key_columns",
+                "key": "DEFAULT_PRODUCT_JOIN_KEYS",
+                "payload": {"columns": product_key_columns, "product_key_columns": product_key_columns},
+                "columns": product_key_columns,
+            },
         )
     )
     return docs
