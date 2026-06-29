@@ -1,4 +1,4 @@
-# 파일 설명: 18 Answer Prompt Builder Langflow custom component 파일입니다.
+# 파일 설명: 19 Answer Prompt Builder Langflow custom component 파일입니다.
 # 흐름 역할: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
 # 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
 
@@ -69,6 +69,7 @@ def build_answer_prompt_payload(payload_value: Any) -> dict[str, Any]:
             "downstream Answer Message Adapter가 data.rows에서 result table을 deterministic하게 렌더링합니다. answer_message는 narrative text만 포함해야 합니다.",
             "컬럼명 규칙: column_standardization이 physical source column을 standard analysis column으로 매핑했다면, 그 physical-vs-standard 차이를 metadata 문제로 설명하지 마세요.",
             "예를 들어 PKG1/PKG2/MCPSALENO가 PKG_TYPE1/PKG_TYPE2/MCP_NO로 매핑되었다면 standard column 기준으로 join을 설명하고, source가 physical name을 썼다는 이유만으로 사용자에게 metadata 수정을 요청하지 마세요.",
+            "INPUT 계획과 INPUT계획, OUT 계획과 OUT계획처럼 공백만 다른 수량 컬럼명 차이는 source 컬럼 오류나 사용자 수정 요청으로 설명하지 마세요. metadata/source summary에 보이는 실제 컬럼명을 기준으로 처리된 것으로 설명하세요.",
             "error가 있으면 무엇이 실패했는지와 사용자가 무엇을 다시 시도할 수 있는지 설명하세요.",
             "",
             "plain Korean text 또는 아래 schema의 엄격한 JSON object 하나만 반환하세요:",
@@ -166,11 +167,11 @@ def _payload(value: Any) -> dict[str, Any]:
     return deepcopy(data) if isinstance(data, dict) else {}
 
 
-# 컴포넌트 설명: 18 Answer Prompt Builder
+# 컴포넌트 설명: 19 Answer Prompt Builder
 # Langflow 표시 설명: 분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다.
 class AnswerPromptBuilder(Component):
 
-    display_name = "18 Answer Prompt Builder"
+    display_name = "19 Answer Prompt Builder"
     description = "분석 결과, 의도, 적용 필터를 바탕으로 최종 답변 작성 LLM에 보낼 프롬프트를 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [

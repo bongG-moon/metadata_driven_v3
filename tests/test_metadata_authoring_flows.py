@@ -662,6 +662,55 @@ filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, PKG_TYP
     assert "TARGET" not in item_payload["standard_column_aliases"]
 
 
+def test_table_catalog_authoring_preserves_spaced_plan_quantity_columns() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = """PKG 계획 데이터는 target으로 등록해줘.
+화면에 보일 이름은 PKG Target Goodocs Plan이면 돼.
+Goodocs PKG 계획 문서에서 일자와 제품 속성별 INPUT계획, OUT계획을 가져오는 데이터야.
+이 데이터는 Goodocs source이고 별도 필수 조회 파라미터는 없어.
+이게 중요한데 이 데이터에서 사용하는 DATE형식은 'YYYYMMDD'가 아니라 'YYYY-MM-DD'형식이라서 형식 변환이 필요해
+계획 수량은 'INPUT 계획'과 'OUT 계획' 두 컬럼에 있는 값을 모두 사용해. 두 컬럼 모두 분석 수량으로 쓰는 계획 수량 컬럼이야.
+Goodocs 문서 ID는 1231231412412512515 이야
+목표2 문서에는 DATE, Mode, DEN, TECH, PKG1, PKG2, LEAD, ORG, MCP NO, INPUT 계획, OUT 계획 컬럼이 있어."""
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": raw_text,
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "payload": {
+                    "display_name": "PKG Target Goodocs Plan",
+                    "dataset_family": "target",
+                    "source_type": "goodocs",
+                    "source_config": {"source_type": "goodocs"},
+                    "required_params": ["DATE"],
+                    "required_param_mappings": {"DATE": ["DATE"]},
+                    "primary_quantity_column": ["INPUT계획", "OUT계획"],
+                    "columns": ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT 계획", "OUT 계획"],
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    item = normalized["items"][0]
+    item_payload = item["payload"]
+    assert normalized["errors"] == []
+    assert item["dataset_key"] == "target"
+    assert item_payload["source_config"]["doc_id"] == "1231231412412512515"
+    assert item_payload["required_params"] == []
+    assert item_payload["required_param_mappings"] == {}
+    assert item_payload["primary_quantity_column"] == ["INPUT 계획", "OUT 계획"]
+    assert item_payload["columns"] == ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT 계획", "OUT 계획"]
+
+
 def test_table_catalog_authoring_does_not_make_date_filter_required_without_placeholder_or_explicit_text() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     raw_text = """dataset_key는 production_snapshot이고 생산 snapshot 데이터야.

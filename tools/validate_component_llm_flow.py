@@ -126,7 +126,10 @@ def load_components() -> dict[str, Any]:
         "pandas_repair_prompt_builder": load_component(
             "langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py"
         ),
-        "answer_builder": load_component("langflow_components/data_analysis_flow/19_answer_response_builder.py"),
+        "pandas_repair_executor": load_component(
+            "langflow_components/data_analysis_flow/17_pandas_repair_code_executor.py"
+        ),
+        "answer_builder": load_component("langflow_components/data_analysis_flow/20_answer_response_builder.py"),
     }
 
 
@@ -190,7 +193,7 @@ def run_case(
     payload = components["retrieval_adapter"].adapt_retrieval_payload(payload, retrieval_payload)
     pandas_prompt = components["pandas_prompt_builder"].build_pandas_prompt_payload(payload)["prompt"]
     pandas_raw = llm_tools.call_llm_json(llm, pandas_prompt)
-    first_pandas_payload = components["pandas_executor"].execute_pandas_from_llm(
+    first_pandas_payload = components["pandas_executor"].execute_initial_pandas_from_llm(
         payload,
         json.dumps(pandas_raw["json"], ensure_ascii=False),
     )
@@ -199,7 +202,7 @@ def run_case(
     if (repair_payload.get("pandas_repair") or {}).get("required"):
         repair_prompt = components["pandas_repair_prompt_builder"].build_pandas_repair_prompt_payload(repair_payload)["prompt"]
         pandas_repair_raw = llm_tools.call_llm_json(llm, repair_prompt)
-        payload = components["pandas_executor"].execute_pandas_from_llm(
+        payload = components["pandas_repair_executor"].execute_repair_pandas_from_llm(
             repair_payload,
             json.dumps(pandas_repair_raw["json"], ensure_ascii=False),
         )

@@ -25,7 +25,7 @@ def test_metadata_qa_lists_catalog_with_descriptive_examples(monkeypatch: Any) -
     route_prompt_builder = load_component("langflow_components/router_flow/03a_route_prompt_context_builder.py")
     route_normalizer = load_component("langflow_components/router_flow/04_route_classifier_normalizer.py")
     response_builder = load_component("langflow_components/metadata_qa_flow/03_metadata_qa_response_builder.py")
-    api_builder = load_component("langflow_components/data_analysis_flow/21_api_response_builder.py")
+    api_builder = load_component("langflow_components/data_analysis_flow/22_api_response_builder.py")
 
     payload = seed_payload("현재 조회 가능한 DATA LIST를 알려줄래?", monkeypatch)
     routed = router.route_metadata_question(payload)
@@ -345,9 +345,9 @@ def test_direct_metadata_response_passes_through_downstream_nodes(monkeypatch: A
     retrieval_adapter = load_component("langflow_components/data_analysis_flow/13_retrieval_payload_adapter.py")
     pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
-    data_store = load_component("langflow_components/data_analysis_flow/17_mongodb_data_store.py")
-    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/18_answer_prompt_builder.py")
-    answer_builder = load_component("langflow_components/data_analysis_flow/19_answer_response_builder.py")
+    data_store = load_component("langflow_components/data_analysis_flow/18_mongodb_data_store.py")
+    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/19_answer_prompt_builder.py")
+    answer_builder = load_component("langflow_components/data_analysis_flow/20_answer_response_builder.py")
 
     payload = seed_payload("production_today 조회 쿼리문 알려줘", monkeypatch)
     routed = router.route_metadata_question(payload)

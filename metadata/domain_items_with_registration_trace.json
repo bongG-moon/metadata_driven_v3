@@ -2072,43 +2072,6 @@
       "updated_at": "2026-06-28T12:48:21.032763+00:00"
     },
     {
-      "id": "domain:metric_terms:PRODUCTION_ACHIEVEMENT_RATE_METRIC",
-      "section": "metric_terms",
-      "key": "PRODUCTION_ACHIEVEMENT_RATE_METRIC",
-      "status": "active",
-      "payload": {
-        "display_name": "생산달성률",
-        "aliases": [
-          "생산달성률"
-        ],
-        "required_dataset_families": [
-          "production",
-          "target"
-        ],
-        "formula": "sum(PRODUCTION) / sum(OUT_PLAN) * 100",
-        "output_column": "PRODUCTION_ACHIEVEMENT_RATE",
-        "calculation_rule": "First, sum PRODUCTION from the production dataset family and sum OUT_PLAN from the target dataset family. Then, calculate the ratio of these sums and multiply by 100. Do not average the rate directly.",
-        "output_columns": [
-          "PRODUCTION_ACHIEVEMENT_RATE"
-        ],
-        "source_columns": [
-          "PRODUCTION",
-          "OUT_PLAN"
-        ],
-        "dataset_family": "production",
-        "required_quantity_terms": [
-          "production"
-        ]
-      },
-      "updated_at": "2026-06-28T12:48:21.032763+00:00",
-      "registration_trace": {
-        "raw_text": "계산 로직을 등록해줘.\nWafer기준 실적, Wafer기반 실적, Wafer Out 수량은 production 계열 데이터에서 PRODUCTION / NETDIE_300_CNT로 계산해.\nNETDIE_300_CNT 값이 0보다 큰 경우에만 WAFER_OUT_QTY를 계산하고, NETDIE_300_CNT가 0 또는 NULL이라 나눌 수 없는 경우에는 해당 PRODUCTION 값을 FAIL_UNIT_QTY 컬럼으로 옆에 보여줘.\nWafer기준 실적은 먼저 row 단위로 WAFER_OUT_QTY와 FAIL_UNIT_QTY를 만든 뒤, 사용자가 요청한 grain 또는 전체 기준으로 합산해.\n생산달성률은 production 계열 데이터의 sum(PRODUCTION) / target 계열 데이터의 sum(OUT_PLAN) * 100으로 계산해.\n달성률을 평균내지 말고, 먼저 각 수량을 집계한 뒤 비율을 계산해.",
-        "refined_text": "계산 로직을 등록해줘.\nWafer기준 실적, Wafer기반 실적, Wafer Out 수량은 production 계열 데이터에서 PRODUCTION / NETDIE_300_CNT로 계산해.\nNETDIE_300_CNT 값이 0보다 큰 경우에만 WAFER_OUT_QTY를 계산하고, NETDIE_300_CNT가 0 또는 NULL이라 나눌 수 없는 경우에는 해당 PRODUCTION 값을 FAIL_UNIT_QTY 컬럼으로 옆에 보여줘.\nWafer기준 실적은 먼저 row 단위로 WAFER_OUT_QTY와 FAIL_UNIT_QTY를 만든 뒤, 사용자가 요청한 grain 또는 전체 기준으로 합산해.\n생산달성률은 production 계열 데이터의 sum(PRODUCTION) / target 계열 데이터의 sum(OUT_PLAN) * 100으로 계산해.\n달성률을 평균내지 말고, 먼저 각 수량을 집계한 뒤 비율을 계산해.",
-        "source_marker": "single_metric_terms",
-        "reviewed_at": "2026-06-28T12:48:21.032763+00:00"
-      }
-    },
-    {
       "id": "domain:metric_terms:PRODUCTION_PERFORMANCE_METRIC",
       "section": "metric_terms",
       "key": "PRODUCTION_PERFORMANCE_METRIC",
@@ -2279,8 +2242,8 @@
       },
       "updated_at": "2026-06-28T12:48:21.032763+00:00",
       "registration_trace": {
-        "raw_text": "제품 찾기 질문에서 사용자가 \"2048G H-HBM16E 제품 찾아줘\"처럼 제품 속성 토큰을 자유롭게 입력하면,\n일반 제품군 조건으로 해석하지 말고 pandas_function_cases의 component_token_product_lookup 케이스로 저장해줘.\n이 케이스는 match_product_tokens helper를 사용해서 조회된 제품 데이터에서 일치하는 제품 row를 찾는 용도야.\nhelper의 실제 코드 예시는 MongoDB raw text에 넣지 말고 14 Pandas Prompt Builder / 15 Pandas Code Executor의 Specialized Functions 입력 또는 별도 helper package에서 관리해.",
-        "refined_text": "제품 찾기 질문에서 사용자가 \"2048G H-HBM16E 제품 찾아줘\"처럼 제품 속성 토큰을 자유롭게 입력하면,\n일반 제품군 조건으로 해석하지 말고 pandas_function_cases의 component_token_product_lookup 케이스로 저장해줘.\n이 케이스는 match_product_tokens helper를 사용해서 조회된 제품 데이터에서 일치하는 제품 row를 찾는 용도야.\nhelper의 실제 코드 예시는 MongoDB raw text에 넣지 말고 14 Pandas Prompt Builder / 15 Pandas Code Executor의 Specialized Functions 입력 또는 별도 helper package에서 관리해.",
+        "raw_text": "제품 찾기 질문에서 사용자가 \"2048G H-HBM16E 제품 찾아줘\"처럼 제품 속성 토큰을 자유롭게 입력하면,\n일반 제품군 조건으로 해석하지 말고 pandas_function_cases의 component_token_product_lookup 케이스로 저장해줘.\n이 케이스는 match_product_tokens helper를 사용해서 조회된 제품 데이터에서 일치하는 제품 row를 찾는 용도야.\nhelper의 실제 코드 예시는 MongoDB raw text에 넣지 말고 14 Pandas Prompt Builder / 15 Pandas Code Executor / 17 Pandas Repair Code Executor의 Specialized Functions 입력 또는 별도 helper package에서 관리해.",
+        "refined_text": "제품 찾기 질문에서 사용자가 \"2048G H-HBM16E 제품 찾아줘\"처럼 제품 속성 토큰을 자유롭게 입력하면,\n일반 제품군 조건으로 해석하지 말고 pandas_function_cases의 component_token_product_lookup 케이스로 저장해줘.\n이 케이스는 match_product_tokens helper를 사용해서 조회된 제품 데이터에서 일치하는 제품 row를 찾는 용도야.\nhelper의 실제 코드 예시는 MongoDB raw text에 넣지 말고 14 Pandas Prompt Builder / 15 Pandas Code Executor / 17 Pandas Repair Code Executor의 Specialized Functions 입력 또는 별도 helper package에서 관리해.",
         "source_marker": "single_pandas_function_case_component_token_product_lookup",
         "reviewed_at": "2026-06-28T12:48:21.032763+00:00"
       }
@@ -3715,6 +3678,135 @@
         "refined_text": "Shift와 조 조건을 등록해줘.\nShift A조, A조, 1조는 같은 의미이고 SHIFT 값이 1인 데이터를 뜻해.\n07:00~15:00, 07:00 ~ 15:00, 07:00-15:00, 07시부터 15시까지, 7시부터 15시까지라고 말하면 A조 조건으로 해석해.\nShift B조, B조, 2조는 같은 의미이고 SHIFT 값이 2인 데이터를 뜻해.\n15:00~23:00, 15:00 ~ 23:00, 15:00-23:00, 15시부터 23시까지라고 말하면 B조 조건으로 해석해.\nShift C조, C조, 3조는 같은 의미이고 SHIFT 값이 3인 데이터를 뜻해.\n23:00~07:00, 23:00 ~ 07:00, 23:00-07:00, 23시부터 다음날 7시까지라고 말하면 C조 조건으로 해석해.\n조별 실적, Shift별 실적, A조 실적처럼 물으면 해당 SHIFT 조건을 필터로 사용해.",
         "source_marker": "single_shift_terms",
         "reviewed_at": "2026-06-28T12:48:21.032763+00:00"
+      }
+    },
+    {
+      "id": "domain:analysis_recipes:production_achievement_rate_by_target_plan",
+      "section": "analysis_recipes",
+      "key": "production_achievement_rate_by_target_plan",
+      "status": "active",
+      "payload": {
+        "display_name": "생산 달성율",
+        "aliases": [
+          "생산달성율",
+          "생산달성률",
+          "달성율",
+          "달성률",
+          "목표대비 실적",
+          "계획대비 실적",
+          "생산 목표 달성율"
+        ],
+        "required_dataset_families": [
+          "production",
+          "target"
+        ],
+        "source_aliases_by_family": {
+          "production": "production_data",
+          "target": "target_data"
+        },
+        "grain_policy": "question_or_product_grain",
+        "override_analysis_kinds": [
+          "production_achievement_rate_by_target_plan",
+          "aggregate_join",
+          "generic_aggregate_recipe"
+        ],
+        "step_plan_template": [
+          {
+            "step_id": "aggregate_production_by_product_and_operation",
+            "operation": "aggregate_sum",
+            "source_family": "production",
+            "metric": "PRODUCTION",
+            "output_column": "ACTUAL_QTY",
+            "group_by": [
+              "DATE",
+              "MODE",
+              "DEN",
+              "TECH",
+              "ORG",
+              "PKG_TYPE1",
+              "PKG_TYPE2",
+              "LEAD",
+              "MCP_NO",
+              "OPER",
+              "OPER_NAME",
+              "OPER_SEQ"
+            ]
+          },
+          {
+            "step_id": "aggregate_target_by_product",
+            "operation": "aggregate_sum",
+            "source_family": "target",
+            "metrics": [
+              "INPUT 계획",
+              "OUT 계획"
+            ],
+            "group_by": [
+              "DATE",
+              "MODE",
+              "DEN",
+              "TECH",
+              "ORG",
+              "PKG_TYPE1",
+              "PKG_TYPE2",
+              "LEAD",
+              "MCP_NO"
+            ]
+          },
+          {
+            "step_id": "join_production_and_target",
+            "operation": "join",
+            "join_type": "full_outer",
+            "left_step_id": "aggregate_production_by_product_and_operation",
+            "right_step_id": "aggregate_target_by_product",
+            "join_keys": [
+              "DATE",
+              "MODE",
+              "DEN",
+              "TECH",
+              "ORG",
+              "PKG_TYPE1",
+              "PKG_TYPE2",
+              "LEAD",
+              "MCP_NO"
+            ],
+            "date_normalization_required": true
+          },
+          {
+            "step_id": "calculate_plan_and_rate",
+            "operation": "derive_columns",
+            "calculation_rule": "JOIN 후 production의 OPER 값을 숫자로 해석해서 OPER가 2000보다 작으면 PLAN_QTY = INPUT 계획 * 1000, OPER가 2000보다 크면 PLAN_QTY = OUT 계획 * 1000으로 계산한다. OPER가 없거나 PLAN_QTY가 없거나 0이면 ACHIEVEMENT_RATE는 null로 둔다. ACHIEVEMENT_RATE = ACTUAL_QTY / PLAN_QTY로 계산한다.",
+            "output_columns": [
+              "PLAN_QTY",
+              "ACHIEVEMENT_RATE"
+            ]
+          }
+        ],
+        "calculation_rule": "특정 일자의 생산달성율은 production 계열 실적과 target 계열 Goodocs 계획을 함께 사용한다. production은 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER, OPER_NAME, OPER_SEQ 기준으로 PRODUCTION을 합산하고, target은 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO 기준으로 INPUT 계획과 OUT 계획을 합산한다. 두 결과는 DATE와 제품 키 기준으로 full outer join하며, target에는 OPER가 없으므로 join key에 OPER, OPER_NAME, OPER_SEQ를 넣지 않는다. DATE 형식이 다르면 비교 전에 같은 날짜 형식으로 정규화한다.",
+        "output_columns": [
+          "DATE",
+          "MODE",
+          "DEN",
+          "TECH",
+          "ORG",
+          "PKG_TYPE1",
+          "PKG_TYPE2",
+          "LEAD",
+          "MCP_NO",
+          "OPER",
+          "OPER_NAME",
+          "OPER_SEQ",
+          "ACTUAL_QTY",
+          "PLAN_QTY",
+          "ACHIEVEMENT_RATE"
+        ]
+      },
+      "updated_at": "2026-06-29T00:00:00+09:00",
+      "registration_trace": {
+        "raw_text": "특정 일자의 생산달성율 분석 recipe를 등록해줘.\nsection은 analysis_recipes이고 key는 production_achievement_rate_by_target_plan이야.\ndisplay_name은 생산 달성율이고 aliases는 생산달성율, 생산달성률, 달성율, 달성률, 목표대비 실적, 계획대비 실적, 생산 목표 달성율이야.\n\n사용자가 특정 일자의 생산달성율이나 계획 대비 실적을 물으면 production 계열 실적 데이터와 target 계열 Goodocs 목표/계획 데이터를 함께 사용해.\nproduction 데이터는 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER, OPER_NAME, OPER_SEQ 기준으로 PRODUCTION을 합산해.\ntarget 데이터는 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO 기준으로 INPUT 계획과 OUT 계획을 합산해.\n\n두 데이터는 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO 기준으로 FULL OUTER JOIN해.\nDATE 형식이 데이터셋마다 다르면 비교 전에 같은 날짜 형식으로 정규화해.\n\nJOIN 후 production의 OPER 값을 숫자로 해석해서 OPER가 2000보다 작으면 계획수량은 INPUT 계획 * 1000으로 계산하고, OPER가 2000보다 크면 계획수량은 OUT 계획 * 1000으로 계산해.\nOPER가 없거나 계획수량이 없거나 계획수량이 0이면 달성율은 임의로 0을 만들지 말고 null로 둬.\n생산달성율은 실적수량 / 계획수량으로 계산해.\n결과에는 DATE, 제품 기준 컬럼, OPER, OPER_NAME, OPER_SEQ, 실적수량, 계획수량, 생산달성율을 보여줘.\n이 블록은 analysis_recipes만 등록하고, production/target table catalog나 공정 그룹은 새로 만들지 마.",
+        "refined_text": "특정 일자의 생산달성율 분석 recipe를 등록해줘.\nsection은 analysis_recipes이고 key는 production_achievement_rate_by_target_plan이야.\ndisplay_name은 생산 달성율이고 aliases는 생산달성율, 생산달성률, 달성율, 달성률, 목표대비 실적, 계획대비 실적, 생산 목표 달성율이야.\n\n사용자가 특정 일자의 생산달성율이나 계획 대비 실적을 물으면 production 계열 실적 데이터와 target 계열 Goodocs 목표/계획 데이터를 함께 사용해.\nproduction 데이터는 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO, OPER, OPER_NAME, OPER_SEQ 기준으로 PRODUCTION을 합산해.\ntarget 데이터는 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO 기준으로 INPUT 계획과 OUT 계획을 합산해.\n\n두 데이터는 DATE, MODE, DEN, TECH, ORG, PKG_TYPE1, PKG_TYPE2, LEAD, MCP_NO 기준으로 FULL OUTER JOIN해.\nDATE 형식이 데이터셋마다 다르면 비교 전에 같은 날짜 형식으로 정규화해.\n\nJOIN 후 production의 OPER 값을 숫자로 해석해서 OPER가 2000보다 작으면 계획수량은 INPUT 계획 * 1000으로 계산하고, OPER가 2000보다 크면 계획수량은 OUT 계획 * 1000으로 계산해.\nOPER가 없거나 계획수량이 없거나 계획수량이 0이면 달성율은 임의로 0을 만들지 말고 null로 둬.\n생산달성율은 실적수량 / 계획수량으로 계산해.\n결과에는 DATE, 제품 기준 컬럼, OPER, OPER_NAME, OPER_SEQ, 실적수량, 계획수량, 생산달성율을 보여줘.\n이 블록은 analysis_recipes만 등록하고, production/target table catalog나 공정 그룹은 새로 만들지 마.",
+        "source_marker": "single_recipe_production_achievement_rate_by_target_plan",
+        "source_file": "raw_text_input_example.md",
+        "reviewed_at": "2026-06-29T00:00:00+09:00"
       }
     }
   ],

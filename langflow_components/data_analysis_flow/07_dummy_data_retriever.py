@@ -217,6 +217,8 @@ def _target_rows(date_text: str) -> list[dict[str, Any]]:
                 **_physical_product_aliases(product),
                 "INPUT_PLAN": input_plan,
                 "OUT_PLAN": out_plan,
+                "INPUT 계획": input_plan,
+                "OUT 계획": out_plan,
                 "INPUT계획": input_plan,
                 "OUT계획": out_plan,
             }

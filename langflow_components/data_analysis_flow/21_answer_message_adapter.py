@@ -1,4 +1,4 @@
-# 파일 설명: 20 Answer Message Adapter Langflow custom component 파일입니다.
+# 파일 설명: 21 Answer Message Adapter Langflow custom component 파일입니다.
 # 흐름 역할: 답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다.
 # 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
 
@@ -716,11 +716,11 @@ def _truncate(text: str, limit: int) -> str:
 
 
 
-# 컴포넌트 설명: 20 Answer Message Adapter
+# 컴포넌트 설명: 21 Answer Message Adapter
 # Langflow 표시 설명: 답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다.
 class AnswerMessageAdapter(Component):
 
-    display_name = "20 Answer Message Adapter"
+    display_name = "21 Answer Message Adapter"
     description = "답변, 결과 테이블, 의도 분석, pandas 코드가 포함된 Playground용 Message를 만듭니다."
     inputs = [DataInput(name="payload", display_name="Payload", required=True)]
     outputs = [Output(name="message", display_name="Message", method="build_message")]

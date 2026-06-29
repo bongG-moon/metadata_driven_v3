@@ -1,4 +1,4 @@
-# 파일 설명: 19 Answer Response Builder Langflow custom component 파일입니다.
+# 파일 설명: 20 Answer Response Builder Langflow custom component 파일입니다.
 # 흐름 역할: LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다.
 # 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
 
@@ -368,11 +368,11 @@ def _unique(values: list[Any]) -> list[str]:
     return result
 
 
-# 컴포넌트 설명: 19 Answer Response Builder
+# 컴포넌트 설명: 20 Answer Response Builder
 # Langflow 표시 설명: LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다.
 class AnswerResponseBuilder(Component):
 
-    display_name = "19 Answer Response Builder"
+    display_name = "20 Answer Response Builder"
     description = "LLM 답변과 result data, 적용 scope, 다음 턴 state를 하나의 최종 payload로 결합합니다."
     inputs = [
         DataInput(name="payload", display_name="Payload", required=True),

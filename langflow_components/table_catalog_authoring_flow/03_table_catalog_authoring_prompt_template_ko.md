@@ -27,7 +27,7 @@ filter_mappings의 왼쪽은 DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, RECIPE_
 사용자가 standard_column_aliases 섹션을 명시하거나 표준 컬럼 별칭을 저장하라고 명시한 경우에만 standard_column_aliases를 저장하세요. filter_mappings에서 standard_column_aliases를 새로 파생하지 마세요.
 standard_column_aliases는 DATE, MODE, DEN, PKG_TYPE1, PKG_TYPE2, MCP_NO, OPER_NAME, DEVICE, EQP_ID 같은 차원/필터 column에만 사용하세요. INPUT_PLAN, OUT_PLAN, TARGET, INPUT계획, OUT계획 같은 metric/quantity alias는 standard_column_aliases에 저장하지 마세요.
 예: Goodocs target이 PKG1, MCP NO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCP NO로 매핑하세요. 생산 source가 PKG_TYP1/PKG_TYP2를 사용하면 PKG_TYPE1->PKG_TYP1, PKG_TYPE2->PKG_TYP2로 매핑하세요. Equipment가 PKG1, PKG2, MCPSALENO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCPSALENO로 매핑하세요.
-수량 column은 primary_quantity_column에 실제 source column 이름 그대로 저장하세요. 예를 들어 Goodocs 시트에 INPUT계획, OUT계획 column이 있으면 primary_quantity_column은 ["INPUT계획", "OUT계획"]으로 저장하고 ["INPUT_PLAN", "OUT_PLAN"]으로 바꾸지 마세요.
+수량 column은 primary_quantity_column에 실제 source column 이름을 공백까지 그대로 저장하세요. 예를 들어 Goodocs 시트에 INPUT 계획, OUT 계획 column이 있으면 primary_quantity_column은 ["INPUT 계획", "OUT 계획"]으로 저장하고 ["INPUT계획", "OUT계획"] 또는 ["INPUT_PLAN", "OUT_PLAN"]으로 바꾸지 마세요.
 
 작성 context:
 {authoring_context}

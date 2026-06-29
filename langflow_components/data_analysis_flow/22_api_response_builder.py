@@ -1,4 +1,4 @@
-# 파일 설명: 21 API Response Builder Langflow custom component 파일입니다.
+# 파일 설명: 22 API Response Builder Langflow custom component 파일입니다.
 # 흐름 역할: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
 # 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
 
@@ -337,17 +337,17 @@ def _unique_values(values: list[Any]) -> list[Any]:
     return result
 
 
-# 컴포넌트 설명: 21 API Response Builder
+# 컴포넌트 설명: 22 API Response Builder
 # Langflow 표시 설명: 최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다.
 class MainFlowApiResponseBuilder(Component):
 
-    display_name = "21 API Response Builder"
+    display_name = "22 API Response Builder"
     description = "최종 데이터 분석 payload를 web/API client가 쓰기 쉬운 compact JSON 응답으로 투영합니다."
     icon = "Braces"
     name = "MainFlowApiResponseBuilder"
 
     inputs = [
-        DataInput(name="payload", display_name="Payload", info="Payload output from 19 Answer Response Builder.", input_types=["Data", "JSON"], required=True),
+        DataInput(name="payload", display_name="Payload", info="Payload output from 20 Answer Response Builder.", input_types=["Data", "JSON"], required=True),
     ]
 
     outputs = [Output(name="api_response", display_name="API Response", method="build_api_response_output", types=["Data"])]

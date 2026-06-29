@@ -118,7 +118,7 @@ def test_table_catalog_and_dummy_data_cover_authoring_example_columns():
         assert source_result["row_count"] > 0
         assert set(spec["columns"]).issubset(source_result["columns"])
 
-    assert {"INPUT계획", "OUT계획"}.issubset(catalog["target"]["columns"])
+    assert {"INPUT 계획", "OUT 계획"}.issubset(catalog["target"]["columns"])
 
 
 def test_langflow_dummy_retriever_preserves_job_filters_for_pandas_stage():
@@ -197,7 +197,7 @@ def test_langflow_dummy_retriever_is_rich_enough_for_analysis_validation():
         row["PRODUCTION"] for row in production_rows if row["OPER_NAME"] in da_processes and row["SHIFT"] == "1"
     ) > 0
     assert sum(row["WIP"] for row in wip_rows if row["OPER_NAME"] in da_processes and row["SHIFT"] == "1") > 0
-    assert {"Mode", "PKG1", "PKG2", "MCP NO", "INPUT계획", "OUT계획"}.issubset(results["target"]["columns"])
+    assert {"Mode", "PKG1", "PKG2", "MCP NO", "INPUT 계획", "OUT 계획"}.issubset(results["target"]["columns"])
     assert results["production_today"]["source_execution"]["params_applied_in_retriever"] is True
 
 
@@ -573,6 +573,81 @@ def test_langflow_goodocs_retriever_reads_document_and_preserves_filters_for_pan
     assert captured["auth"]["SHEET_NAME"] == "daily_target"
 
 
+def test_goodocs_spaced_plan_quantity_columns_retrieve_and_execute_in_pandas():
+    goodocs_module = _load_component("13_goodocs_retriever.py")
+    retrieval_adapter = _load_main_component("15_retrieval_payload_adapter.py")
+    pandas_executor = _load_component("15_pandas_code_executor.py")
+
+    class FakeGoodocs:
+        def __init__(self, auth: dict):
+            self.auth = auth
+
+        def read_all(self):
+            return [
+                {"DATE": "2026-06-26", "Mode": "LPDDR5", "DEN": "512G", "INPUT 계획": 100, "OUT 계획": 80},
+                {"DATE": "2026-06-26", "Mode": "LPDDR5", "DEN": "512G", "INPUT 계획": 200, "OUT 계획": 120},
+                {"DATE": "2026-06-27", "Mode": "LPDDR5", "DEN": "512G", "INPUT 계획": 999, "OUT 계획": 999},
+            ]
+
+    previous_goodocs_class = goodocs_module.GoodocsRetriever.goodocs_class
+    goodocs_module.GoodocsRetriever.goodocs_class = FakeGoodocs
+    job = {
+        "dataset_key": "target",
+        "source_alias": "target_data",
+        "source_type": "goodocs",
+        "source_config": {"source_type": "goodocs", "doc_id": "1231231412412512515"},
+        "params": {},
+        "filters": [{"field": "DATE", "op": "eq", "value": "2026-06-26"}],
+        "required_columns": ["DATE", "INPUT 계획", "OUT 계획"],
+        "primary_quantity_column": ["INPUT 계획", "OUT 계획"],
+    }
+    main_payload = {
+        "request": {"session_id": "test", "question": "2026-06-26 생산계획 보여줘"},
+        "state": {},
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "metric": "OUT_PLAN",
+            "retrieval_jobs": [job],
+            "step_plan": [
+                {
+                    "step_id": "sum_plan",
+                    "operation": "aggregate_sum",
+                    "source_alias": "target_data",
+                    "metrics": ["INPUT 계획", "OUT 계획"],
+                }
+            ],
+        },
+    }
+
+    try:
+        retrieval_payload = goodocs_module.retrieve_goodocs_data(main_payload, "user", "source", "key")
+    finally:
+        goodocs_module.GoodocsRetriever.goodocs_class = previous_goodocs_class
+
+    source_result = retrieval_payload["retrieval_payload"]["source_results"][0]
+    assert source_result["success"] is True
+    assert {"INPUT 계획", "OUT 계획"}.issubset(source_result["columns"])
+
+    payload = retrieval_adapter.adapt_retrieval_payload(main_payload, retrieval_payload)
+    assert {"INPUT 계획", "OUT 계획"}.issubset(payload["source_results"][0]["columns"])
+
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "target_df = sources['target_data']",
+                "target_df = target_df[target_df['DATE'] == '2026-06-26']",
+                "result_df = pd.DataFrame([{'INPUT_PLAN': target_df['INPUT 계획'].sum(), 'OUT_PLAN': target_df['OUT 계획'].sum()}])",
+            ]
+        ),
+        "output_columns": ["INPUT_PLAN", "OUT_PLAN"],
+        "reasoning_steps": [],
+    }
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["rows"] == [{"INPUT_PLAN": 300, "OUT_PLAN": 200}]
+
+
 def test_retrieval_payload_adapter_builds_compact_main_payload():
     main_payload = {
         "request": {"session_id": "test", "question": "q"},
@@ -799,7 +874,7 @@ def _authoring_example_dataset_specs() -> dict[str, dict]:
         "target": {
             "display_name": "Target2 Goodocs Plan",
             "required_params": [],
-            "columns": ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT계획", "OUT계획"],
+            "columns": ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT 계획", "OUT 계획"],
             "filter_columns": {
                 "DATE": ["DATE"],
                 "MODE": ["Mode"],

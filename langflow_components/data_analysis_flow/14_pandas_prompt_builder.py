@@ -64,6 +64,8 @@ def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: 
             "sources에 physical column과 standard alias가 둘 다 남아 있을 것이라고 기대하지 마세요. product_grain, group_by, join_keys, analysis_output_columns의 standard name을 사용하세요.",
             "생성 코드 안에서 physical column을 standard column으로 다시 rename하지 마세요. sources는 이미 표준화된 view이며, source summary에 보이는 standard column을 그대로 사용하세요.",
             "source summary에 해당 physical column이 보이고 plan이 standard alias 없는 source-only measure/detail column을 명시적으로 요구할 때만 physical source column name을 사용하세요.",
+            "column name 안의 공백은 실제 source column name의 일부입니다. source summary 또는 primary_quantity_column에 'INPUT 계획', 'OUT 계획'처럼 보이면 'INPUT계획', 'OUT계획'으로 임의 압축하지 말고 정확히 보이는 이름을 사용하세요.",
+            "plan이 INPUT_PLAN/OUT_PLAN 같은 standard metric을 요구하지만 source summary에는 'INPUT 계획'/'OUT 계획' 같은 physical quantity column만 보이면, 계산에는 실제 source column을 사용하고 최종 result column만 standard metric name으로 정리하세요.",
             "measure column을 한글 label로 번역하지 말고, PRODUCTION_sum, WIP_sum, OUT_PLAN_sum, lowercase rank 같은 임시 이름을 result_df에 남기지 마세요.",
             "_prod_df 또는 _filtered_df처럼 underscore로 시작하는 local variable name을 만들거나 참조하지 마세요. prod_df, wip_today_df, WAFER_OUT_QTY처럼 이름 안의 underscore는 허용됩니다.",
             "module을 import하지 마세요. 파일 read/write, network, OS, eval, exec, open, subprocess를 사용하지 마세요.",
@@ -72,6 +74,8 @@ def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: 
             "date/date-format 처리는 datetime/date/timedelta를 import하지 마세요. pandas만 사용하세요: pd.to_datetime(..., errors='coerce'), Series.dt.strftime(...), string slicing, 또는 plan filters/params에 이미 있는 DATE value와 직접 string comparison.",
             "metadata에서 이미 DATE param/filter를 받은 dataset은 pandas 코드 안에서 날짜를 다시 계산하지 말고 그 string value를 직접 사용하는 것을 우선하세요.",
             "source별 DATE params/filters가 서로 다르면 각 source_alias에 지정된 DATE만 해당 DataFrame에 적용하세요. 한 source의 DATE를 다른 source에 복사하거나 전체 분석 공통 DATE로 덮어쓰지 마세요.",
+            "pandas filter를 적용할 때 eq/in/not_in/starts_with/contains 같은 문자열 또는 범주형 비교는 source column도 비교값도 같은 형식으로 맞춘 뒤 비교하세요. 예: df[col].astype(str).str.strip().str.upper()와 str(value).strip().upper()를 비교하세요.",
+            "SHIFT, DATE, OPER_NAME처럼 숫자/문자/공백 표기가 섞일 수 있는 filter column에 df[col] == '2' 같은 직접 비교를 사용하지 마세요. numeric range 비교(gte/gt/lte/lt)만 pd.to_numeric(..., errors='coerce')를 사용하세요.",
             "생성 코드에서 .to_frame()을 사용하지 마세요. 여러 metric의 one total row는 pd.DataFrame([{...}])로 result_df를 만드세요.",
             "DataFrame.agg(named_metric=(column, func)).to_frame().T를 사용하지 마세요. DataFrame.agg는 이미 DataFrame을 반환할 수 있고, 이후 to_frame은 실패할 수 있습니다.",
             "groupby(..., as_index=False)를 사용했다면 뒤에 reset_index()를 다시 붙이지 마세요. group column이 이미 column으로 남아 있어 cannot insert ... already exists 오류가 날 수 있습니다.",
@@ -83,11 +87,14 @@ def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: 
             "순차 step_plan 실행 규칙:",
             "- Source retrieval은 DATE 또는 LOT_ID 같은 required source parameter만 적용합니다. aggregation/ranking/joining 전에 retrieval_jobs[*].filters 조건은 pandas 코드 안에서 모두 적용하세요.",
             "- filter에는 retrieval job과 일치하는 source_alias를 사용하세요. op='eq', op='in', op='not_in', op='not_empty'/'exists', op='empty', op='starts_with', op='last_char_in', op='gte'/'gt'/'lte'/'lt' 같은 numeric comparison을 지원하세요. 명시적으로 state-driven인 PRODUCT_GRAIN/from_state filter만 무시하세요.",
+            "- filter op='eq'/'in'/'not_in'/'starts_with'/'contains'를 구현할 때 source column과 filter value를 모두 문자열 strip/uppercase 기준으로 정규화하세요. 실제 source가 SHIFT=2 숫자이고 plan filter가 value='2' 문자열이어도 매칭되어야 합니다.",
             "- plan['step_plan']을 읽고 모든 step을 순서대로 구현하세요. multi-step plan을 쉬운 count나 groupby 하나로 축약하지 마세요.",
             "- plan['step_plan']에 실제로 없는 step을 임의로 추가하거나 참조하지 마세요. 예를 들어 step_plan 길이가 3이면 plan['step_plan'][3] 같은 index를 절대 사용하지 마세요.",
             "- step_outputs라는 local dict를 유지하세요. 모든 step 이후 step DataFrame을 step_outputs[step_id]에 저장하고, downstream filtering/joining에는 step_outputs의 이전 step을 읽어 사용하세요.",
             "- step_outputs key는 plan['step_plan']의 실제 step_id를 사용하세요. 질문에 DA/WB, 제품/공정 같은 표현이 있어도 normalized step_plan에 없는 rank_da_*, rank_wb_*, combine_* 같은 별도 step을 새로 만들지 마세요.",
             "- step에 input_step_id가 있으면 sources[source_alias]를 다시 읽지 말고 step_outputs[input_step_id]를 해당 step의 input DataFrame으로 사용하세요.",
+            "- apply_pandas_function_case step에서 helper input_text를 임의로 축약하지 마세요. 제품 token helper라면 질문의 모든 제품 속성 token을 포함하세요. 예: 'UFBGA qdp제품'은 match_product_tokens('UFBGA qdp', ...)처럼 호출하고 match_product_tokens('qdp', ...)처럼 일부 token만 넘기지 마세요.",
+            "- 제품 token pandas_function_case가 선택된 경우 helper를 호출해 token filtering을 수행하세요. token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과입니다.",
             "- apply_pandas_function_case step 이후 같은 source_alias에 대한 aggregate/rank/detail step이 이어지면 helper output schema를 먼저 확인하세요.",
             "- downstream step의 group_by/metric/output_columns에 필요한 column이 helper output에 모두 있으면 helper output 자체를 filtered source row로 사용하세요.",
             "- downstream에 필요한 column이 helper output에 없으면 helper output을 key table로만 사용하고, 같은 source_alias 원본 DataFrame을 공통 key columns로 filter/merge한 뒤 aggregate/rank/detail을 수행하세요.",
@@ -171,26 +178,59 @@ def _pandas_function_cases(
         _with_function_case_implementation_status(case, manual_function_names)
         for case in selected_domain_cases
     ]
+    selected_function_names = sorted(
+        {
+            str(case.get("function_name") or "").strip()
+            for case in selected_domain_cases
+            if str(case.get("function_name") or "").strip()
+        }
+    )
+    manual_blocks = _manual_function_blocks(manual)
+    relevant_manual_blocks = _relevant_manual_function_blocks(manual_blocks, selected_function_names)
     cases: list[dict[str, Any]] = []
     if manual:
-        cases.append(
-            {
-                "key": "manual_text_input",
-                "source": "specialized_functions_text",
-                "instructions": manual,
-                "defined_functions": manual_function_names,
-                "helper_signatures": manual_signatures,
-                "implementation_note": (
-                    "Use this text as a reference for generating pandas code. "
-                    "The generated code may define this helper inline or call it when the executor has the same helper loaded."
-                ),
-            }
-        )
+        manual_case = {
+            "key": "manual_text_input",
+            "source": "specialized_functions_text",
+            "defined_functions": manual_function_names,
+            "helper_signatures": manual_signatures,
+            "implementation_note": (
+                "Use this text as a reference for generating pandas code. "
+                "The generated code may define this helper inline or call it when the executor has the same helper loaded."
+            ),
+        }
+        if manual_blocks:
+            manual_case["instructions"] = (
+                "Specialized Functions text is organized by function_name blocks. "
+                "Use only blocks whose function_name matches the selected pandas function case."
+            )
+            manual_case["available_function_blocks"] = [block["function_name"] for block in manual_blocks]
+            manual_case["function_blocks"] = relevant_manual_blocks
+            if relevant_manual_blocks:
+                manual_case["defined_functions"] = sorted(
+                    {
+                        function_name
+                        for block in relevant_manual_blocks
+                        for function_name in block.get("defined_functions", [])
+                    }
+                )
+                manual_case["helper_signatures"] = [
+                    signature
+                    for block in relevant_manual_blocks
+                    for signature in block.get("helper_signatures", [])
+                ]
+            if selected_function_names and not relevant_manual_blocks:
+                manual_case["missing_selected_function_blocks"] = selected_function_names
+        else:
+            manual_case["instructions"] = manual
+        cases.append(manual_case)
     cases.extend(selected_domain_cases)
     runtime = {
         "manual_text": manual,
         "manual_code_blocks": manual_code_blocks,
         "manual_function_names": manual_function_names,
+        "manual_function_blocks": manual_blocks,
+        "selected_function_names": selected_function_names,
         "selected_cases": [
             {
                 "key": case.get("key"),
@@ -225,12 +265,14 @@ def _pandas_function_cases(
             "이 case들은 재사용 helper-function 안내입니다. 새 data source를 추가하지 않습니다.",
             "metadata case는 function_code가 포함된 경우를 제외하면 선택 힌트입니다.",
             "Specialized Functions에 붙여넣은 code와 설명은 pandas code 작성을 위한 reference입니다.",
+            "Specialized Functions 입력이 function_name별 block 구조라면 선택된 function_name과 일치하는 block만 참고하고 다른 helper block의 설명은 무시하세요.",
+            "함수별 block의 설명은 해당 function_name 전용 contract입니다. 한 helper의 token/column 규칙을 다른 helper에 적용하지 마세요.",
             "필요하면 Specialized Functions의 helper 함수를 generated code 안에 정의한 뒤 호출해도 됩니다.",
             "function case를 적용할 때 preview_rows가 아니라 sources의 실제 DataFrame을 사용하세요.",
             "plan.pandas_function_case 또는 step_plan의 function_case_key/function_name이 case를 지정하면 Specialized Functions의 의도를 반영해 pandas code를 작성하세요.",
             "helper function을 호출할 때는 가능한 한 positional arguments를 사용하세요. 예: match_product_tokens(input_text, sources[source_alias]).",
             "helper input_text는 현재 step.get('input_text') 또는 plan.get('pandas_function_case', {}).get('input_text')에서 읽으세요. plan['intent_plan']은 존재하지 않습니다.",
-            "helper function을 호출만 하고 generated code 안에 정의하지 않는 경우에는 15 Pandas Code Executor에도 같은 Specialized Functions가 연결되어 있어야 합니다.",
+            "helper function을 호출만 하고 generated code 안에 정의하지 않는 경우에는 15 Pandas Code Executor와 17 Pandas Repair Code Executor에도 같은 Specialized Functions가 연결되어 있어야 합니다.",
             "helper가 입력 text를 해석해 source row를 필터링하는 case라면 helper 설명에 있는 concrete input 조건을 실제 sources DataFrame row에 적용하세요.",
             "helper 결과를 downstream step에 넘기기 전에 group_by/metric/output_columns에 필요한 column이 helper output에 있는지 확인하세요.",
             "필요한 column이 모두 있으면 helper output을 filtered source row로 사용하고, 필요한 column이 없으면 helper output을 key table로만 사용해서 원본 sources[source_alias]를 공통 key columns로 제한한 뒤 집계하세요.",
@@ -247,6 +289,45 @@ def _pandas_function_cases(
         "prompt_text": json.dumps(prompt_payload, ensure_ascii=False, indent=2),
         "runtime": runtime,
     }
+
+
+def _manual_function_blocks(manual: str) -> list[dict[str, Any]]:
+    text = _clean_text(manual)
+    if not text:
+        return []
+    matches = list(
+        re.finditer(
+            r"(?im)^\s*(?:#{1,6}\s*)?function_name\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$",
+            text,
+        )
+    )
+    if not matches:
+        return []
+    blocks: list[dict[str, Any]] = []
+    for index, match in enumerate(matches):
+        function_name = match.group(1)
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        block_text = text[start:end].strip()
+        code_blocks = _extract_python_code_blocks(block_text)
+        blocks.append(
+            {
+                "function_name": function_name,
+                "instructions": block_text,
+                "defined_functions": sorted(_defined_function_names_from_blocks(code_blocks)),
+                "helper_signatures": _function_signatures_from_blocks(code_blocks),
+            }
+        )
+    return blocks
+
+
+def _relevant_manual_function_blocks(blocks: list[dict[str, Any]], selected_function_names: list[str]) -> list[dict[str, Any]]:
+    if not blocks:
+        return []
+    selected = {str(name or "").strip() for name in selected_function_names if str(name or "").strip()}
+    if not selected:
+        return blocks
+    return [block for block in blocks if str(block.get("function_name") or "").strip() in selected]
 
 
 def _with_function_case_implementation_status(case: dict[str, Any], manual_function_names: list[str]) -> dict[str, Any]:

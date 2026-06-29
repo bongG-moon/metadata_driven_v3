@@ -134,6 +134,7 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
         payload["default_detail_columns"] = _as_text_list(payload.get("default_detail_columns"))
     if payload.get("columns") is not None:
         payload["columns"] = _as_text_list(payload.get("columns"))
+    _normalize_primary_quantity_column(payload)
     payload["filter_mappings"] = _normalize_mapping(payload.get("filter_mappings"))
     payload["required_param_mappings"] = _normalize_mapping(payload.get("required_param_mappings"))
     _normalize_required_param_fields(payload, source_text)
@@ -226,7 +227,7 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     date_format = _date_format_from_text(source_text)
     if date_format and not _clean(payload.get("date_format")):
         payload["date_format"] = date_format
-    quantity_column = _quantity_column_from_text(source_text)
+    quantity_column = _quantity_column_from_text(source_text, _as_text_list(payload.get("columns")))
     if quantity_column:
         payload["primary_quantity_column"] = quantity_column
     if _declares_no_required_params(source_text):
@@ -772,15 +773,66 @@ def _date_format_from_text(text: str) -> str:
     return ""
 
 
-def _quantity_column_from_text(text: str) -> Any:
-    if "계획 수량" in text and "INPUT계획" in text and "OUT계획" in text:
-        return ["INPUT계획", "OUT계획"]
-    if "기본 목표 수량" in text and "OUT계획" in text:
-        return "OUT계획"
+def _quantity_column_from_text(text: str, columns: list[str] | None = None) -> Any:
+    source_columns = _as_text_list(columns)
+    plan_columns = _plan_quantity_columns_from_columns(source_columns)
+    if "계획 수량" in text:
+        if plan_columns:
+            return plan_columns
+        quoted_columns = _plan_quantity_columns_from_text(text)
+        if quoted_columns:
+            return quoted_columns
+        compact = re.sub(r"\s+", "", text)
+        if "INPUT계획" in compact and "OUT계획" in compact:
+            return ["INPUT계획", "OUT계획"]
+    if "기본 목표 수량" in text:
+        out_column = _out_plan_column_from_columns(source_columns)
+        if out_column:
+            return out_column
+        compact = re.sub(r"\s+", "", text)
+        if "OUT계획" in compact:
+            return "OUT계획"
     match = re.search(r"(?:수량|quantity).*?([A-Z][A-Z0-9_]+)\s*컬럼", text, flags=re.IGNORECASE)
     if match:
         return _clean(match.group(1)).upper()
     return ""
+
+
+def _plan_quantity_columns_from_columns(columns: list[str]) -> list[str]:
+    input_column = ""
+    out_column = ""
+    for column in columns:
+        normalized = _normalize_quantity_column_name(column)
+        if not input_column and normalized in {"INPUT계획", "INPUT_PLAN"}:
+            input_column = column
+        if not out_column and normalized in {"OUT계획", "OUT_PLAN"}:
+            out_column = column
+    return [column for column in (input_column, out_column) if column]
+
+
+def _out_plan_column_from_columns(columns: list[str]) -> str:
+    for column in columns:
+        if _normalize_quantity_column_name(column) in {"OUT계획", "OUT_PLAN"}:
+            return column
+    return ""
+
+
+def _plan_quantity_columns_from_text(text: str) -> list[str]:
+    candidates = []
+    candidates.extend(re.findall(r"[\"'‘’“”]([^\"'‘’“”]+)[\"'‘’“”]", text))
+    candidates.extend(re.findall(r"\b(?:INPUT|OUT)\s*계획\b", text, flags=re.IGNORECASE))
+    result: list[str] = []
+    for candidate in candidates:
+        normalized = _normalize_quantity_column_name(candidate)
+        if normalized in {"INPUT계획", "OUT계획", "INPUT_PLAN", "OUT_PLAN"}:
+            result.append(_clean(candidate))
+    input_column = next((column for column in result if _normalize_quantity_column_name(column) in {"INPUT계획", "INPUT_PLAN"}), "")
+    out_column = next((column for column in result if _normalize_quantity_column_name(column) in {"OUT계획", "OUT_PLAN"}), "")
+    return [column for column in (input_column, out_column) if column]
+
+
+def _normalize_quantity_column_name(value: Any) -> str:
+    return re.sub(r"\s+", "", _clean(value).upper())
 
 
 def _columns_from_text_list(text: str) -> list[str]:
@@ -834,6 +886,23 @@ def _normalize_standard_column_aliases(value: Any) -> dict[str, list[str]]:
         for key, values in normalized.items()
         if _clean(key).upper() in STANDARD_ALIAS_KEYS and _clean(key).upper() not in QUANTITY_ALIAS_KEYS
     }
+
+
+def _normalize_primary_quantity_column(payload: dict[str, Any]) -> None:
+    if payload.get("primary_quantity_column") is None:
+        return
+    columns = _as_text_list(payload.get("columns"))
+    physical_by_normalized = {_normalize_quantity_column_name(column): column for column in columns}
+
+    def normalize_one(value: Any) -> str:
+        text = _clean(value)
+        return physical_by_normalized.get(_normalize_quantity_column_name(text), text)
+
+    quantity_columns = _as_text_list(payload.get("primary_quantity_column"))
+    if isinstance(payload.get("primary_quantity_column"), list):
+        payload["primary_quantity_column"] = _unique_text(normalize_one(column) for column in quantity_columns)
+    elif quantity_columns:
+        payload["primary_quantity_column"] = normalize_one(quantity_columns[0])
 
 
 def _normalize_date_format_field(payload: dict[str, Any]) -> None:

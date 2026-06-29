@@ -378,6 +378,47 @@ def test_pandas_executor_copies_required_columns_from_real_aliases_only() -> Non
     assert result["analysis"]["rows"][0] == {"LOT_ID": "LOT1", "TECH_NM": "FC"}
 
 
+def test_pandas_executor_accepts_spaced_plan_quantity_columns() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "metric": "OUT계획",
+            "retrieval_jobs": [
+                {
+                    "dataset_key": "target",
+                    "source_alias": "target_data",
+                    "required_columns": ["DATE", "INPUT계획", "OUT계획"],
+                    "primary_quantity_column": ["INPUT계획", "OUT계획"],
+                }
+            ],
+        },
+        "state": {},
+        "runtime_sources": {
+            "target_data": [
+                {"DATE": "2026-06-26", "INPUT 계획": 100, "OUT 계획": 80},
+                {"DATE": "2026-06-26", "INPUT 계획": 200, "OUT 계획": 120},
+            ]
+        },
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "target_df = sources['target_data']",
+                "result_df = pd.DataFrame([{'INPUT_PLAN': target_df['INPUT계획'].sum(), 'OUT_PLAN': target_df['OUT계획'].sum()}])",
+            ]
+        ),
+        "output_columns": ["INPUT_PLAN", "OUT_PLAN"],
+        "reasoning_steps": [],
+    }
+
+    result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+    assert result["analysis"]["status"] == "ok"
+    assert result["analysis"]["columns"] == ["INPUT_PLAN", "OUT_PLAN"]
+    assert result["analysis"]["rows"][0] == {"INPUT_PLAN": 300, "OUT_PLAN": 200}
+
+
 def test_pandas_executor_does_not_hide_missing_group_columns_with_fallback() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
@@ -768,8 +809,69 @@ def test_pandas_prompt_tells_llm_to_apply_retrieval_filters_in_pandas() -> None:
 
     assert "Source retrieval은 DATE 또는 LOT_ID 같은 required source parameter만 적용" in result["prompt"]
     assert "분석 전에 pandas에서 적용할 source filter" in result["prompt"]
+    assert "df[col] == '2' 같은 직접 비교를 사용하지 마세요" in result["prompt"]
+    assert "match_product_tokens('UFBGA qdp'" in result["prompt"]
     assert "W/B1" in result["prompt"]
     assert result["source_filters"] == {"wip_data": [{"field": "OPER_NAME", "op": "in", "values": ["W/B1", "W/B2"]}]}
+
+
+def test_pandas_executor_source_filters_match_numeric_shift_against_string_filter() -> None:
+    pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    frame = pandas_executor.pd.DataFrame(
+        [
+            {"DATE": 20260629, "SHIFT": 2, "OPER_NAME": "FCB1", "PRODUCTION": 10},
+            {"DATE": 20260629, "SHIFT": 1, "OPER_NAME": "FCB1", "PRODUCTION": 20},
+            {"DATE": 20260629, "SHIFT": 2, "OPER_NAME": "FCB2", "PRODUCTION": 30},
+        ]
+    )
+    plan = {
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "filters": [
+                    {"field": "OPER_NAME", "op": "in", "values": ["FCB1"]},
+                    {"field": "SHIFT", "op": "eq", "value": "2"},
+                    {"field": "DATE", "op": "eq", "value": "20260629"},
+                ],
+            }
+        ]
+    }
+
+    filtered = pandas_executor._apply_source_filters_for_alias(frame, "production_data", plan)
+
+    assert filtered.to_dict(orient="records") == [
+        {"DATE": 20260629, "SHIFT": 2, "OPER_NAME": "FCB1", "PRODUCTION": 10}
+    ]
+
+
+def test_pandas_repair_prompt_repeats_filter_and_product_token_guardrails() -> None:
+    repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
+    payload = {
+        "pandas_repair": {"required": True},
+        "request": {"question": "오늘 da에서 UFBGA qdp제품 생산량 알려줘"},
+        "intent_plan": {
+            "analysis_kind": "aggregate_join",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "UFBGA qdp",
+            },
+        },
+        "analysis": {
+            "analysis_code": "matched_prod_df = match_product_tokens('qdp', prod_df)",
+            "errors": ["previous code filtered incorrectly"],
+            "pandas_code_json": {"code": "matched_prod_df = match_product_tokens('qdp', prod_df)"},
+        },
+        "runtime_sources": {},
+        "state": {},
+    }
+
+    result = repair_prompt_builder.build_pandas_repair_prompt_payload(payload)
+
+    assert "df[col] == '2' 같은 직접 비교를 사용하지 마세요" in result["prompt"]
+    assert "UFBGA qdp" in result["prompt"]
+    assert "'qdp'만 넘기지 마세요" in result["prompt"]
 
 
 def test_pandas_executor_keeps_successful_unfiltered_rank_result_for_repair_visibility() -> None:

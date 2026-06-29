@@ -72,9 +72,9 @@ Use Langflow's Gemini/LLM nodes for the actual reasoning calls:
 4. For analysis questions, call `data_analysis_flow/02 Intent Prompt Builder -> Gemini/LLM -> 03 Intent Plan Normalizer`.
 5. `data_analysis_flow/07~12` retriever/merger nodes -> `13 Retrieval Payload Adapter`.
 6. `14 Pandas Prompt Builder -> Gemini/LLM -> 15 Pandas Code Executor`.
-7. Optional pandas repair branch: `16A Pandas Repair Payload Builder -> 16B Pandas Repair Prompt Builder -> Gemini/LLM -> second 15 Pandas Code Executor`.
-8. Final pandas payload -> `17 MongoDB Data Store -> 18 Answer Prompt Builder -> Gemini/LLM -> 19 Answer Response Builder`.
-9. `19 Answer Response Builder.payload_out -> 20 Answer Message Adapter.message -> Chat Output`.
+7. Optional pandas repair branch: `16A Pandas Repair Payload Builder -> 16B Pandas Repair Prompt Builder -> Gemini/LLM -> 17 Pandas Repair Code Executor`.
+8. Final pandas payload -> `18 MongoDB Data Store -> 19 Answer Prompt Builder -> Gemini/LLM -> 20 Answer Response Builder`.
+9. `20 Answer Response Builder.payload_out -> 21 Answer Message Adapter.message -> Chat Output`, and optionally `22 API Response Builder` for API/session-state output.
 
 The final adapter formats one playground-friendly Markdown message from the existing final payload.
 It includes the answer, result table, intent summary, retrieval/step plan summary, pandas execution

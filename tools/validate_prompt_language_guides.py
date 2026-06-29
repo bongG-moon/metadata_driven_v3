@@ -38,7 +38,7 @@ REQUIRED_TOKENS_BY_FILE = {
         "apply_pandas_function_case",
         "function_code",
     ],
-    "18_answer_prompt_ko.md": [
+    "19_answer_prompt_ko.md": [
         "answer_message",
         "data.rows",
         "column_standardization",

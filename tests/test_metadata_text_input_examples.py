@@ -420,9 +420,9 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
         "domain:product_terms:POP_PRODUCT",
         "domain:product_terms:MOBILE_PRODUCT",
         "domain:product_terms:flexible_product",
-        "domain:metric_terms:PRODUCTION_ACHIEVEMENT_RATE_METRIC",
         "domain:metric_terms:WAFER_OUT_QUANTITY_METRIC",
         "domain:analysis_recipes:BOH_WIP_DATE_RULE",
+        "domain:analysis_recipes:production_achievement_rate_by_target_plan",
         "domain:analysis_recipes:SHIFT_PERFORMANCE_BY_GROUP",
         "domain:analysis_recipes:DEVICE_ALIAS_TO_COLUMN_MAPPING",
         "domain:analysis_recipes:PROCESS_SEQUENCE_INTERPRETATION_AND_GROUPING_RULE",
@@ -453,7 +453,10 @@ def test_worker_bulk_domain_text_input_saves_all_current_domain_metadata(monkeyp
     flexible_rule = docs["domain:product_terms:flexible_product"]["payload"]["calculation_rule"]
     assert "FAB" in flexible_rule and "DEVICE" in flexible_rule and "OWNER" in flexible_rule and "GRADE" in flexible_rule
     assert docs["domain:product_terms:flexible_product"]["payload"]["required_columns_by_family"]["production"] == ["FAB", "DEVICE"]
-    assert docs["domain:metric_terms:PRODUCTION_ACHIEVEMENT_RATE_METRIC"]["payload"]["required_dataset_families"] == ["production", "target"]
+    achievement_payload = docs["domain:analysis_recipes:production_achievement_rate_by_target_plan"]["payload"]
+    assert achievement_payload["required_dataset_families"] == ["production", "target"]
+    assert achievement_payload["step_plan_template"][1]["metrics"] == ["INPUT 계획", "OUT 계획"]
+    assert "OPER, OPER_NAME, OPER_SEQ를 넣지 않는다" in achievement_payload["calculation_rule"]
     assert docs["domain:analysis_recipes:BOH_WIP_DATE_RULE"]["payload"]["required_dataset_families"] == ["wip"]
     assert docs["domain:analysis_recipes:BOH_WIP_DATE_RULE"]["payload"]["blocked_filter_fields"] == ["DATE"]
     assert docs["domain:analysis_recipes:SHIFT_PERFORMANCE_BY_GROUP"]["payload"]["group_by_columns"] == ["SHIFT"]
@@ -526,7 +529,7 @@ def test_worker_bulk_table_text_input_saves_all_current_datasets(monkeypatch: An
         "HOLD_USER_ID",
         "EVENT_CD",
     ]
-    assert docs["table_catalog:target"]["payload"]["primary_quantity_column"] == ["INPUT계획", "OUT계획"]
+    assert docs["table_catalog:target"]["payload"]["primary_quantity_column"] == ["INPUT 계획", "OUT 계획"]
     assert docs["table_catalog:target"]["payload"]["standard_column_aliases"] == {}
     assert "INPUT_PLAN" not in docs["table_catalog:target"]["payload"]["standard_column_aliases"]
     assert "OUT_PLAN" not in docs["table_catalog:target"]["payload"]["standard_column_aliases"]

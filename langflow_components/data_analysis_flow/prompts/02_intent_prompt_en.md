@@ -34,12 +34,14 @@ Planning rules:
 - Keep product_grain, step_plan[].group_by, step_plan[].join_keys, and final output_columns in standard logical column names from metadata.
 - Use intent_type=followup_transform when the question depends on previous state.
 - For current or relative-date questions, prefer datasets whose metadata date_scope matches the requested time scope unless the question asks for history.
+- For an explicit past date such as `2026-06-12` that is not today, do not use a `date_scope=current_day` dataset; prefer the same dataset_family with `date_scope=history`.
 - For status, category, or detail requests, use domain metadata and table_catalog metadata instead of hardcoded values.
 - For top/bottom/rank questions followed by a dependent lookup, express rank first and dependent retrieval/analysis steps second.
 - Separate filter scope from grouping grain. Filter-only columns belong in retrieval_jobs[].filters or rank_groups[].field, not group_by/output_columns unless the user asks for that breakdown axis.
 - When the user compares A versus B scopes, create separate source-specific retrieval_jobs filters and step_plan outputs for each scope.
 - Do not copy top-level filters into every retrieval job when the question assigns different scopes to different sources.
 - When a matching metadata.domain_items.pandas_function_cases item should handle procedural filtering/parsing, set pandas_function_case and add an apply_pandas_function_case step.
+- For product-token pandas_function_case input_text, include all product attribute tokens found in the question. Example: `오늘 da에서 UFBGA qdp제품 생산량` -> `UFBGA qdp`; `lpddr4 lc 64g 제품` -> `lpddr4 lc 64g`. Exclude date/time, process scope, metric, and verb words.
 - If an analysis_recipes item matches the question, use it as planning evidence.
 - If a required dataset, filter, formula, or value mapping is not present in metadata, do not hardcode it. Return the closest metadata-backed plan and explain the missing item in reasoning_steps.
 ```

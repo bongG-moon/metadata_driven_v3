@@ -36,13 +36,13 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
     dummy_retriever = load_component("langflow_components/data_analysis_flow/07_dummy_data_retriever.py")
     retrieval_adapter = load_component("langflow_components/data_analysis_flow/13_retrieval_payload_adapter.py")
-    data_store = load_component("langflow_components/data_analysis_flow/17_mongodb_data_store.py")
+    data_store = load_component("langflow_components/data_analysis_flow/18_mongodb_data_store.py")
     data_loader = load_component("langflow_components/data_analysis_flow/05_mongodb_data_loader.py")
     pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
-    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/18_answer_prompt_builder.py")
-    answer_builder = load_component("langflow_components/data_analysis_flow/19_answer_response_builder.py")
-    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/19_answer_prompt_builder.py")
+    answer_builder = load_component("langflow_components/data_analysis_flow/20_answer_response_builder.py")
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/21_answer_message_adapter.py")
 
     payload = request_loader.build_request_payload("오늘 전체 재공 수량 알려줘", "test-session")
     payload = data_loader.load_payload_from_mongodb(payload, enabled="false")
@@ -54,6 +54,8 @@ def test_langflow_llm_node_style_flow_contract(monkeypatch: Any) -> None:
     assert "step_plan[].source_alias와 step_plan[].source_aliases는 retrieval_jobs[].source_alias 값과 정확히 일치" in intent_prompt
     assert "filtered scope의 total 질문" in intent_prompt
     assert "filter scope column은 result_scope_columns 또는 final output의 label" in intent_prompt
+    assert "input_text='UFBGA qdp'" in intent_prompt
+    assert "qdp처럼 마지막 token 하나만 남기지 마세요" in intent_prompt
 
     intent_llm_json = {
         "intent_type": "single_retrieval_analysis",
@@ -286,6 +288,32 @@ def test_intent_normalizer_builds_recipe_jobs_when_llm_omits_specialized_dataset
     assert payload["intent_plan"]["route"] == "multi_retrieval"
     assert any("분석 recipe 'production_wip_target_rate'" in item for item in payload["info"])
     assert not any("분석 recipe 'production_wip_target_rate'" in item for item in payload["warnings"])
+
+
+def test_intent_normalizer_uses_history_dataset_for_explicit_past_recipe_date(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+    request_loader._runtime_reference_date = lambda: "20260629"
+    intent_normalizer._runtime_reference_date = lambda: "20260629"
+
+    payload = request_loader.build_request_payload("2026-06-12 생산달성율을 제품별로 보여줘", "test-session")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "multi_source_analysis",
+        "analysis_kind": "production_achievement_rate_by_target_plan",
+        "reasoning_steps": ["Need production and target values for an explicit past date."],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+
+    jobs = _retrieval_jobs(payload)
+    assert payload["intent_plan"]["matched_analysis_recipe"] == "production_achievement_rate_by_target_plan"
+    assert [job["dataset_key"] for job in jobs] == ["production", "target"]
+    assert jobs[0]["params"]["DATE"] == "20260612"
+    assert jobs[1]["filters"] == [{"field": "DATE", "op": "eq", "value": "2026-06-12"}]
+    assert jobs[1]["primary_quantity_column"] == ["INPUT 계획", "OUT 계획"]
+    assert payload["intent_plan"]["step_plan"][1]["metrics"] == ["INPUT 계획", "OUT 계획"]
 
 
 def test_intent_normalizer_does_not_build_specialized_jobs_without_recipe_metadata(monkeypatch: Any) -> None:
@@ -1116,6 +1144,71 @@ def test_pandas_prompt_recognizes_raw_specialized_function_definition_without_ma
     assert "match_product_tokens(input_text, source_df)" in prompt_payload["prompt"]
     assert "def match_product_tokens" in prompt_payload["prompt"]
     assert "return source_df.copy()" in prompt_payload["prompt"]
+
+
+def test_pandas_prompt_uses_only_matching_specialized_function_block() -> None:
+    pandas_prompt_builder = load_component("langflow_components/data_analysis_flow/14_pandas_prompt_builder.py")
+    product_case = {
+        "display_name": "Component token product lookup",
+        "function_name": "match_product_tokens",
+        "use_when": "Use for product token lookup.",
+    }
+    payload = {
+        "request": {"question": "오늘 da에서 UFBGA qdp제품 생산량 알려줘"},
+        "metadata": {"domain_items": {"pandas_function_cases": {"component_token_product_lookup": product_case}}},
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "pandas_function_case": {
+                "key": "component_token_product_lookup",
+                "function_name": "match_product_tokens",
+                "input_text": "UFBGA qdp",
+            },
+            "retrieval_jobs": [{"dataset_key": "production_today", "source_alias": "production_data"}],
+            "step_plan": [
+                {
+                    "operation": "apply_pandas_function_case",
+                    "source_alias": "production_data",
+                    "function_case_key": "component_token_product_lookup",
+                    "function_name": "match_product_tokens",
+                    "input_text": "UFBGA qdp",
+                }
+            ],
+        },
+        "runtime_sources": {"production_data": [{"PKG_TYPE1": "UFBGA", "PKG_TYPE2": "QDP", "PRODUCTION": 3}]},
+        "state": {},
+    }
+    helper_text = "\n".join(
+        [
+            "## function_name: match_product_tokens",
+            "",
+            "PRODUCT BLOCK ONLY: use all product tokens.",
+            "",
+            "```python",
+            "def match_product_tokens(input_text, source_df):",
+            "    return source_df.copy()",
+            "```",
+            "",
+            "## function_name: match_lot_hold_conditions",
+            "",
+            "LOT BLOCK SHOULD NOT APPEAR: use hold status and IN_TAT.",
+            "",
+            "```python",
+            "def match_lot_hold_conditions(input_text, source_df):",
+            "    return source_df.copy()",
+            "```",
+        ]
+    )
+
+    prompt_payload = pandas_prompt_builder.build_pandas_prompt_payload(payload, helper_text)
+    prompt = prompt_payload["prompt"]
+    runtime = prompt_payload["pandas_function_case_runtime"]
+
+    assert runtime["manual_function_names"] == ["match_lot_hold_conditions", "match_product_tokens"]
+    assert runtime["selected_function_names"] == ["match_product_tokens"]
+    assert "PRODUCT BLOCK ONLY" in prompt
+    assert "LOT BLOCK SHOULD NOT APPEAR" not in prompt
+    assert "match_product_tokens(input_text, source_df)" in prompt
+    assert "match_lot_hold_conditions(input_text, source_df)" not in prompt
 
 
 def test_intent_prompt_includes_specialized_prompt_text_input() -> None:
@@ -3674,6 +3767,7 @@ def test_pandas_repair_builder_repairs_generated_code_error_payload() -> None:
 
 def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    repair_executor = load_component("langflow_components/data_analysis_flow/17_pandas_repair_code_executor.py")
     repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
     repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
     payload = {
@@ -3720,7 +3814,7 @@ def test_pandas_repair_builder_builds_payload_and_prompt_on_failure() -> None:
 
     retry_exceeded = repair_payload_builder.build_pandas_repair_payload({**failed, "pandas_retry_attempt": 1})
     retry_exceeded_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(retry_exceeded)
-    retry_exceeded_passthrough = pandas_executor.execute_pandas_from_llm(
+    retry_exceeded_passthrough = repair_executor.execute_repair_pandas_from_llm(
         retry_exceeded,
         json.dumps({"code": "result_df = pd.DataFrame([])", "output_columns": []}, ensure_ascii=False),
     )
@@ -3883,8 +3977,9 @@ def test_pandas_repair_builder_detects_analysis_only_error_payload() -> None:
     assert "수정 코드에서 .to_frame()을 사용하지 마세요" in prompt_payload["prompt"]
 
 
-def test_pandas_executor_passes_successful_payload_through_repair_branch() -> None:
+def test_pandas_repair_executor_passes_successful_payload_through_repair_branch() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    repair_executor = load_component("langflow_components/data_analysis_flow/17_pandas_repair_code_executor.py")
     repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
     payload = {
         "intent_plan": {"analysis_kind": "custom_repair_test", "product_grain": ["MODE"]},
@@ -3901,7 +3996,7 @@ def test_pandas_executor_passes_successful_payload_through_repair_branch() -> No
     repair_payload = repair_payload_builder.build_pandas_repair_payload(successful)
     repair_prompt_builder = load_component("langflow_components/data_analysis_flow/16b_pandas_repair_prompt_builder.py")
     skip_prompt = repair_prompt_builder.build_pandas_repair_prompt_payload(repair_payload)
-    passed_through = pandas_executor.execute_pandas_from_llm(repair_payload, "{}")
+    passed_through = repair_executor.execute_repair_pandas_from_llm(repair_payload, "{}")
 
     assert successful["analysis"]["status"] == "ok"
     assert repair_payload["pandas_repair"]["required"] is False
@@ -3910,8 +4005,9 @@ def test_pandas_executor_passes_successful_payload_through_repair_branch() -> No
     assert passed_through["analysis"]["rows"] == successful["analysis"]["rows"]
 
 
-def test_pandas_executor_can_execute_repaired_code_after_failure() -> None:
+def test_pandas_repair_executor_can_execute_repaired_code_after_failure() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
+    repair_executor = load_component("langflow_components/data_analysis_flow/17_pandas_repair_code_executor.py")
     repair_payload_builder = load_component("langflow_components/data_analysis_flow/16a_pandas_repair_payload_builder.py")
     payload = {
         "intent_plan": {"analysis_kind": "custom_repair_test", "product_grain": ["MODE"]},
@@ -3937,7 +4033,10 @@ def test_pandas_executor_can_execute_repaired_code_after_failure() -> None:
 
     failed = pandas_executor.execute_pandas_from_llm(payload, json.dumps(bad_pandas_json, ensure_ascii=False))
     repair_payload = repair_payload_builder.build_pandas_repair_payload(failed)
-    repaired = pandas_executor.execute_pandas_from_llm(repair_payload, json.dumps(fixed_pandas_json, ensure_ascii=False))
+    repaired = repair_executor.execute_repair_pandas_from_llm(
+        repair_payload,
+        json.dumps(fixed_pandas_json, ensure_ascii=False),
+    )
 
     assert repaired["analysis"]["status"] == "ok"
     assert repaired["analysis"]["row_count"] == 2
@@ -4081,7 +4180,7 @@ def test_pandas_executor_normalizes_common_result_aliases() -> None:
 
 
 def test_answer_message_adapter_escapes_tilde_strikethrough_markdown() -> None:
-    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/21_answer_message_adapter.py")
     payload = {
         "answer_message": "결과는 ~~HOLD~~ 상태로 표시됩니다.",
         "data": {
@@ -4098,7 +4197,7 @@ def test_answer_message_adapter_escapes_tilde_strikethrough_markdown() -> None:
 
 
 def test_answer_message_adapter_koreanizes_plan_and_pandas_reasoning() -> None:
-    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/21_answer_message_adapter.py")
     payload = {
         "answer_message": "DA 공정 생산량 상위 제품과 장비 대수입니다.",
         "data": {
@@ -4185,7 +4284,7 @@ def test_answer_message_adapter_koreanizes_plan_and_pandas_reasoning() -> None:
 
 
 def test_answer_message_adapter_does_not_truncate_pandas_code_block() -> None:
-    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/21_answer_message_adapter.py")
     long_code = "\n".join(
         [
             "step_outputs = {}",
@@ -4212,7 +4311,7 @@ def test_answer_message_adapter_does_not_truncate_pandas_code_block() -> None:
 
 
 def test_answer_message_adapter_rebuilds_generic_repeated_intent_reasoning() -> None:
-    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/21_answer_message_adapter.py")
     payload = {
         "answer_message": "DA/WB 재공 상위 제품과 생산량입니다.",
         "data": {
@@ -4267,8 +4366,8 @@ def test_answer_message_adapter_rebuilds_generic_repeated_intent_reasoning() -> 
 
 
 def test_answer_response_strips_llm_embedded_result_table_before_adapter_table() -> None:
-    answer_builder = load_component("langflow_components/data_analysis_flow/19_answer_response_builder.py")
-    answer_message_adapter = load_component("langflow_components/data_analysis_flow/20_answer_message_adapter.py")
+    answer_builder = load_component("langflow_components/data_analysis_flow/20_answer_response_builder.py")
+    answer_message_adapter = load_component("langflow_components/data_analysis_flow/21_answer_message_adapter.py")
     payload = {
         "request": {"session_id": "test-session", "question": "DA 생산량 top 5와 장비 대수 알려줘"},
         "intent_plan": {"intent_type": "multi_step_analysis", "analysis_kind": "rank_top_n"},
@@ -4312,7 +4411,7 @@ def test_answer_response_strips_llm_embedded_result_table_before_adapter_table()
 
 
 def test_answer_prompt_tells_llm_not_to_render_result_tables() -> None:
-    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/18_answer_prompt_builder.py")
+    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/19_answer_prompt_builder.py")
     payload = {
         "request": {"question": "DA 생산량 top 5 알려줘"},
         "intent_plan": {"intent_type": "multi_step_analysis", "analysis_kind": "rank_top_n"},
@@ -4336,7 +4435,7 @@ def test_answer_prompt_tells_llm_not_to_render_result_tables() -> None:
 
 
 def test_answer_prompt_treats_mapped_physical_columns_as_normalized_contract() -> None:
-    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/18_answer_prompt_builder.py")
+    answer_prompt_builder = load_component("langflow_components/data_analysis_flow/19_answer_prompt_builder.py")
     payload = {
         "request": {"question": "제품별 생산량과 재공 조인"},
         "intent_plan": {

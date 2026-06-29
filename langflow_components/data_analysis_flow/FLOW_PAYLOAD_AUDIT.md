@@ -24,11 +24,11 @@
 | pandas adapter | `13_retrieval_payload_adapter.py` | main payload, retrieval payload | `runtime_sources`, compact `source_results` | `runtime_sources`, `source_results` |
 | pandas prompt | `14_pandas_prompt_builder.py` | payload, specialized functions | prompt text, `pandas_function_case_runtime` in prompt payload | prompt text only; executor gets original payload |
 | pandas execute | `15_pandas_code_executor.py` | payload, pandas LLM JSON | `analysis`, `warnings` from analysis errors | `analysis` |
-| repair | `16A`~`16B`, second `15` | payload | `pandas_repair`, repaired `analysis` | `analysis`, `pandas_repair` |
-| store | `17_mongodb_data_store.py` | payload | stores large rows, may compact `runtime_sources` and add refs | `mongo_data_store`, compact refs |
-| answer prompt | `18_answer_prompt_builder.py` | payload | prompt text, compact answer context | prompt text only |
-| answer response | `19_answer_response_builder.py` | payload, answer LLM output | `data`, `applied_scope`, `answer_message`, next `state`, removes `runtime_sources` | `data`, `applied_scope`, `answer_message`, `state` |
-| display/api | `20`, `21` | payload | user markdown message, API response | final outputs |
+| repair | `16A`~`16B`, `17` | payload | `pandas_repair`, repaired `analysis` | `analysis`, `pandas_repair` |
+| store | `18_mongodb_data_store.py` | payload | stores large rows, may compact `runtime_sources` and add refs | `mongo_data_store`, compact refs |
+| answer prompt | `19_answer_prompt_builder.py` | payload | prompt text, compact answer context | prompt text only |
+| answer response | `20_answer_response_builder.py` | payload, answer LLM output | `data`, `applied_scope`, `answer_message`, next `state`, removes `runtime_sources` | `data`, `applied_scope`, `answer_message`, `state` |
+| display/api | `21`, `22` | payload | user markdown message, API response | final outputs |
 
 ## 중복/비대화 후보
 
@@ -98,7 +98,7 @@ python -m pytest -q tests/test_source_retrievers.py
 
 ## 2차 정리 결과
 
-- `21_api_response_builder.py`는 최종 API 응답에서 `developer`와 동일한 `debug` 객체를 더 이상 복사하지 않는다.
+- `22_api_response_builder.py`는 최종 API 응답에서 `developer`와 동일한 `debug` 객체를 더 이상 복사하지 않는다.
 - 웹 클라이언트는 legacy 응답 호환을 위해 입력 payload의 `debug`를 계속 읽을 수 있지만, 현재 data analysis flow output의 canonical developer payload는 `developer` 하나로 둔다.
 - 회귀 방지를 위해 `tests/test_main_flow_api_response_builder.py`에 `developer`가 유지되고 `debug`가 생성되지 않는 assertion을 추가했다.
 
@@ -167,7 +167,7 @@ python -m pytest -q tests/test_split_flow_contracts.py::test_previous_result_res
 ## 순차 점검: 14~17 Preview
 
 - `14`의 Specialized Functions input은 LLM prompt/reference/runtime metadata로 쓰인다.
-- `15`의 Specialized Functions input은 helper 호출만 남은 generated code를 실행하기 위한 runtime helper source로 쓰인다.
+- `15`와 `17`의 Specialized Functions input은 helper 호출만 남은 generated code를 실행하기 위한 runtime helper source로 쓰인다.
 - helper 구현이 generic node에 직접 하드코딩된 형태는 아니다.
 - `15` fallback은 안정성에는 기여하지만 `step_plan` primitive와 일부 특정 analysis kind 로직까지 포함해 넓다. 의미 품질 개선은 prompt/metadata 우선으로 하고, fallback 축소는 나중에 대표 질문 회귀 검증 후 진행한다.
 - `runtime_sources`는 17에서 Mongo store가 성공해야 preview/ref로 줄어든다. Mongo disabled 또는 설정 누락 시에는 full runtime rows가 남으므로, 이 부분은 별도 저장 정책/로컬 실행 정책으로 다룬다.
@@ -218,9 +218,14 @@ python -m pytest -q tests/test_source_retrievers.py tests/test_langflow_llm_node
 
 - repair payload는 pandas 실패 또는 fallback repairable error가 있을 때만 의미 있게 커진다.
 - 성공 경로에서는 `pandas_repair.required=False`만 남는 구조라, 현재 payload 비대화의 주범은 아니다.
+
+### 17 Pandas Repair Code Executor
+
+- canonical 연결은 16A payload와 16B repair LLM 응답, 그리고 동일한 `Specialized Functions` text를 17에 넣는 방식이다.
+- repair가 필요 없으면 16A payload를 그대로 pass-through하고, repair가 필요하면 수정된 pandas code만 실행한다.
 - function case가 선택됐는데 helper를 우회한 경우를 repair prompt가 다시 helper 호출/inline 정의 쪽으로 유도한다.
 
-### 17 MongoDB Data Store
+### 18 MongoDB Data Store
 
 - Mongo 저장이 켜져 있으면 `runtime_sources`와 `analysis.rows` 같은 큰 row list를 preview/ref로 축소한다.
 - Mongo 저장이 꺼져 있거나 설정이 없으면 full row가 남을 수 있다. 이는 저장소 비활성 상태의 계약이므로 별도 정책 결정 없이 fallback 코드를 늘리지 않는다.
@@ -234,23 +239,23 @@ python -m pytest -q tests/test_langflow_llm_node_flow.py::test_pandas_executor_l
 
 ## 순차 점검: 18~21
 
-### 18 Answer Prompt Builder
+### 19 Answer Prompt Builder
 
 - answer LLM에는 `analysis.rows[:50]`만 전달한다. 이는 답변 품질용 preview이며 downstream 실행 payload가 아니다.
-- LLM이 표를 직접 만들지 않도록 하고, 최종 표는 20 Answer Message Adapter가 `data.rows`에서 deterministic하게 렌더링한다.
+- LLM이 표를 직접 만들지 않도록 하고, 최종 표는 21 Answer Message Adapter가 `data.rows`에서 deterministic하게 렌더링한다.
 
-### 19 Answer Response Builder
+### 20 Answer Response Builder
 
 - 19가 `analysis`에서 canonical `data`를 만든 뒤에도 `analysis.rows`가 그대로 남아 `data.rows`와 중복됐다.
 - 5차 정리로 19 이후 payload에서는 `analysis.rows`를 제거하고 `analysis.rows_moved_to_data=True`만 남긴다.
 - `data.rows`, `state.current_data.rows`, `product_key_values`, `data_ref`는 유지되어 follow-up과 결과 테이블은 그대로 동작한다.
 
-### 20 Answer Message Adapter
+### 21 Answer Message Adapter
 
 - 결과 테이블은 `data.rows`만 사용한다.
 - pandas 처리 섹션은 `analysis.status`, `analysis.row_count`, `analysis.columns`, `analysis_code`, `function_case_trace`를 사용하므로 `analysis.rows` 제거에 영향이 없다.
 
-### 21 API Response Builder
+### 22 API Response Builder
 
 - 2차 정리에서 최종 API 응답의 `debug` 중복을 제거하고 `developer`만 유지했다.
 - 21은 과거 payload 호환을 위해 `analysis.rows`가 있으면 읽을 수 있지만, 19 이후 정상 경로에서는 `data.rows`를 기준으로 응답한다.
@@ -267,10 +272,10 @@ python -m pytest -q tests/test_langflow_llm_node_flow.py::test_answer_response_s
 
 ## 6차 정리 결과
 
-- `18_answer_prompt_builder.py`의 `Prompt Payload`는 디버그/검사용 output이며, `19`에 연결하는 실행 payload가 아니다.
+- `19_answer_prompt_builder.py`의 `Prompt Payload`는 디버그/검사용 output이며, `20`에 연결하는 실행 payload가 아니다.
 - 6차 정리로 `18`의 `prompt_payload.payload`에서 `metadata`, `runtime_sources`, `state`, `analysis.rows`, `analysis_code`, `pandas_code_json`, `data.rows`를 제거했다.
 - `18`의 실제 LLM prompt와 `answer_context`는 그대로 유지하므로 답변 품질용 preview는 유지된다.
-- `21_api_response_builder.py`는 top-level `data_refs`를 canonical data reference 위치로 유지하고, 동일한 값을 `developer.data_refs`에 다시 복사하지 않는다.
+- `22_api_response_builder.py`는 top-level `data_refs`를 canonical data reference 위치로 유지하고, 동일한 값을 `developer.data_refs`에 다시 복사하지 않는다.
 - `data.rows`와 `state.current_data.rows`, `runtime_source_refs`, `followup_source_results`는 후속 질문/복원 경로와 연결되어 있어 이번 단계에서는 줄이지 않았다.
 
 검증:
@@ -349,7 +354,7 @@ python tools/validate_current_stage_questions.py
 
 ## 10차 정리 결과: Playground pandas code 표시 보존
 
-- `20_answer_message_adapter.py`의 `Pandas 처리` code block은 더 이상 `CODE_TEXT_LIMIT`으로 자르지 않는다.
+- `21_answer_message_adapter.py`의 `Pandas 처리` code block은 더 이상 `CODE_TEXT_LIMIT`으로 자르지 않는다.
 - 결과 테이블 cell, JSON value 같은 일반 표시 값은 기존 `_truncate` 제한을 유지한다.
 - API payload의 `analysis.analysis_code`는 이미 원문을 유지하므로, 이번 변경은 Playground message 표시 계층에만 해당한다.
 

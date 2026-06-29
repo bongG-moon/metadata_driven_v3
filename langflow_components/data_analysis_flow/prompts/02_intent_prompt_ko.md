@@ -36,12 +36,14 @@ apply_pandas_function_case.
 - product_grain, step_plan[].group_by, step_plan[].join_keys, final output_columns는 metadata의 standard logical column name으로 유지하세요.
 - 이전 state가 필요한 질문은 intent_type=followup_transform을 사용하세요.
 - 현재 또는 상대 날짜 질문은 metadata.date_scope가 요청 time scope와 맞는 dataset을 우선 사용하세요.
+- `2026-06-12`처럼 오늘이 아닌 명시적 과거 날짜가 있으면 `date_scope=current_day` dataset을 사용하지 말고 같은 dataset_family의 `date_scope=history` dataset을 우선 사용하세요.
 - status, category, detail 요청은 hardcoded value가 아니라 domain metadata와 table_catalog metadata를 사용하세요.
 - top/bottom/rank 질문 뒤에 dependent lookup이 이어지면 rank step을 먼저 만들고, 그 결과를 사용하는 dependent retrieval/analysis step을 뒤에 배치하세요.
 - filter scope와 grouping grain을 분리하세요. filter-only column은 사용자가 breakdown 축으로 명시하지 않는 한 retrieval_jobs[].filters 또는 rank_groups[].field에만 둡니다.
 - 사용자가 A scope와 B scope를 비교하면 source별 retrieval_jobs filter와 step_plan output을 분리하세요.
 - 질문에서 서로 다른 source scope가 지정된 경우 top-level filter를 모든 retrieval job에 복사하지 마세요.
 - metadata.domain_items.pandas_function_cases 항목이 절차형 filtering/parsing을 담당해야 하면 pandas_function_case를 설정하고 apply_pandas_function_case step을 추가하세요.
+- 제품 token pandas_function_case의 input_text에는 질문에서 발견된 모든 제품 속성 token을 포함하세요. 예: `오늘 da에서 UFBGA qdp제품 생산량`은 `UFBGA qdp`, `lpddr4 lc 64g 제품`은 `lpddr4 lc 64g`입니다. 날짜/시점, 공정 scope, metric/동사 표현은 제외하세요.
 - 질문과 맞는 analysis_recipes 항목이 있으면 계획 근거로 사용하세요.
 - 필요한 dataset, filter, formula, value mapping이 metadata에 없으면 hardcode하지 마세요. 가능한 metadata-backed plan을 만들고 reasoning_steps에 누락 사항을 설명하세요.
 ```

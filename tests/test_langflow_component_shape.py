@@ -74,11 +74,12 @@ def test_data_analysis_flow_files_use_clean_sequential_numbering() -> None:
         "15_pandas_code_executor.py",
         "16a_pandas_repair_payload_builder.py",
         "16b_pandas_repair_prompt_builder.py",
-        "17_mongodb_data_store.py",
-        "18_answer_prompt_builder.py",
-        "19_answer_response_builder.py",
-        "20_answer_message_adapter.py",
-        "21_api_response_builder.py",
+        "17_pandas_repair_code_executor.py",
+        "18_mongodb_data_store.py",
+        "19_answer_prompt_builder.py",
+        "20_answer_response_builder.py",
+        "21_answer_message_adapter.py",
+        "22_api_response_builder.py",
     ]
     actual_files = [path.name for path in sorted((PROJECT_ROOT / "langflow_components" / "data_analysis_flow").glob("*.py"))]
     assert actual_files == expected_files
@@ -189,7 +190,7 @@ def test_fixed_choice_inputs_are_dropdowns() -> None:
         "data_analysis_flow/16a_pandas_repair_payload_builder.py": {
             "max_attempts": ("1", ["0", "1", "2"]),
         },
-        "data_analysis_flow/17_mongodb_data_store.py": {
+        "data_analysis_flow/18_mongodb_data_store.py": {
             "enabled": ("true", ["true", "false"]),
         },
         "session_state_flow/00_mongodb_session_state_loader.py": {
@@ -228,12 +229,17 @@ def test_pandas_repair_components_use_single_output_ports() -> None:
     assert getattr(prompt_outputs["repair_prompt"], "group_outputs", False) is False
     assert getattr(prompt_outputs["repair_prompt"], "method", "") == "build_prompt"
 
+    executor_outputs = _component_outputs("data_analysis_flow/17_pandas_repair_code_executor.py")
+    assert list(executor_outputs) == ["payload_out"]
+    assert getattr(executor_outputs["payload_out"], "group_outputs", False) is False
+    assert getattr(executor_outputs["payload_out"], "method", "") == "build_payload"
+
 def test_data_analysis_prompt_builders_use_single_prompt_output_pattern() -> None:
     expected_prompt_outputs = {
         "data_analysis_flow/02_intent_prompt_builder.py": "intent_prompt",
         "data_analysis_flow/14_pandas_prompt_builder.py": "pandas_prompt",
         "data_analysis_flow/16b_pandas_repair_prompt_builder.py": "repair_prompt",
-        "data_analysis_flow/18_answer_prompt_builder.py": "answer_prompt",
+        "data_analysis_flow/19_answer_prompt_builder.py": "answer_prompt",
     }
 
     for relative_path, output_name in expected_prompt_outputs.items():

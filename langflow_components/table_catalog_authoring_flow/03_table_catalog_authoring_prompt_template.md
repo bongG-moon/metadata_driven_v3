@@ -27,7 +27,7 @@ The left side of filter_mappings must be a standard main flow filter key such as
 Capture standard_column_aliases only when the user explicitly provides a standard_column_aliases section or explicitly asks to store standard column aliases. Do not derive standard_column_aliases from filter_mappings.
 Use standard_column_aliases only for dimension/filter columns such as DATE, MODE, DEN, PKG_TYPE1, PKG_TYPE2, MCP_NO, OPER_NAME, DEVICE, or EQP_ID. Do not store metric/quantity aliases such as INPUT_PLAN, OUT_PLAN, TARGET, INPUT계획, or OUT계획 in standard_column_aliases.
 Examples: Goodocs target may use PKG1 and MCP NO, so map PKG_TYPE1->PKG1 and MCP_NO->MCP NO. A production source may use PKG_TYP1/PKG_TYP2, so map PKG_TYPE1->PKG_TYP1 and PKG_TYPE2->PKG_TYP2. Equipment may use PKG1, PKG2, MCPSALENO, so map PKG_TYPE1->PKG1 and MCP_NO->MCPSALENO.
-For quantity columns, keep the real source column names in primary_quantity_column. For example, if a Goodocs sheet has INPUT계획 and OUT계획 columns, set primary_quantity_column to ["INPUT계획", "OUT계획"] rather than ["INPUT_PLAN", "OUT_PLAN"].
+For quantity columns, keep the real source column names in primary_quantity_column, including spaces. For example, if a Goodocs sheet has INPUT 계획 and OUT 계획 columns, set primary_quantity_column to ["INPUT 계획", "OUT 계획"], not ["INPUT계획", "OUT계획"] or ["INPUT_PLAN", "OUT_PLAN"].
 
 Authoring context:
 {authoring_context}

@@ -1,4 +1,4 @@
-# 파일 설명: 17 MongoDB Data Store Langflow custom component 파일입니다.
+# 파일 설명: 18 MongoDB Data Store Langflow custom component 파일입니다.
 # 흐름 역할: 큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다.
 # 아래 public 함수와 output 메서드 주석은 Langflow 캔버스에서 노드 역할을 추적하기 쉽게 하기 위한 설명입니다.
 
@@ -409,11 +409,11 @@ def _find_session_id(value: Any) -> str:
     return ""
 
 
-# 컴포넌트 설명: 17 MongoDB Data Store
+# 컴포넌트 설명: 18 MongoDB Data Store
 # Langflow 표시 설명: 큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다.
 class MongoDBDataStore(Component):
 
-    display_name = "17 MongoDB Data Store"
+    display_name = "18 MongoDB Data Store"
     description = "큰 결과 row list를 MongoDB result collection에 저장하고 payload에는 compact data_ref만 남깁니다."
     icon = "Database"
     inputs = [

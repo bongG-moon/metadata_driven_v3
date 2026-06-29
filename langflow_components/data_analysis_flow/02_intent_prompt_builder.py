@@ -171,6 +171,8 @@ def build_intent_prompt_payload(payload_value: Any, specialized_prompt_text: Any
             "- intent_type=finish가 아닌 analysis request에는 반드시 step_plan을 반환하세요. step_plan에는 어떤 operation이 어떤 source_alias를 쓰는지 드러나야 합니다.",
             "- step_plan[].source_alias와 step_plan[].source_aliases는 retrieval_jobs[].source_alias 값과 정확히 일치해야 합니다. retrieval_jobs에 없는 generic alias를 만들지 마세요.",
             "- 절차적 filtering/parsing을 metadata.domain_items.pandas_function_cases 항목이 처리해야 하는 경우 pandas_function_case를 설정하고 operation='apply_pandas_function_case', function_case_key, function_name, input_text가 있는 step_plan item을 추가하세요.",
+            "- 제품 token pandas_function_case의 input_text에는 질문에서 발견된 모든 제품 속성 token을 포함하세요. 예를 들어 '오늘 da에서 UFBGA qdp제품 생산량'은 input_text='UFBGA qdp'이고, 'lpddr4 lc 64g 제품'은 input_text='lpddr4 lc 64g'입니다. qdp처럼 마지막 token 하나만 남기지 마세요.",
+            "- 제품 token input_text에는 날짜/시점, 공정 scope, metric/동사 표현은 넣지 마세요. 예: 오늘, 어제, da에서, 생산량, 재공, 알려줘는 제외하고 제품 속성 token만 남깁니다.",
             "- DATE params는 dataset별 실행 parameter입니다. 해당 dataset metadata의 required_params/required_param_mappings에 DATE가 있을 때만 retrieval_jobs[].params.DATE를 추가하세요.",
             "- DATE가 table_catalog.filter_mappings에만 있으면 optional filter로 취급하세요. 사용자가 today/yesterday/current/구체 날짜처럼 date-scoped 질문을 명시한 경우에만 retrieval_jobs[].filters DATE를 추가하세요.",
             "- 날짜를 묻지 않는 raw/detail dataset lookup에는 DATE params나 DATE filter를 추가하지 마세요.",

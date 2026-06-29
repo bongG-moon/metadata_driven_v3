@@ -38,7 +38,8 @@ standard_column_aliases는 DATE -> WORK_DATE, DEN -> DENSITY, PKG_TYPE1 -> PKG1,
 [Goodocs 목표 데이터셋]
 target은 목표 또는 계획 데이터셋이야.
 source는 goodocs이고 DATE 형식은 YYYY-MM-DD야.
-주요 수량은 INPUT계획과 OUT계획 컬럼이고, OUT계획은 생산 목표로 사용해.
+주요 수량은 INPUT 계획과 OUT 계획 컬럼이고, OUT 계획은 생산 목표로 사용해.
+목표2 문서에는 DATE, Mode, DEN, TECH, PKG1, PKG2, LEAD, ORG, MCP NO, INPUT 계획, OUT 계획 컬럼이 있어.
 filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, ORG -> ORG, PKG_TYPE1 -> PKG1, PKG_TYPE2 -> PKG2, LEAD -> LEAD, MCP_NO -> MCP NO로 연결해줘.
 
 [장비 현황 데이터셋]

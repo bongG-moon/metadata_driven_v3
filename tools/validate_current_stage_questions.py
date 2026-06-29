@@ -187,7 +187,7 @@ def run_case(
     if plan.get("retrieval_jobs"):
         pandas_prompt_payload = components["pandas_prompt_builder"].build_pandas_prompt_payload(payload, specialized_functions)
         pandas_raw = llm_tools.call_llm_json(llm, pandas_prompt_payload["prompt"])
-        first_pandas_payload = components["pandas_executor"].execute_pandas_from_llm(
+        first_pandas_payload = components["pandas_executor"].execute_initial_pandas_from_llm(
             payload,
             json.dumps(pandas_raw["json"], ensure_ascii=False),
             specialized_functions,
@@ -196,7 +196,7 @@ def run_case(
         if (repair_payload.get("pandas_repair") or {}).get("required"):
             repair_prompt = components["pandas_repair_prompt_builder"].build_pandas_repair_prompt_payload(repair_payload)["prompt"]
             pandas_repair_raw = llm_tools.call_llm_json(llm, repair_prompt)
-            payload = components["pandas_executor"].execute_pandas_from_llm(
+            payload = components["pandas_repair_executor"].execute_repair_pandas_from_llm(
                 repair_payload,
                 json.dumps(pandas_repair_raw["json"], ensure_ascii=False),
                 specialized_functions,

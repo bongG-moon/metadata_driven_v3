@@ -58,7 +58,48 @@ AGGREGATE_STEP_OPERATIONS = {
 # 함수 설명: 이 컴포넌트의 핵심 실행 함수입니다.
 # 처리 역할: LLM이 만든 pandas JSON/code를 파싱하고 안전성 검사 후 runtime source DataFrame 위에서 실행합니다.
 # Langflow wrapper와 단위 테스트가 같은 로직을 재사용할 수 있도록 순수 dict/string 결과를 만듭니다.
+def execute_initial_pandas_from_llm(
+    payload_value: Any,
+    llm_response_value: Any,
+    specialized_functions_text: Any = "",
+) -> dict[str, Any]:
+    return _execute_pandas_from_llm(
+        payload_value,
+        llm_response_value,
+        specialized_functions_text,
+        allow_repair_attempt=False,
+    )
+
+
+def execute_repair_pandas_from_llm(
+    payload_value: Any,
+    llm_response_value: Any,
+    specialized_functions_text: Any = "",
+) -> dict[str, Any]:
+    return _execute_pandas_from_llm(
+        payload_value,
+        llm_response_value,
+        specialized_functions_text,
+        allow_repair_attempt=True,
+    )
+
+
 def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any, specialized_functions_text: Any = "") -> dict[str, Any]:
+    return _execute_pandas_from_llm(
+        payload_value,
+        llm_response_value,
+        specialized_functions_text,
+        allow_repair_attempt=True,
+    )
+
+
+def _execute_pandas_from_llm(
+    payload_value: Any,
+    llm_response_value: Any,
+    specialized_functions_text: Any = "",
+    *,
+    allow_repair_attempt: bool,
+) -> dict[str, Any]:
     payload = _payload(payload_value)
     manual_helper_text = _text(specialized_functions_text).strip()
     if manual_helper_text:
@@ -68,6 +109,13 @@ def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any, special
         return payload
     if _should_pass_through_repair_payload(payload):
         return payload
+    if _is_repair_attempt_payload(payload) and not allow_repair_attempt:
+        next_payload = dict(payload)
+        next_payload["warnings"] = list(next_payload.get("warnings", [])) + [
+            f"{PANDAS_WARNING_PREFIX} Repair payload received by 15 Pandas Code Executor. "
+            "Use 17 Pandas Repair Code Executor for repair execution."
+        ]
+        return next_payload
     plan = payload.get("intent_plan") if isinstance(payload.get("intent_plan"), dict) else {}
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     runtime_sources = payload.get("runtime_sources") if isinstance(payload.get("runtime_sources"), dict) else {}
@@ -81,7 +129,7 @@ def execute_pandas_from_llm(payload_value: Any, llm_response_value: Any, special
 
     next_payload = dict(payload)
     next_payload["analysis"] = analysis
-    if _is_repair_attempt_payload(payload):
+    if allow_repair_attempt and _is_repair_attempt_payload(payload):
         next_payload["pandas_repair"] = _mark_repair_attempt_result(payload.get("pandas_repair"), analysis)
     if analysis.get("errors"):
         next_payload["warnings"] = list(next_payload.get("warnings", [])) + [
@@ -462,7 +510,7 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
     analysis_kind = plan.get("analysis_kind")
     rename_map.update(_dotted_result_column_renames(result, plan))
 
-    for base_name in ["PRODUCTION", "WIP", "OUT_PLAN", "TARGET_QTY", "LOT_COUNT", "WF_QTY", "DIE_QTY", "PRESS_CNT"]:
+    for base_name in ["PRODUCTION", "WIP", "INPUT_PLAN", "OUT_PLAN", "TARGET_QTY", "LOT_COUNT", "WF_QTY", "DIE_QTY", "PRESS_CNT"]:
         for suffix in ("_sum", "_total", "_quantity", "_qty"):
             alias = f"{base_name}{suffix}"
             if base_name not in result.columns and alias in result.columns:
@@ -505,7 +553,8 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
     alias_map = {
         "PRODUCTION": ["생산량", "생산 수량", "실적", "생산실적"],
         "WIP": ["재공", "재공 수량", "재공수량"],
-        "OUT_PLAN": ["목표값", "목표", "생산계획", "계획", "OUT계획"],
+        "INPUT_PLAN": ["INPUT계획", "INPUT 계획", "투입계획", "투입 계획"],
+        "OUT_PLAN": ["목표값", "목표", "생산계획", "계획", "OUT계획", "OUT 계획"],
         "TARGET_QTY": ["목표수량", "목표 수량", "계획수량", "계획 수량"],
         "ACHIEVEMENT_RATE": ["생산달성율", "생산달성률", "달성율", "달성률"],
         "BALANCE": ["차이수량", "부족수량", "미달수량"],
@@ -1026,16 +1075,20 @@ def _metadata_column_candidates_for_source(alias: str, plan: dict[str, Any], col
     column_text = str(column or "").strip()
     if not column_text:
         return []
-    candidates = [column_text]
+    candidates = [column_text, *_quantity_name_variants(column_text)]
     job = _job_for_source_alias(alias, plan)
     if isinstance(job, dict):
+        candidates.extend(_primary_quantity_column_matches(job, column_text))
         for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
             mapping = job.get(field) if isinstance(job.get(field), dict) else {}
             mapped = mapping.get(column_text)
             if mapped is not None:
                 if not isinstance(mapped, list):
                     mapped = [mapped]
-                candidates.extend(str(item) for item in mapped if str(item or "").strip())
+                for item in mapped:
+                    item_text = str(item or "").strip()
+                    if item_text:
+                        candidates.extend([item_text, *_quantity_name_variants(item_text)])
             for standard, mapped_candidates in mapping.items():
                 mapped_list = mapped_candidates if isinstance(mapped_candidates, list) else [mapped_candidates]
                 if column_text in [str(item) for item in mapped_list if str(item or "").strip()]:
@@ -1450,6 +1503,18 @@ def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, 
     aliases: dict[str, list[str]] = {}
     standard_candidates = _standard_columns_from_plan(plan)
     if isinstance(job, dict):
+        for standard in standard_candidates:
+            standard_text = str(standard or "").strip()
+            if not standard_text:
+                continue
+            quantity_candidates = [
+                candidate
+                for candidate in [*_quantity_name_variants(standard_text), *_primary_quantity_column_matches(job, standard_text)]
+                if candidate and candidate != standard_text
+            ]
+            if quantity_candidates:
+                aliases.setdefault(standard_text, [])
+                aliases[standard_text].extend(quantity_candidates)
         for field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
             mapping = job.get(field) if isinstance(job.get(field), dict) else {}
             for standard, candidates in mapping.items():
@@ -1461,6 +1526,44 @@ def _standard_aliases_for_source(alias: str, plan: dict[str, Any]) -> dict[str, 
                 aliases.setdefault(standard_text, [])
                 aliases[standard_text].extend(str(item) for item in candidates if str(item or "").strip())
     return {key: _unique_columns([item for item in values if item != key]) for key, values in aliases.items()}
+
+
+def _quantity_name_variants(column: str) -> list[str]:
+    text = str(column or "").strip()
+    if not text:
+        return []
+    compact = re.sub(r"\s+", "", text)
+    variants: list[str] = []
+    if compact and compact != text:
+        variants.append(compact)
+    normalized = _quantity_semantic_key(text)
+    if normalized == "INPUT_PLAN":
+        variants.extend(["INPUT_PLAN", "INPUT계획", "INPUT 계획"])
+    elif normalized == "OUT_PLAN":
+        variants.extend(["OUT_PLAN", "OUT계획", "OUT 계획"])
+    return _unique_columns([variant for variant in variants if variant and variant != text])
+
+
+def _primary_quantity_column_matches(job: dict[str, Any], column: str) -> list[str]:
+    target_key = _quantity_semantic_key(column)
+    if not target_key:
+        return []
+    quantity = job.get("primary_quantity_column")
+    quantity_columns = quantity if isinstance(quantity, list) else [quantity] if quantity else []
+    return [
+        str(item).strip()
+        for item in quantity_columns
+        if str(item or "").strip() and _quantity_semantic_key(str(item)) == target_key
+    ]
+
+
+def _quantity_semantic_key(value: Any) -> str:
+    text = re.sub(r"[\s_]+", "", str(value or "").strip().upper())
+    if text in {"INPUTPLAN", "INPUT계획"}:
+        return "INPUT_PLAN"
+    if text in {"OUTPLAN", "OUT계획", "TARGET"}:
+        return "OUT_PLAN"
+    return ""
 
 
 def _job_for_source_alias(alias: str, plan: dict[str, Any]) -> dict[str, Any]:
@@ -1775,7 +1878,7 @@ class PandasCodeExecutor(Component):
         cached = getattr(self, "_cached_result", None)
         if isinstance(cached, dict):
             return cached
-        result = execute_pandas_from_llm(
+        result = execute_initial_pandas_from_llm(
             getattr(self, "payload", None),
             getattr(self, "llm_response", ""),
             getattr(self, "specialized_functions_text", ""),

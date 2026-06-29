@@ -108,7 +108,7 @@ def run_one(
 
         pandas_prompt = components["pandas_prompt_builder"].build_pandas_prompt_payload(payload)["prompt"]
         pandas_json = llm_tools.call_llm_json(llm, pandas_prompt)["json"]
-        first_payload = components["pandas_executor"].execute_pandas_from_llm(
+        first_payload = components["pandas_executor"].execute_initial_pandas_from_llm(
             payload,
             json.dumps(pandas_json, ensure_ascii=False),
         )
@@ -121,7 +121,7 @@ def run_one(
                 "prompt"
             ]
             repair_json = llm_tools.call_llm_json(llm, repair_prompt)["json"]
-            final_payload = components["pandas_executor"].execute_pandas_from_llm(
+            final_payload = components["pandas_repair_executor"].execute_repair_pandas_from_llm(
                 repair_payload,
                 json.dumps(repair_json, ensure_ascii=False),
             )

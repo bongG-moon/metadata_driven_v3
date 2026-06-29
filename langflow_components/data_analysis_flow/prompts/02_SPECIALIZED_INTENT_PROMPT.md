@@ -21,6 +21,8 @@
 - 사용자가 "64G L-269P1Q 제품 찾아줘"처럼 제품 속성 token을 자유롭게 섞어서 제품을 찾으면 pandas_function_cases.component_token_product_lookup / match_product_tokens를 사용한다.
 - lpddr4 lc 64g처럼 mode/density/package/lead/MCP-style 값이 여러 개 나열되고 product_terms로 정의된 제품군이 아니면 MODE/DEN/PKG_TYPE filter를 임의 생성하지 않는다.
 - 이런 경우 pandas_function_case=component_token_product_lookup을 설정하고 aggregate/rank/detail/join step 전에 apply_pandas_function_case step을 추가한다.
+- 제품 token pandas_function_case의 input_text에는 질문에서 발견된 모든 제품 속성 token을 포함한다. 예를 들어 `오늘 da에서 UFBGA qdp제품 생산량`은 input_text=`UFBGA qdp`이고, `lpddr4 lc 64g 제품`은 input_text=`lpddr4 lc 64g`이다. `qdp`처럼 마지막 token 하나만 남기지 않는다.
+- 제품 token input_text에는 날짜/시점, 공정 scope, metric/동사 표현은 넣지 않는다. 예를 들어 오늘, 어제, da에서, 생산량, 재공, 알려줘는 제외하고 제품 속성 token만 남긴다.
 - 생산량+재공, 공정별 집계, history/current 조인처럼 analysis_recipes를 쓰는 복합 질문이어도 등록 product_terms가 아닌 자유 제품 token이 있으면 recipe step_plan 앞에 component_token_product_lookup step을 먼저 둔다.
 - 이때 recipe의 production/wip/lot/equipment step은 helper가 식별한 제품 key를 기준으로 source row를 제한한 뒤 기존 recipe의 aggregate/rank/detail/join을 수행하도록 계획한다.
 - product-token function case에서는 retrieval_jobs가 helper에 필요한 제품 컬럼을 조회해야 하며, token match를 retrieval_jobs[].filters만으로 표현하지 않는다.
@@ -42,6 +44,7 @@
 
 생산/재공/목표/계획 규칙:
 - 오늘/현재 질문은 history를 묻지 않는 한 metadata.date_scope가 current_day인 dataset을 우선 사용한다.
+- 오늘이 아닌 명시적 과거 날짜(예: 2026-06-12, 6/12)가 있으면 production_today/wip_today 같은 current_day dataset이 아니라 같은 family의 history dataset을 사용한다.
 - 목표/계획 질문은 target/plan 계열 dataset family와 quantity/metric term을 사용하고, 각 dataset의 date_format을 보존한다.
 - 생산량/실적/생산량과 WIP/재공을 함께 묻는 제품별 질문에서 target/목표/계획/달성률/top/rank가 없으면 production_today + wip_today로 aggregate_join을 사용하고 product_grain으로 group_by한다.
 - LPDDR5 같은 제품 조건과 DA/WB production + WIP를 함께 묻는 경우 production_today와 wip_today에 각각 공정 그룹 filter를 적용하고 aggregate_join을 사용한다.

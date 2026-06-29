@@ -737,8 +737,8 @@
       "required_params": [],
       "date_format": "YYYY-MM-DD",
       "primary_quantity_column": [
-        "INPUT계획",
-        "OUT계획"
+        "INPUT 계획",
+        "OUT 계획"
       ],
       "filter_mappings": {
         "DATE": [
@@ -784,8 +784,8 @@
         "LEAD",
         "ORG",
         "MCP NO",
-        "INPUT계획",
-        "OUT계획"
+        "INPUT 계획",
+        "OUT 계획"
       ]
     },
     "wip": {

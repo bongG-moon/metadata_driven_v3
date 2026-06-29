@@ -18,8 +18,8 @@ def test_prompt_language_guides_exist_for_three_primary_llm_prompts() -> None:
         "02_intent_prompt_ko.md",
         "14_pandas_prompt_en.md",
         "14_pandas_prompt_ko.md",
-        "18_answer_prompt_en.md",
-        "18_answer_prompt_ko.md",
+        "19_answer_prompt_en.md",
+        "19_answer_prompt_ko.md",
         "02_SPECIALIZED_INTENT_PROMPT.md",
         "02_SPECIALIZED_PROMPT_INPUT_GUIDE.md",
         "SPECIALIZED_FUNCTIONS_INPUT_GUIDE.md",
@@ -55,7 +55,7 @@ def test_korean_prompt_guides_preserve_machine_contract_tokens() -> None:
             "step_outputs",
             "input_step_id",
         ],
-        "18_answer_prompt_ko.md": ["answer_message", "data.rows", "column_standardization"],
+        "19_answer_prompt_ko.md": ["answer_message", "data.rows", "column_standardization"],
     }
 
     for filename, tokens in tokens_by_file.items():

@@ -118,48 +118,50 @@ Pandas Code LLM.Output
   -> 16B Pandas Repair Prompt Builder.Payload
 
 16A Pandas Repair Payload Builder.Payload Out
-  -> second 15 Pandas Code Executor.Payload
+  -> 17 Pandas Repair Code Executor.Payload
 
 16B Pandas Repair Prompt Builder.Repair Prompt
   -> Pandas Repair LLM.Input
 
 Pandas Repair LLM.Output
-  -> second 15 Pandas Code Executor.LLM Response
+  -> 17 Pandas Repair Code Executor.LLM Response
 ```
 
 `14 Pandas Prompt Builder`는 pandas code LLM에 보낼 prompt를 만드는 노드입니다. `15 Pandas Code Executor`에는 13번에서 정리된 원본 payload를 직접 연결합니다. `14 Prompt Payload`를 15번에 연결하려고 하면 prompt/payload 복수 output 때문에 Langflow UI 버전에 따라 edge가 끊길 수 있습니다.
 
-function case helper를 사용할 때는 같은 helper 예시를 `14 Pandas Prompt Builder.Specialized Functions`와 `15 Pandas Code Executor.Specialized Functions`에 넣는 것을 권장합니다. 14번 입력은 LLM이 함수 예시를 참고해 pandas code를 만들기 위한 prompt context입니다. 생성된 code가 helper를 inline으로 정의하면 그 자체로 실행되고, helper 호출만 남기는 경우에는 15번 입력이 runtime helper loader 역할을 합니다. helper 코드가 metadata `function_code`에 저장되어 있으면 15번의 `Specialized Functions` 입력은 비워도 됩니다.
+function case helper를 사용할 때는 같은 helper 예시를 `14 Pandas Prompt Builder.Specialized Functions`, `15 Pandas Code Executor.Specialized Functions`, `17 Pandas Repair Code Executor.Specialized Functions`에 넣는 것을 권장합니다. 14번 입력은 LLM이 함수 예시를 참고해 pandas code를 만들기 위한 prompt context입니다. 생성된 code가 helper를 inline으로 정의하면 그 자체로 실행되고, helper 호출만 남기는 경우에는 15번/17번 입력이 runtime helper loader 역할을 합니다. helper 코드가 metadata `function_code`에 저장되어 있으면 15번/17번의 `Specialized Functions` 입력은 비워도 됩니다.
 
 `16B`는 repair prompt만 만드는 노드입니다. repair가 필요 없으면 `16A.payload_out`은 두 번째 executor에서 pass-through되고, 성공 payload와 repair 횟수 초과/repair 불필요 실패 payload를 모두 그대로 다음 단계로 넘깁니다. 이 경로에서는 빈 `result_df = pd.DataFrame([])` 코드를 새로 실행하지 않습니다.
 
 ## Answer, Store, Output
 
 ```text
-second 15 Pandas Code Executor.Payload Out
-  -> 17 MongoDB Data Store.Payload
-  -> 18 Answer Prompt Builder.Payload
+17 Pandas Repair Code Executor.Payload Out
+  -> 18 MongoDB Data Store.Payload
+  -> 19 Answer Prompt Builder.Payload
 
-18 Answer Prompt Builder.Answer Prompt
+19 Answer Prompt Builder.Answer Prompt
   -> Answer LLM.Input
 
-17 MongoDB Data Store.Payload Out
-  -> 19 Answer Response Builder.Payload
+18 MongoDB Data Store.Payload Out
+  -> 20 Answer Response Builder.Payload
 
 Answer LLM.Output
-  -> 19 Answer Response Builder.Answer LLM Response
+  -> 20 Answer Response Builder.Answer LLM Response
 
-19 Answer Response Builder.Payload Out
-  -> 20 Answer Message Adapter.Payload
-  -> 21 API Response Builder.Payload
+20 Answer Response Builder.Payload Out
+  -> 21 Answer Message Adapter.Payload
 
-20 Answer Message Adapter.Message
+20 Answer Response Builder.Payload Out
+  -> 22 API Response Builder.Payload
+
+21 Answer Message Adapter.Message
   -> Chat Output
 
-21 API Response Builder.API Response
+22 API Response Builder.API Response
   -> 01 MongoDB Session State Writer.Response Payload
 ```
 
-`18 Answer Prompt Builder`도 최종 답변 LLM에 보낼 prompt를 만드는 노드입니다. `19 Answer Response Builder`에는 18번의 `Prompt Payload`를 연결하지 말고, 저장까지 끝난 `17 MongoDB Data Store.Payload Out`을 직접 연결합니다.
+`19 Answer Prompt Builder`도 최종 답변 LLM에 보낼 prompt를 만드는 노드입니다. `20 Answer Response Builder`에는 19번의 `Prompt Payload`를 연결하지 말고, 저장까지 끝난 `18 MongoDB Data Store.Payload Out`을 직접 연결합니다.
 
-결과 저장은 pandas 분석이 끝난 직후인 `17 MongoDB Data Store`에서 수행합니다. 최종 session state 저장은 `21 API Response Builder.API Response`를 writer에 연결합니다.
+결과 저장은 pandas 분석이 끝난 직후인 `18 MongoDB Data Store`에서 수행합니다. 최종 session state 저장은 `22 API Response Builder.API Response`를 writer에 연결합니다.

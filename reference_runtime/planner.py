@@ -1122,7 +1122,10 @@ def _extract_lot_id(question: str) -> str | None:
 
 
 def _process_values(metadata: dict[str, Any], group_key: str, question: str) -> list[str]:
-    group = metadata["domain_items"]["process_groups"][group_key]
+    process_groups = metadata["domain_items"]["process_groups"]
+    group = process_groups.get(group_key) or process_groups.get(f"{group_key}_PROCESS_GROUP")
+    if not isinstance(group, dict):
+        return []
     q_upper = question.upper()
     exact_values = [process for process in group["processes"] if process.upper() in q_upper]
     if exact_values:

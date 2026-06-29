@@ -815,7 +815,7 @@ def _apply_analysis_recipe(
         _apply_recipe_defaults(plan, recipe, question)
         _apply_recipe_filter_policy(plan, recipe)
 
-    selected = _recipe_datasets(recipe, metadata, question)
+    selected = _recipe_datasets(recipe, metadata, question, request_date)
     replace_retrieval_jobs = bool(recipe.get("replace_retrieval_jobs")) and not detail_requested
     if selected:
         selected_datasets = [item["dataset_key"] for item in selected]
@@ -1007,13 +1007,13 @@ def _repair_explicit_grain_plan(plan: dict[str, Any], metadata: dict[str, Any], 
     _append_once(notes, "질문에 명시된 집계/랭킹 축을 기준으로 group_by를 보정했습니다.")
 
 
-def _recipe_datasets(recipe: dict[str, Any], metadata: dict[str, Any], question: str) -> list[dict[str, Any]]:
+def _recipe_datasets(recipe: dict[str, Any], metadata: dict[str, Any], question: str, request_date: str) -> list[dict[str, Any]]:
     catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
     families = _unique(recipe.get("required_dataset_families", []))
     families.extend(_families_from_quantity_terms(recipe.get("required_quantity_terms", []), metadata))
     selected = []
     for family in _unique(families):
-        dataset_key = _dataset_for_family(family, catalog, question)
+        dataset_key = _dataset_for_family(family, catalog, question, request_date)
         if not dataset_key:
             continue
         dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
@@ -1034,7 +1034,7 @@ def _families_from_quantity_terms(quantity_keys: Any, metadata: dict[str, Any]) 
     return families
 
 
-def _dataset_for_family(family: str, catalog: dict[str, Any], question: str) -> str:
+def _dataset_for_family(family: str, catalog: dict[str, Any], question: str, request_date: str = "") -> str:
     candidates = [
         (dataset_key, item)
         for dataset_key, item in catalog.items()
@@ -1044,6 +1044,11 @@ def _dataset_for_family(family: str, catalog: dict[str, Any], question: str) -> 
         return ""
     mentions_yesterday = _mentions_any(question, ["어제", "전일", "yesterday"])
     mentions_today = _mentions_any(question, ["오늘", "현재", "금일", "today", "current"])
+    explicit_date = _concrete_date_from_text(question, request_date) if request_date else ""
+    if explicit_date and explicit_date != request_date and not mentions_today:
+        for dataset_key, item in candidates:
+            if str(item.get("date_scope") or "") == "history":
+                return str(dataset_key)
     if mentions_yesterday:
         for dataset_key, item in candidates:
             if str(item.get("date_scope") or "") == "history":

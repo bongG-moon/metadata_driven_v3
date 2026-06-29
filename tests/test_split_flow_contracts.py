@@ -60,11 +60,12 @@ def test_split_flow_folders_have_expected_numbered_files() -> None:
             "15_pandas_code_executor.py",
             "16a_pandas_repair_payload_builder.py",
             "16b_pandas_repair_prompt_builder.py",
-            "17_mongodb_data_store.py",
-            "18_answer_prompt_builder.py",
-            "19_answer_response_builder.py",
-            "20_answer_message_adapter.py",
-            "21_api_response_builder.py",
+            "17_pandas_repair_code_executor.py",
+            "18_mongodb_data_store.py",
+            "19_answer_prompt_builder.py",
+            "20_answer_response_builder.py",
+            "21_answer_message_adapter.py",
+            "22_api_response_builder.py",
         ],
         "report_generation_flow": [
             "00_report_request_loader.py",
@@ -370,7 +371,7 @@ def test_selected_flow_api_runner_exposes_no_api_url_inputs() -> None:
 
 
 def test_api_response_builders_expose_only_data_output() -> None:
-    analysis_api_builder = load_component("langflow_components/data_analysis_flow/21_api_response_builder.py")
+    analysis_api_builder = load_component("langflow_components/data_analysis_flow/22_api_response_builder.py")
     metadata_api_builder = load_component("langflow_components/metadata_qa_flow/05_metadata_qa_api_response_builder.py")
 
     assert [item.name for item in analysis_api_builder.MainFlowApiResponseBuilder.outputs] == ["api_response"]
