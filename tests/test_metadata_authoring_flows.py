@@ -711,6 +711,94 @@ Goodocs 문서 ID는 1231231412412512515 이야
     assert item_payload["columns"] == ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT 계획", "OUT 계획"]
 
 
+def test_table_catalog_authoring_parses_inline_columns_without_eating_next_fields() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = (
+        "dummy yield sheet를 table catalog에 등록해줘. "
+        "dataset_key=dummy_yield_goodocs, source_type=goodocs, doc_id=5555666677778888, dataset_family=quality야. "
+        "required_params는 DATE야. DATE format은 YYYY-MM-DD. "
+        "columns는 DATE, MODE, DEN, YIELD_RATE, FAIL_QTY야. "
+        "primary_quantity_column은 YIELD_RATE야. "
+        "filter_mappings는 DATE -> DATE, MODE -> MODE, DEN -> DEN야."
+    )
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": raw_text,
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "dummy_yield_goodocs",
+                "payload": {
+                    "display_name": "Dummy Yield Goodocs",
+                    "dataset_family": "quality",
+                    "source_type": "goodocs",
+                    "source_config": {"source_type": "goodocs"},
+                    "columns": [],
+                    "primary_quantity_column": "YIELD_RATE야",
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload["columns"] == ["DATE", "MODE", "DEN", "YIELD_RATE", "FAIL_QTY"]
+    assert item_payload["primary_quantity_column"] == "YIELD_RATE"
+    assert item_payload["filter_mappings"]["DEN"] == ["DEN"]
+
+
+def test_table_catalog_authoring_accepts_single_item_object_response() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = """dummy unit 이력 데이터셋을 datalake source로 등록해줘. dataset_key=dummy_unit_history, dataset_family=unit이야. required_params는 DATE고 date_format은 YYYYMMDD야. primary_quantity_column은 UNIT_QTY야.
+query_template:
+SELECT DATE, UNIT_ID, LOT_ID, OPER_NAME, UNIT_QTY
+FROM dummy_unit_history
+WHERE DATE = {DATE}
+filter_mappings: DATE -> DATE, LOT_ID -> LOT_ID, OPER_NAME -> OPER_NAME"""
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": raw_text,
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "dataset_key": "dummy_unit_history",
+        "payload": {
+            "display_name": "Dummy Unit History",
+            "dataset_family": "unit",
+            "source_type": "datalake",
+            "source_config": {
+                "source_type": "datalake",
+                "query_template": "SELECT DATE, UNIT_ID, LOT_ID, OPER_NAME, UNIT_QTY\nFROM dummy_unit_history\nWHERE DATE = {DATE}",
+            },
+            "required_params": ["DATE"],
+            "primary_quantity_column": "UNIT_QTY",
+            "columns": ["DATE", "UNIT_ID", "LOT_ID", "OPER_NAME", "UNIT_QTY"],
+        },
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    assert len(normalized["items"]) == 1
+    item = normalized["items"][0]
+    assert item["dataset_key"] == "dummy_unit_history"
+    assert item["payload"]["source_type"] == "datalake"
+    assert item["payload"]["source_config"]["query_template"].startswith("SELECT DATE")
+    assert item["payload"]["primary_quantity_column"] == "UNIT_QTY"
+
+
 def test_table_catalog_authoring_does_not_make_date_filter_required_without_placeholder_or_explicit_text() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     raw_text = """dataset_key는 production_snapshot이고 생산 snapshot 데이터야.

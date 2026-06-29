@@ -11,6 +11,8 @@ SQL에서 columns를 적을 때는 dataset output을 만드는 최종/top-level 
 SQL의 `--` line comment와 `/* ... */` block comment 안에 있는 텍스트는 columns에 넣지 마세요. 주석 처리된 column은 실제 dataset output이 아닙니다.
 SQL expression은 AS 뒤의 출력 alias를 column name으로 보존하세요. alias가 없으면 table alias를 제거한 실제 물리 column name을 사용하세요. WHERE, JOIN, GROUP BY, ORDER BY에만 등장하는 column은 columns에 추가하지 마세요.
 Goodocs source에서 document ID/doc_id는 조회 식별자입니다. sheet_name은 선택 사항이며, 사용자가 특정 sheet/tab이 필요하다고 말한 경우가 아니면 요구하지 마세요.
+source별 필수 정보는 oracle은 db_key와 query_template, datalake는 query_template, h_api는 api_url, goodocs는 doc_id입니다.
+datalake source에서는 사용자가 db_key를 명시하지 않았다는 이유만으로 추가 입력을 요구하지 마세요.
 사용자가 필수 query parameter가 없다고 말하면 그 내용을 그대로 보존하세요. DATE filter_mappings는 optional filter로 존재할 수 있습니다.
 조회에 필요한 핵심 정보가 부족하면 missing_information에 한국어로 설명하세요.
 

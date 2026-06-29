@@ -11,6 +11,8 @@ When listing columns from SQL, use the final/top-level SELECT list that defines 
 Do not put text inside SQL `--` line comments or `/* ... */` block comments into columns. A commented-out column is not part of the actual dataset output.
 For SQL expressions, preserve the output alias after AS as the column name. If there is no alias, use the physical column name without table alias. Do not add columns that appear only in WHERE, JOIN, GROUP BY, or ORDER BY.
 For Goodocs sources, document ID/doc_id is the retrieval identifier. sheet_name is optional and must not be requested unless the user says a specific sheet/tab is required.
+Source-specific essentials: oracle requires db_key and query_template; datalake requires query_template; h_api requires api_url; goodocs requires doc_id.
+For datalake sources, do not request additional input just because db_key was not provided.
 If the user says there are no required query parameters, preserve that exactly; DATE filter_mappings can still exist as optional filters.
 If retrieval essentials are missing, explain them in Korean in missing_information.
 

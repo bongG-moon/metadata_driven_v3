@@ -74,6 +74,8 @@ def normalize_table_catalog_authoring_result(payload_value: Any, llm_response_va
     if not parsed:
         errors.append("저장 형식 변환 LLM 응답에서 JSON을 찾지 못했습니다.")
     raw_items = parsed.get("items") if isinstance(parsed.get("items"), list) else []
+    if not raw_items and ("dataset_key" in parsed or "payload" in parsed):
+        raw_items = [parsed]
     source_text = _source_text(payload)
     raw_item_count = len(raw_items)
     for index, raw_item in enumerate(raw_items):
@@ -761,7 +763,7 @@ def _named_mappings_from_text(text: str, field_name: str) -> dict[str, list[str]
 def _mapping_values(text: str) -> list[str]:
     cleaned = re.sub(r"(?:로|으로)\s*연결.*$", "", _clean(text))
     parts = re.split(r"\s*(?:또는|혹은|\bor\b)\s*", cleaned, flags=re.IGNORECASE)
-    return _unique_text(part.strip(" .。;") for part in parts)
+    return _unique_text(_clean_inline_list_value(part) for part in parts)
 
 
 def _date_format_from_text(text: str) -> str:
@@ -776,25 +778,29 @@ def _date_format_from_text(text: str) -> str:
 def _quantity_column_from_text(text: str, columns: list[str] | None = None) -> Any:
     source_columns = _as_text_list(columns)
     plan_columns = _plan_quantity_columns_from_columns(source_columns)
+    compact = re.sub(r"\s+", "", text)
     if "계획 수량" in text:
         if plan_columns:
             return plan_columns
         quoted_columns = _plan_quantity_columns_from_text(text)
         if quoted_columns:
             return quoted_columns
-        compact = re.sub(r"\s+", "", text)
         if "INPUT계획" in compact and "OUT계획" in compact:
             return ["INPUT계획", "OUT계획"]
+    if re.search(r"primary[_\s]*quantity(?:_column)?", text, flags=re.IGNORECASE) and "INPUT계획" in compact and "OUT계획" in compact:
+        return plan_columns or ["INPUT계획", "OUT계획"]
     if "기본 목표 수량" in text:
         out_column = _out_plan_column_from_columns(source_columns)
         if out_column:
             return out_column
-        compact = re.sub(r"\s+", "", text)
         if "OUT계획" in compact:
             return "OUT계획"
     match = re.search(r"(?:수량|quantity).*?([A-Z][A-Z0-9_]+)\s*컬럼", text, flags=re.IGNORECASE)
     if match:
-        return _clean(match.group(1)).upper()
+        return _clean_inline_list_value(match.group(1)).upper()
+    match = re.search(r"primary[_\s]*quantity(?:_column)?\s*(?:=|은|는|:)\s*([^,\n.。;]+)", text, flags=re.IGNORECASE)
+    if match:
+        return _clean_inline_list_value(match.group(1))
     return ""
 
 
@@ -838,17 +844,66 @@ def _normalize_quantity_column_name(value: Any) -> str:
 def _columns_from_text_list(text: str) -> list[str]:
     patterns = [
         r"(?:문서|데이터|테이블)[^\n]*?에는\s*([^\n]+?)\s*(?:항목|컬럼)",
+        r"(?:컬럼|columns?)\s*(?:은|는|:)\s*([^\n]+)",
         r"\bcolumns\s*(?:는|:)\s*([^\n]+)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, flags=re.IGNORECASE)
         if not match:
             continue
-        values = [part.strip(" .。;") for part in match.group(1).split(",")]
+        snippet = _truncate_inline_metadata_clause(match.group(1))
+        values = [_clean_inline_list_value(part) for part in snippet.split(",")]
         columns = _unique_text(values)
         if columns:
             return columns
     return []
+
+
+def _truncate_inline_metadata_clause(value: Any) -> str:
+    text = str(value or "")
+    lowered = text.lower()
+    boundary_markers = [
+        "primary_quantity_column",
+        "primary_quantity",
+        "primary quantity column",
+        "primary quantity",
+        "required_param_mappings",
+        "filter_mappings",
+        "filter mappings",
+        "required_params",
+        "required params",
+        "standard_column_aliases",
+        "standard column aliases",
+        "default_detail_columns",
+        "query_template",
+        "date_format",
+        "date format",
+        "DATE 형식".lower(),
+        "필수 조회 파라미터",
+        "표준 컬럼 별칭",
+        "계획 수량",
+    ]
+    boundary_index: int | None = None
+    for marker in boundary_markers:
+        start = lowered.find(marker.lower())
+        while start >= 0:
+            prefix = lowered[:start].rstrip()
+            suffix = text[start + len(marker) :].lstrip()
+            has_clause_prefix = not prefix or prefix[-1] in {".", "。", ";", "\n"}
+            has_assignment_suffix = not suffix or suffix[0] in {"=", ":", "은", "는"}
+            if has_clause_prefix and has_assignment_suffix:
+                boundary_index = start if boundary_index is None else min(boundary_index, start)
+                break
+            start = lowered.find(marker.lower(), start + 1)
+    if boundary_index is not None:
+        text = text[:boundary_index]
+    return text
+
+
+def _clean_inline_list_value(value: Any) -> str:
+    text = _clean(value).strip(" .。;")
+    text = re.sub(r"\s*(?:이\s+있습니다|이\s+있어|있습니다|있어|입니다|이에요|예요|이야|야)$", "", text)
+    return text.strip()
 
 
 def _declares_no_required_params(text: str) -> bool:
@@ -895,7 +950,7 @@ def _normalize_primary_quantity_column(payload: dict[str, Any]) -> None:
     physical_by_normalized = {_normalize_quantity_column_name(column): column for column in columns}
 
     def normalize_one(value: Any) -> str:
-        text = _clean(value)
+        text = _clean_inline_list_value(value)
         return physical_by_normalized.get(_normalize_quantity_column_name(text), text)
 
     quantity_columns = _as_text_list(payload.get("primary_quantity_column"))
