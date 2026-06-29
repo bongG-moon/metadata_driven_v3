@@ -118,7 +118,7 @@ def test_table_catalog_and_dummy_data_cover_authoring_example_columns():
         assert source_result["row_count"] > 0
         assert set(spec["columns"]).issubset(source_result["columns"])
 
-    assert {"INPUT_PLAN", "OUT_PLAN"}.issubset(catalog["target"]["columns"])
+    assert {"INPUT계획", "OUT계획"}.issubset(catalog["target"]["columns"])
 
 
 def test_langflow_dummy_retriever_preserves_job_filters_for_pandas_stage():
@@ -197,7 +197,7 @@ def test_langflow_dummy_retriever_is_rich_enough_for_analysis_validation():
         row["PRODUCTION"] for row in production_rows if row["OPER_NAME"] in da_processes and row["SHIFT"] == "1"
     ) > 0
     assert sum(row["WIP"] for row in wip_rows if row["OPER_NAME"] in da_processes and row["SHIFT"] == "1") > 0
-    assert {"Mode", "PKG1", "PKG2", "MCP NO", "INPUT_PLAN", "OUT_PLAN"}.issubset(results["target"]["columns"])
+    assert {"Mode", "PKG1", "PKG2", "MCP NO", "INPUT계획", "OUT계획"}.issubset(results["target"]["columns"])
     assert results["production_today"]["source_execution"]["params_applied_in_retriever"] is True
 
 

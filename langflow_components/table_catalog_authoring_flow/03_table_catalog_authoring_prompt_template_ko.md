@@ -11,9 +11,10 @@ payload.columns를 SQL에서 만들 때는 dataset output을 만드는 최종/to
 SQL의 `--` line comment와 `/* ... */` block comment 안에 있는 텍스트는 columns에 넣지 마세요. query_template 원문은 주석까지 보존하지만, 주석 처리된 column은 실제 dataset output이 아닙니다.
 최종 SELECT가 inline view/subquery에서 "*" 또는 alias.*만 선택한다면 해당 immediate subquery의 출력 column이 명시적일 때만 그 column을 사용하세요. 안전하게 펼칠 수 없으면 column을 지어내지 말고 missing_information에 적으세요.
 CASE, NVL, SUM, COUNT, analytic function, scalar subquery 같은 expression은 AS 뒤의 출력 alias를 column name으로 사용하세요. alias가 없으면 명확한 물리 source column만 사용하고, 그렇지 않으면 missing_information에 적으세요.
-source가 YYYYMMDD 또는 YYYY-MM-DD 같은 특정 날짜 표현을 기대하면 date_format을 저장하세요.
+source가 YYYYMMDD 또는 YYYY-MM-DD 같은 특정 날짜 표현을 기대하고, 이 dataset에 DATE filter mapping, 필수 DATE parameter, 또는 실제 날짜형 source column이 있을 때만 date_format을 저장하세요. 날짜 관련 column이나 DATE mapping이 없으면 date_format을 저장하지 마세요.
 상세 행 조회에서 운영자가 일부 column만 보기를 기대하면 default_detail_columns를 저장하세요.
 source별 필수 정보: oracle은 db_key와 query_template이 필요하고, datalake는 query_template이 필요하고, h_api는 api_url이 필요하고, goodocs는 doc_id만 필요합니다.
+사용자가 dummy/sample 데이터라고 명시하지 않았으면 source_type=dummy를 사용하지 마세요.
 goodocs에는 db_key 또는 query_template을 요구하지 마세요. sheet_name은 선택 사항이며 사용자가 명시했거나 특정 sheet/tab을 읽어야 한다고 말한 경우에만 포함하세요.
 required_params는 DATE로 고정된 값이 아닙니다. query_template/API URL 실행에 반드시 필요한 변수만 넣으세요.
 예를 들어 query_template에 {{DATE}} 또는 {{LOT_ID}} placeholder가 있거나 사용자가 해당 값을 필수 파라미터라고 명시한 경우에만 required_params에 넣습니다.
@@ -23,8 +24,10 @@ metadata에는 두 mapping layer가 있습니다. main_flow_filters는 표준 fi
 authoring_context의 Registered main flow filter summary를 유효한 표준 filter key의 기준으로 사용하세요. 아래 예시는 설명용일 뿐 고정 whitelist가 아닙니다.
 dataset별 mapping을 main_flow_filters에 넣지 마세요. 각 dataset의 DATE/OPER_NAME/product/equipment mapping은 table_catalog.filter_mappings에 넣으세요.
 filter_mappings의 왼쪽은 DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, RECIPE_ID 같은 표준 main flow filter key여야 하고, 오른쪽은 이 dataset의 실제 source column 후보여야 합니다.
-source의 물리 column 이름이 표준 분석 column 이름과 다르면 standard_column_aliases를 {{standard_column: [physical columns]}} 형태로 함께 저장하세요.
-예: Goodocs target이 PKG1, MCP NO, OUT계획을 사용하면 PKG_TYPE1->PKG1, OUT_PLAN->OUT계획으로 매핑하세요. 생산 source가 PKG_TYP1/PKG_TYP2를 사용하면 PKG_TYPE1->PKG_TYP1, PKG_TYPE2->PKG_TYP2로 매핑하세요. Equipment가 PKG1, PKG2, MCPSALENO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCPSALENO로 매핑하세요.
+사용자가 standard_column_aliases 섹션을 명시하거나 표준 컬럼 별칭을 저장하라고 명시한 경우에만 standard_column_aliases를 저장하세요. filter_mappings에서 standard_column_aliases를 새로 파생하지 마세요.
+standard_column_aliases는 DATE, MODE, DEN, PKG_TYPE1, PKG_TYPE2, MCP_NO, OPER_NAME, DEVICE, EQP_ID 같은 차원/필터 column에만 사용하세요. INPUT_PLAN, OUT_PLAN, TARGET, INPUT계획, OUT계획 같은 metric/quantity alias는 standard_column_aliases에 저장하지 마세요.
+예: Goodocs target이 PKG1, MCP NO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCP NO로 매핑하세요. 생산 source가 PKG_TYP1/PKG_TYP2를 사용하면 PKG_TYPE1->PKG_TYP1, PKG_TYPE2->PKG_TYP2로 매핑하세요. Equipment가 PKG1, PKG2, MCPSALENO를 사용하면 PKG_TYPE1->PKG1, MCP_NO->MCPSALENO로 매핑하세요.
+수량 column은 primary_quantity_column에 실제 source column 이름 그대로 저장하세요. 예를 들어 Goodocs 시트에 INPUT계획, OUT계획 column이 있으면 primary_quantity_column은 ["INPUT계획", "OUT계획"]으로 저장하고 ["INPUT_PLAN", "OUT_PLAN"]으로 바꾸지 마세요.
 
 작성 context:
 {authoring_context}

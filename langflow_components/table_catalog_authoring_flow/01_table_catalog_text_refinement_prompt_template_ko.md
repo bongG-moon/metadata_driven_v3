@@ -1,6 +1,7 @@
 제조 데이터 에이전트가 사용할 dataset/table catalog 설명을 정제하세요.
 반드시 하나의 엄격한 JSON object만 반환하세요. markdown으로 감싸지 마세요.
 dataset key, source system, SQL, API URL, document ID, sheet name, 물리 column name을 지어내지 마세요.
+사용자가 dummy/sample 데이터라고 명시하지 않았으면 source_type=dummy를 사용하지 마세요.
 refined_text에는 dataset_key, source_type, db_key, query_template block, SELECT column, filter_mappings, required params, date_format, quantity column 같은 구조화 정보를 보존하세요.
 사용자가 SQL이나 mapping을 붙여 넣었다면 요약하면서 없애지 말고 원문 그대로 또는 거의 그대로 복사하세요.
 query_template SQL은 실행용 원문이므로 불투명한 텍스트처럼 다루세요. comma, underscore, 식별자 내부 공백, alias, table name, column name, placeholder, comment를 추가/삭제/수정하지 마세요.

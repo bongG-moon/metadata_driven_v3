@@ -737,8 +737,8 @@
       "required_params": [],
       "date_format": "YYYY-MM-DD",
       "primary_quantity_column": [
-        "INPUT_PLAN",
-        "OUT_PLAN"
+        "INPUT계획",
+        "OUT계획"
       ],
       "filter_mappings": {
         "DATE": [
@@ -773,27 +773,7 @@
           "MCP_NO"
         ]
       },
-      "standard_column_aliases": {
-        "MODE": [
-          "Mode"
-        ],
-        "PKG_TYPE1": [
-          "PKG1"
-        ],
-        "PKG_TYPE2": [
-          "PKG2"
-        ],
-        "MCP_NO": [
-          "MCP NO"
-        ],
-        "INPUT_PLAN": [
-          "INPUT계획"
-        ],
-        "OUT_PLAN": [
-          "OUT계획",
-          "TARGET"
-        ]
-      },
+      "standard_column_aliases": {},
       "columns": [
         "DATE",
         "Mode",
@@ -805,9 +785,7 @@
         "ORG",
         "MCP NO",
         "INPUT계획",
-        "OUT계획",
-        "INPUT_PLAN",
-        "OUT_PLAN"
+        "OUT계획"
       ]
     },
     "wip": {

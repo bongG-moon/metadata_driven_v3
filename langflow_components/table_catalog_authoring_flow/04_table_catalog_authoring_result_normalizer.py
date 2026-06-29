@@ -35,6 +35,7 @@ STANDARD_ALIAS_KEYS = {
     "EQP_MODEL",
     "RECIPE_ID",
 }
+QUANTITY_ALIAS_KEYS = {"INPUT_PLAN", "OUT_PLAN", "TARGET"}
 
 SOURCE_REQUIRED_FIELDS = {
     "oracle": ["db_key", "query_template"],
@@ -102,15 +103,21 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
     dataset_key = _backfill_dataset_key(dataset_key, source_text, raw_item_count)
     if not dataset_key:
         errors.append(f"items[{index}] dataset_key가 없습니다.")
-    source_type = _clean(payload.get("source_type") or (payload.get("source_config") or {}).get("source_type") or _source_type_from_text(source_text) or "dummy").lower()
-    payload["source_type"] = source_type
+    source_type = _clean(payload.get("source_type") or (payload.get("source_config") or {}).get("source_type") or _source_type_from_text(source_text)).lower()
+    if source_type:
+        payload["source_type"] = source_type
+    else:
+        payload.pop("source_type", None)
     source_config = deepcopy(payload.get("source_config")) if isinstance(payload.get("source_config"), dict) else {}
-    source_config.setdefault("source_type", source_type)
+    if source_type:
+        source_config.setdefault("source_type", source_type)
     _normalize_source_config_query(source_config)
     payload["source_config"] = source_config
     if raw_item_count == 1:
         _backfill_structured_fields(payload, source_text)
     _normalize_source_config_query(payload["source_config"])
+    if not source_type:
+        errors.append(f"{dataset_key} source_type이 필요합니다.")
     for field in SOURCE_REQUIRED_FIELDS.get(source_type, []):
         if not _clean(payload["source_config"].get(field)):
             errors.append(f"{dataset_key} source_type={source_type}에는 source_config.{field}가 필요합니다.")
@@ -130,8 +137,11 @@ def _normalize_item(raw_item: Any, index: int, source_text: str = "", raw_item_c
     payload["filter_mappings"] = _normalize_mapping(payload.get("filter_mappings"))
     payload["required_param_mappings"] = _normalize_mapping(payload.get("required_param_mappings"))
     _normalize_required_param_fields(payload, source_text)
-    payload["standard_column_aliases"] = _normalize_mapping(payload.get("standard_column_aliases"))
+    payload["standard_column_aliases"] = _normalize_standard_column_aliases(payload.get("standard_column_aliases"))
+    if source_text and not _mentions_standard_column_aliases(source_text):
+        payload["standard_column_aliases"] = {}
     _repair_filter_mappings_from_standard_aliases(payload)
+    _normalize_date_format_field(payload)
     return {
         "dataset_key": dataset_key,
         "key": dataset_key,
@@ -210,9 +220,6 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     if mappings_from_text:
         payload["filter_mappings"] = _merge_mapping(payload.get("filter_mappings"), mappings_from_text)
     aliases_from_text = _standard_column_aliases_from_text(source_text)
-    aliases_from_mappings = _standard_column_aliases_from_filter_mappings(mappings_from_text)
-    if aliases_from_mappings:
-        aliases_from_text = _merge_mapping(aliases_from_text, aliases_from_mappings)
     if aliases_from_text:
         payload["standard_column_aliases"] = _merge_mapping(payload.get("standard_column_aliases"), aliases_from_text)
 
@@ -220,7 +227,7 @@ def _backfill_structured_fields(payload: dict[str, Any], source_text: str) -> No
     if date_format and not _clean(payload.get("date_format")):
         payload["date_format"] = date_format
     quantity_column = _quantity_column_from_text(source_text)
-    if quantity_column and not _clean(payload.get("primary_quantity_column")):
+    if quantity_column:
         payload["primary_quantity_column"] = quantity_column
     if _declares_no_required_params(source_text):
         payload["required_params"] = []
@@ -717,31 +724,17 @@ def _filter_mappings_from_text(text: str) -> dict[str, list[str]]:
 
 
 def _standard_column_aliases_from_text(text: str) -> dict[str, list[str]]:
-    return _merge_mapping(_named_mappings_from_text(text, "standard_column_aliases"), _standard_quantity_aliases_from_text(text))
+    return _normalize_standard_column_aliases(_named_mappings_from_text(text, "standard_column_aliases"))
 
 
-def _standard_column_aliases_from_filter_mappings(mappings: dict[str, list[str]]) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {}
-    for key, values in mappings.items():
-        standard_key = _clean(key).upper()
-        if standard_key not in STANDARD_ALIAS_KEYS:
-            continue
-        physical_values = [value for value in values if _clean(value) != _clean(key)]
-        if physical_values:
-            result[standard_key] = _unique_text(physical_values)
-    return result
-
-
-def _standard_quantity_aliases_from_text(text: str) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {}
-    if re.search(r"INPUT계획[^\n.。]*INPUT_PLAN|INPUT_PLAN[^\n.。]*INPUT계획", text, flags=re.IGNORECASE):
-        result["INPUT_PLAN"] = ["INPUT계획"]
-    if re.search(r"OUT계획[^\n.。]*(?:OUT_PLAN|TARGET)|(?:OUT_PLAN|TARGET)[^\n.。]*OUT계획", text, flags=re.IGNORECASE):
-        aliases = ["OUT계획"]
-        if re.search(r"OUT계획[^\n.。]*TARGET|TARGET[^\n.。]*OUT계획", text, flags=re.IGNORECASE):
-            aliases.append("TARGET")
-        result["OUT_PLAN"] = aliases
-    return result
+def _mentions_standard_column_aliases(text: str) -> bool:
+    return bool(
+        re.search(
+            r"standard_column_aliases|standard\s+column\s+aliases|표준\s*컬럼\s*별칭|표준\s*column\s*alias",
+            str(text or ""),
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _named_mappings_from_text(text: str, field_name: str) -> dict[str, list[str]]:
@@ -781,9 +774,9 @@ def _date_format_from_text(text: str) -> str:
 
 def _quantity_column_from_text(text: str) -> Any:
     if "계획 수량" in text and "INPUT계획" in text and "OUT계획" in text:
-        return ["INPUT_PLAN", "OUT_PLAN"]
+        return ["INPUT계획", "OUT계획"]
     if "기본 목표 수량" in text and "OUT계획" in text:
-        return "OUT_PLAN"
+        return "OUT계획"
     match = re.search(r"(?:수량|quantity).*?([A-Z][A-Z0-9_]+)\s*컬럼", text, flags=re.IGNORECASE)
     if match:
         return _clean(match.group(1)).upper()
@@ -832,6 +825,47 @@ def _merge_mapping(base: Any, incoming: dict[str, list[str]]) -> dict[str, list[
     for key, values in incoming.items():
         merged[key] = _unique_text([*merged.get(key, []), *values])
     return merged
+
+
+def _normalize_standard_column_aliases(value: Any) -> dict[str, list[str]]:
+    normalized = _normalize_mapping(value)
+    return {
+        key: values
+        for key, values in normalized.items()
+        if _clean(key).upper() in STANDARD_ALIAS_KEYS and _clean(key).upper() not in QUANTITY_ALIAS_KEYS
+    }
+
+
+def _normalize_date_format_field(payload: dict[str, Any]) -> None:
+    if not _clean(payload.get("date_format")):
+        return
+    if _has_date_reference(payload):
+        return
+    payload.pop("date_format", None)
+
+
+def _has_date_reference(payload: dict[str, Any]) -> bool:
+    for mapping_field in ("filter_mappings", "required_param_mappings", "standard_column_aliases"):
+        mappings = _normalize_mapping(payload.get(mapping_field))
+        if "DATE" in {_clean(key).upper() for key in mappings}:
+            return True
+        for values in mappings.values():
+            if any(_looks_like_date_column(value) for value in values):
+                return True
+    if "DATE" in {_clean(value).upper() for value in _as_text_list(payload.get("required_params"))}:
+        return True
+    return any(_looks_like_date_column(column) for column in _as_text_list(payload.get("columns")))
+
+
+def _looks_like_date_column(value: Any) -> bool:
+    normalized = re.sub(r"[^A-Z0-9_가-힣]", "_", _clean(value).upper())
+    if not normalized:
+        return False
+    if normalized in {"DATE", "DT", "WORK_DATE", "WORK_DT", "BASE_DATE", "BASE_DT"}:
+        return True
+    if "DATE" in normalized or normalized.endswith("_DT"):
+        return True
+    return any(token in normalized for token in ("일자", "날짜", "기준일"))
 
 
 def _repair_filter_mappings_from_standard_aliases(payload: dict[str, Any]) -> None:

@@ -517,7 +517,7 @@ def test_table_catalog_authoring_normalizes_detail_columns_and_filter_mappings()
     assert item_payload["filter_mappings"] == {"DATE": ["DATE"], "MODE": ["MODE"]}
     assert item_payload["required_params"] == []
     assert item_payload["required_param_mappings"] == {}
-    assert item_payload["standard_column_aliases"] == {"OUT_PLAN": ["OUT계획"], "PKG_TYPE1": ["PKG1"]}
+    assert item_payload["standard_column_aliases"] == {"PKG_TYPE1": ["PKG1"]}
     assert item_payload["default_detail_columns"] == ["DATE"]
     assert item_payload["date_format"] == "YYYY-MM-DD"
 
@@ -614,15 +614,14 @@ filter_mappings는 DATE -> DATE, MODE -> Mode, DEN -> DEN, TECH -> TECH, PKG_TYP
     assert item_payload["required_params"] == []
     assert item_payload["required_param_mappings"] == {}
     assert item_payload["date_format"] == "YYYY-MM-DD"
-    assert item_payload["primary_quantity_column"] == ["INPUT_PLAN", "OUT_PLAN"]
+    assert item_payload["primary_quantity_column"] == ["INPUT계획", "OUT계획"]
     assert item_payload["columns"] == ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT계획", "OUT계획"]
     assert item_payload["filter_mappings"]["PKG_TYPE1"] == ["PKG1"]
     assert item_payload["filter_mappings"]["MCP_NO"] == ["MCP NO"]
-    assert item_payload["standard_column_aliases"]["MODE"] == ["Mode"]
-    assert item_payload["standard_column_aliases"]["PKG_TYPE1"] == ["PKG1"]
-    assert item_payload["standard_column_aliases"]["MCP_NO"] == ["MCP NO"]
-    assert item_payload["standard_column_aliases"]["INPUT_PLAN"] == ["INPUT계획"]
-    assert item_payload["standard_column_aliases"]["OUT_PLAN"] == ["OUT계획", "TARGET"]
+    assert item_payload["standard_column_aliases"] == {}
+    assert "INPUT_PLAN" not in item_payload["standard_column_aliases"]
+    assert "OUT_PLAN" not in item_payload["standard_column_aliases"]
+    assert "TARGET" not in item_payload["standard_column_aliases"]
 
 
 def test_table_catalog_authoring_does_not_make_date_filter_required_without_placeholder_or_explicit_text() -> None:
@@ -674,6 +673,89 @@ DATE 형식은 YYYYMMDD야."""
     assert item_payload["date_format"] == "YYYYMMDD"
     assert item_payload["required_params"] == []
     assert item_payload["required_param_mappings"] == {}
+
+
+def test_table_catalog_authoring_drops_date_format_without_date_reference() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = """dataset_key는 equipment_status이고 장비 현황 데이터야.
+source는 oracle, db_key는 PNT_RPT야.
+DATE 형식은 YYYYMMDD야.
+
+query_template:
+SELECT EQPID, MODE, DEN
+FROM EQUIPMENT_STATUS
+
+filter_mappings는 EQP_ID -> EQPID, MODE -> MODE, DEN -> DEN로 연결해줘."""
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": "equipment_status dataset without date column.",
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "equipment_status",
+                "payload": {
+                    "display_name": "Equipment Status",
+                    "dataset_family": "equipment",
+                    "source_type": "oracle",
+                    "source_config": {
+                        "source_type": "oracle",
+                        "db_key": "PNT_RPT",
+                        "query_template": "SELECT EQPID, MODE, DEN\nFROM EQUIPMENT_STATUS",
+                    },
+                    "date_format": "YYYYMMDD",
+                    "columns": ["EQPID", "MODE", "DEN"],
+                    "filter_mappings": {"EQP_ID": ["EQPID"], "MODE": ["MODE"], "DEN": ["DEN"]},
+                    "required_params": [],
+                    "required_param_mappings": {},
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    item_payload = normalized["items"][0]["payload"]
+    assert "date_format" not in item_payload
+    assert "DATE" not in item_payload["filter_mappings"]
+    assert item_payload["required_params"] == []
+
+
+def test_table_catalog_authoring_does_not_default_missing_source_type_to_dummy() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": "dataset_key는 unknown_source이고 수량 컬럼은 QTY야.",
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "dataset_key": "unknown_source",
+                "payload": {
+                    "display_name": "Unknown Source",
+                    "dataset_family": "other",
+                    "columns": ["QTY"],
+                    "primary_quantity_column": "QTY",
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    item_payload = normalized["items"][0]["payload"]
+    assert item_payload.get("source_type") in (None, "")
+    assert item_payload["source_config"] == {}
+    assert any("source_type" in error for error in normalized["errors"])
 
 
 def test_table_catalog_authoring_backfills_structured_fields_from_raw_text() -> None:

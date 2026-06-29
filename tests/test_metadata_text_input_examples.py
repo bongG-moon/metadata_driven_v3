@@ -526,7 +526,10 @@ def test_worker_bulk_table_text_input_saves_all_current_datasets(monkeypatch: An
         "HOLD_USER_ID",
         "EVENT_CD",
     ]
-    assert docs["table_catalog:target"]["payload"]["standard_column_aliases"]["OUT_PLAN"] == ["OUT계획", "TARGET"]
+    assert docs["table_catalog:target"]["payload"]["primary_quantity_column"] == ["INPUT계획", "OUT계획"]
+    assert docs["table_catalog:target"]["payload"]["standard_column_aliases"] == {}
+    assert "INPUT_PLAN" not in docs["table_catalog:target"]["payload"]["standard_column_aliases"]
+    assert "OUT_PLAN" not in docs["table_catalog:target"]["payload"]["standard_column_aliases"]
     assert docs["table_catalog:equipment_status"]["payload"]["filter_mappings"]["MCP_NO"] == ["MCPSALENO", "MCP_NO"]
     assert docs["table_catalog:equipment_status"]["payload"]["standard_column_aliases"]["MCP_NO"] == ["MCPSALENO"]
     assert docs["table_catalog:equipment_status"]["payload"]["primary_quantity_column"] == "EQPID"

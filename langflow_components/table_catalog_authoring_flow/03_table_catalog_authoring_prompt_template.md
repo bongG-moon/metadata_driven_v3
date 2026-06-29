@@ -11,9 +11,10 @@ For payload.columns derived from SQL, use the final/top-level SELECT list that d
 Do not put text inside SQL `--` line comments or `/* ... */` block comments into columns. Preserve comments in query_template, but a commented-out column is not part of the actual dataset output.
 If the final SELECT uses "*" or alias.* from an inline view/subquery, derive columns from that immediate subquery output when it is explicit. If it cannot be expanded safely, do not invent columns.
 For expressions such as CASE, NVL, SUM, COUNT, analytic functions, or scalar subqueries, use the output alias after AS as the column name. If there is no alias, use only a clear physical source column name and otherwise put the issue in missing_information.
-Capture date_format when a source expects dates in a specific representation such as YYYYMMDD or YYYY-MM-DD.
+Capture date_format when a source expects dates in a specific representation such as YYYYMMDD or YYYY-MM-DD and this dataset has a DATE filter mapping, a required DATE parameter, or an actual date-like source column. If there is no date-related column or DATE mapping, do not store date_format.
 Capture default_detail_columns when operators expect detail rows to show only a subset of columns.
 Source-specific essentials: oracle requires db_key and query_template; datalake requires query_template; h_api requires api_url; goodocs requires doc_id only.
+Do not use source_type=dummy unless the user explicitly says this is dummy/sample data.
 For goodocs, do not ask for db_key or query_template. sheet_name is optional; include it only when the user explicitly provides it or says a specific sheet/tab must be read.
 required_params is not fixed to DATE. Include only variables that are mandatory to execute the query_template/API URL.
 For example, include DATE or LOT_ID only when the query_template has a {{DATE}}/{{LOT_ID}} placeholder or the user explicitly says that value is a required parameter.
@@ -23,8 +24,10 @@ Metadata has two mapping layers: main_flow_filters define standard filter keys, 
 Use the Registered main flow filter summary in authoring_context as the source of valid standard filter keys. The examples below are illustrative, not a fixed whitelist.
 Do not put dataset-specific mappings inside main_flow_filters. For each dataset, put DATE/OPER_NAME/product/equipment mappings in table_catalog.filter_mappings.
 The left side of filter_mappings must be a standard main flow filter key such as DATE, OPER_NAME, PKG_TYPE1, MCP_NO, EQP_ID, or RECIPE_ID; the right side must be actual source column candidates for this dataset.
-If a source uses physical column names that differ from the standard analysis column names, also capture standard_column_aliases as {{standard_column: [physical columns]}}.
-Examples: Goodocs target may use PKG1, MCP NO, OUT계획, so map PKG_TYPE1->PKG1 and OUT_PLAN->OUT계획. A production source may use PKG_TYP1/PKG_TYP2, so map PKG_TYPE1->PKG_TYP1 and PKG_TYPE2->PKG_TYP2. Equipment may use PKG1, PKG2, MCPSALENO, so map PKG_TYPE1->PKG1 and MCP_NO->MCPSALENO.
+Capture standard_column_aliases only when the user explicitly provides a standard_column_aliases section or explicitly asks to store standard column aliases. Do not derive standard_column_aliases from filter_mappings.
+Use standard_column_aliases only for dimension/filter columns such as DATE, MODE, DEN, PKG_TYPE1, PKG_TYPE2, MCP_NO, OPER_NAME, DEVICE, or EQP_ID. Do not store metric/quantity aliases such as INPUT_PLAN, OUT_PLAN, TARGET, INPUT계획, or OUT계획 in standard_column_aliases.
+Examples: Goodocs target may use PKG1 and MCP NO, so map PKG_TYPE1->PKG1 and MCP_NO->MCP NO. A production source may use PKG_TYP1/PKG_TYP2, so map PKG_TYPE1->PKG_TYP1 and PKG_TYPE2->PKG_TYP2. Equipment may use PKG1, PKG2, MCPSALENO, so map PKG_TYPE1->PKG1 and MCP_NO->MCPSALENO.
+For quantity columns, keep the real source column names in primary_quantity_column. For example, if a Goodocs sheet has INPUT계획 and OUT계획 columns, set primary_quantity_column to ["INPUT계획", "OUT계획"] rather than ["INPUT_PLAN", "OUT_PLAN"].
 
 Authoring context:
 {authoring_context}
