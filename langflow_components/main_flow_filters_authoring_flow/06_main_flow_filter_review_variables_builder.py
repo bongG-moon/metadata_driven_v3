@@ -19,7 +19,7 @@ def build_main_flow_filter_review_prompt_variables(payload_value: Any) -> dict[s
     payload = _payload(payload_value)
     review_input = {
         "items": payload.get("items", []),
-        "missing_information": (payload.get("authoring") or {}).get("missing_information", []),
+        "missing_information": _unresolved_missing_information((payload.get("authoring") or {}).get("missing_information", []), payload),
         "normalizer_errors": payload.get("errors", []),
         "existing_matches": payload.get("existing_matches", []),
         "conflict_warnings": payload.get("conflict_warnings", []),
@@ -37,6 +37,31 @@ def _payload(value: Any) -> dict[str, Any]:
         return dict(value)
     data = getattr(value, "data", None)
     return dict(data) if isinstance(data, dict) else {}
+
+
+def _unresolved_missing_information(items: Any, payload: dict[str, Any]) -> list[Any]:
+    result = []
+    for item in items if isinstance(items, list) else []:
+        field = _missing_field(item).lower()
+        if field in {"filter_key", "key", "parameter_key"} and _has_filter_key(payload):
+            continue
+        result.append(item)
+    return result
+
+
+def _missing_field(item: Any) -> str:
+    if isinstance(item, dict):
+        return str(item.get("field") or "").strip()
+    text = str(item or "").strip()
+    return text.split(":", 1)[0].strip() if ":" in text else text
+
+
+def _has_filter_key(payload: dict[str, Any]) -> bool:
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    return any(
+        isinstance(item, dict) and bool(str(item.get("filter_key") or item.get("key") or item.get("parameter_key") or "").strip())
+        for item in items
+    )
 
 
 # 컴포넌트 설명: 06 Main Flow Filter Review Variables Builder

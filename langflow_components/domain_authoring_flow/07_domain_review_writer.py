@@ -74,6 +74,8 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
             continue
         if not duplicate_waiting_for_user and _is_non_blocking_alias_overlap_request(item):
             continue
+        if _is_resolved_identity_supplement_request(item, payload):
+            continue
         if _is_resolved_metric_supplement_request(item, payload):
             continue
         if _is_resolved_quantity_supplement_request(item, payload):
@@ -325,6 +327,30 @@ def _is_resolved_quantity_supplement_request(item: Any, payload: dict[str, Any])
             return True
         if field_lower in {"output_column", "output_column_name"} and _clean(quantity_payload.get("output_column")):
             return True
+    return False
+
+
+def _is_resolved_identity_supplement_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item).lower()
+    if not field:
+        return False
+    if field in {"section", "domain_section"}:
+        return any(
+            isinstance(domain_item, dict) and bool(_clean(domain_item.get("section")))
+            for domain_item in _as_list(payload.get("items"))
+        )
+    if field in {"key", "domain_key", "item_key"}:
+        return any(
+            isinstance(domain_item, dict) and bool(_clean(domain_item.get("key")))
+            for domain_item in _as_list(payload.get("items"))
+        )
+    if field in {"section/key", "section_key"}:
+        return any(
+            isinstance(domain_item, dict)
+            and bool(_clean(domain_item.get("section")))
+            and bool(_clean(domain_item.get("key")))
+            for domain_item in _as_list(payload.get("items"))
+        )
     return False
 
 

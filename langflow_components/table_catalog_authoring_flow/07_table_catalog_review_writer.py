@@ -76,6 +76,8 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
             continue
         if _is_optional_goodocs_source_request(item, payload):
             continue
+        if _is_resolved_dataset_key_request(item, payload):
+            continue
         if _is_resolved_filter_mapping_request(item, payload):
             continue
         supplement.append(item)
@@ -374,6 +376,16 @@ def _is_resolved_filter_mapping_request(item: Any, payload: dict[str, Any]) -> b
         if mapped_columns and any(_clean(column).lower() in columns for column in mapped_columns):
             return True
     return False
+
+
+def _is_resolved_dataset_key_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item).lower()
+    if field not in {"dataset_key", "key"}:
+        return False
+    return any(
+        isinstance(table_item, dict) and bool(_clean(table_item.get("dataset_key") or table_item.get("key")))
+        for table_item in _as_list(payload.get("items"))
+    )
 
 
 def _supplement_field(item: Any) -> str:

@@ -399,6 +399,44 @@ def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
     assert any("mongo_uri" in error for error in result["write_result"]["errors"])
 
 
+def test_domain_review_ignores_identity_supplements_when_item_has_section_and_key() -> None:
+    variables = load_module("langflow_components/domain_authoring_flow/06_domain_review_variables_builder.py")
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    payload = {
+        "metadata_type": "domain",
+        "items": [
+            {
+                "section": "product_terms",
+                "key": "POP_PRODUCT",
+                "payload": {"display_name": "POP 제품", "aliases": ["POP"]},
+            }
+        ],
+        "authoring": {
+            "missing_information": [
+                {"field": "section", "reason": "section이 필요합니다."},
+                {"field": "key", "reason": "key가 필요합니다."},
+            ]
+        },
+        "duplicate_decision": {"action": "ask", "requires_user_choice": False},
+        "errors": [],
+    }
+
+    review_input = json.loads(variables.build_domain_review_prompt_variables(payload)["review_input_json"])
+    assert review_input["missing_information"] == []
+
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {"field": "section", "reason": "section이 필요합니다."},
+            {"field": "key", "reason": "key가 필요합니다."},
+        ],
+    }
+    result = writer.review_and_write_domain_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+
+
 def test_table_catalog_authoring_requires_source_config_and_detects_same_dataset_key() -> None:
     normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
     similarity = load_module("langflow_components/table_catalog_authoring_flow/05_table_catalog_similarity_checker.py")
@@ -756,6 +794,42 @@ def test_table_catalog_authoring_does_not_default_missing_source_type_to_dummy()
     assert item_payload.get("source_type") in (None, "")
     assert item_payload["source_config"] == {}
     assert any("source_type" in error for error in normalized["errors"])
+
+
+def test_table_catalog_authoring_backfills_dataset_key_from_register_sentence() -> None:
+    normalizer = load_module("langflow_components/table_catalog_authoring_flow/04_table_catalog_authoring_result_normalizer.py")
+    raw_text = """PKG 계획 데이터는 target으로 등록해줘.
+화면에 보일 이름은 PKG Target Goodocs Plan이면 돼.
+Goodocs 문서 ID는 12321232312441423124124 이야
+목표2 문서에는 DATE, Mode, DEN, TECH, PKG1, PKG2, LEAD, ORG, MCP NO, INPUT계획, OUT계획 컬럼이 있어."""
+    payload = {
+        "metadata_type": "table_catalog",
+        "raw_text": raw_text,
+        "refined_text": raw_text,
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "payload": {
+                    "display_name": "PKG Target Goodocs Plan",
+                    "dataset_family": "target",
+                    "source_type": "goodocs",
+                    "source_config": {"source_type": "goodocs"},
+                    "columns": ["DATE", "Mode", "DEN", "TECH", "PKG1", "PKG2", "LEAD", "ORG", "MCP NO", "INPUT계획", "OUT계획"],
+                },
+            }
+        ],
+        "missing_information": [{"field": "dataset_key", "reason": "사용자가 dataset_key를 입력하지 않았습니다."}],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_table_catalog_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["items"][0]["dataset_key"] == "target"
+    assert normalized["items"][0]["key"] == "target"
+    assert not any("dataset_key" in error for error in normalized["errors"])
 
 
 def test_table_catalog_authoring_backfills_structured_fields_from_raw_text() -> None:
@@ -1123,6 +1197,39 @@ def test_table_catalog_writer_does_not_block_missing_default_detail_columns() ->
     assert result["review"]["supplement_requests"] == []
 
 
+def test_table_catalog_review_ignores_dataset_key_supplement_when_item_has_key() -> None:
+    variables = load_module("langflow_components/table_catalog_authoring_flow/06_table_catalog_review_variables_builder.py")
+    writer = load_module("langflow_components/table_catalog_authoring_flow/07_table_catalog_review_writer.py")
+    payload = {
+        "metadata_type": "table_catalog",
+        "items": [{"dataset_key": "target", "payload": {"columns": ["DATE", "OUT계획"]}}],
+        "authoring": {
+            "missing_information": [
+                {"field": "dataset_key", "reason": "사용자가 dataset_key를 입력하지 않아 시스템이 고유 식별자를 생성할 수 없습니다."}
+            ]
+        },
+        "duplicate_decision": {"action": "ask", "requires_user_choice": False},
+        "errors": [],
+    }
+
+    review_input = json.loads(variables.build_table_catalog_review_prompt_variables(payload)["review_input_json"])
+    assert review_input["missing_information"] == []
+
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {
+                "field": "dataset_key",
+                "reason": "사용자가 dataset_key를 입력하지 않아 시스템이 고유 식별자를 생성할 수 없습니다.",
+            }
+        ],
+    }
+    result = writer.review_and_write_table_catalog_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+
+
 def test_table_catalog_writer_blocks_truncated_query_template_even_when_review_passes() -> None:
     writer = load_module("langflow_components/table_catalog_authoring_flow/07_table_catalog_review_writer.py")
     payload = {
@@ -1484,3 +1591,41 @@ def test_main_flow_filter_authoring_accepts_legacy_field_names() -> None:
     assert item_payload["value_mappings"] == {"DA": ["D/A1", "D/A2"], "WB": "W/B1"}
     assert "known_values" not in item_payload
     assert "value_aliases" not in item_payload
+
+
+def test_main_flow_filter_review_ignores_filter_key_supplement_when_item_has_key() -> None:
+    variables = load_module("langflow_components/main_flow_filters_authoring_flow/06_main_flow_filter_review_variables_builder.py")
+    writer = load_module("langflow_components/main_flow_filters_authoring_flow/07_main_flow_filter_review_writer.py")
+    payload = {
+        "metadata_type": "main_flow_filter",
+        "items": [
+            {
+                "filter_key": "DATE",
+                "payload": {
+                    "display_name": "기준일",
+                    "aliases": ["오늘", "작업일"],
+                    "column_candidates": ["WORK_DT"],
+                    "semantic_role": "date",
+                },
+            }
+        ],
+        "authoring": {
+            "missing_information": [
+                {"field": "filter_key", "reason": "filter_key가 필요합니다."}
+            ]
+        },
+        "duplicate_decision": {"action": "ask", "requires_user_choice": False},
+        "errors": [],
+    }
+
+    review_input = json.loads(variables.build_main_flow_filter_review_prompt_variables(payload)["review_input_json"])
+    assert review_input["missing_information"] == []
+
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [{"field": "filter_key", "reason": "filter_key가 필요합니다."}],
+    }
+    result = writer.review_and_write_main_flow_filter_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []

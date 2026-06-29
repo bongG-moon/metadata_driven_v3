@@ -71,6 +71,8 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
         if duplicate_resolved and _is_duplicate_action_request(item):
             duplicate_supplement_count += 1
             continue
+        if _is_resolved_filter_key_request(item, payload):
+            continue
         supplement.append(item)
     if _duplicate_choice_required(payload) and action == "ask":
         supplement.append(
@@ -84,7 +86,9 @@ def _normalize_review(text: str, payload: dict[str, Any], action: str = "ask") -
         supplement.append({"field": "items", "reason": "저장할 filter item이 없습니다.", "example_user_input": "추가할 필터명, 컬럼 후보, 값 형태를 설명해 주세요."})
     errors = list(payload.get("errors", []))
     only_duplicate_blockers = duplicate_resolved and duplicate_supplement_count > 0 and not supplement
-    ready = (bool(parsed.get("ready_to_save", False)) or only_duplicate_blockers) and not supplement and not errors
+    blockers_clear = not supplement and not errors
+    review_ready = bool(parsed.get("ready_to_save", False))
+    ready = blockers_clear and (review_ready or only_duplicate_blockers or not _duplicate_choice_required(payload))
     return {
         "ready_to_save": ready,
         "summary": _clean(parsed.get("summary") or "검증 결과를 정리했습니다."),
@@ -245,6 +249,26 @@ def _is_duplicate_action_request(item: Any) -> bool:
         text = _clean(item)
     lowered = text.lower()
     return "duplicate_action" in lowered or "merge" in lowered and "replace" in lowered and "skip" in lowered
+
+
+def _is_resolved_filter_key_request(item: Any, payload: dict[str, Any]) -> bool:
+    field = _supplement_field(item).lower()
+    if field not in {"filter_key", "key", "parameter_key"}:
+        return False
+    return any(
+        isinstance(filter_item, dict)
+        and bool(_clean(filter_item.get("filter_key") or filter_item.get("key") or filter_item.get("parameter_key")))
+        for filter_item in _as_list(payload.get("items"))
+    )
+
+
+def _supplement_field(item: Any) -> str:
+    if isinstance(item, dict):
+        return _clean(item.get("field"))
+    text = _clean(item)
+    if ":" in text:
+        return _clean(text.split(":", 1)[0])
+    return ""
 
 
 def _resolved_duplicate_decision(payload: dict[str, Any], action: str) -> dict[str, Any]:
