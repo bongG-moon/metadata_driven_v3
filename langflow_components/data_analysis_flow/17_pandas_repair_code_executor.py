@@ -535,7 +535,7 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
 
     structural_alias_map = {
         "WIP": ["TOTAL_WIP", "WIP_TOTAL", "WIP_SUM", "SUM_WIP", "WIP_QUANTITY", "WIP_QTY"],
-        "PRODUCTION": ["PRODUCTION_QUANTITY", "PRODUCTION_QTY"],
+        "PRODUCTION": ["TOTAL_PRODUCTION", "PRODUCTION_TOTAL", "SUM_PRODUCTION", "PRODUCTION_SUM", "PRODUCTION_QUANTITY", "PRODUCTION_QTY"],
         "PRESS_CNT": ["TOTAL_PRESS_CNT", "PRESS_COUNT"],
         "WF_QTY": ["WAFER_QTY", "WAFER_COUNT", "WF_COUNT"],
         "DIE_QTY": ["DIE_COUNT"],
@@ -570,10 +570,55 @@ def _normalize_result_columns(frame: pd.DataFrame, plan: dict[str, Any]) -> pd.D
 
     if rename_map:
         result = result.rename(columns=rename_map)
+    result = _drop_duplicate_standard_alias_columns(result)
     if analysis_kind == "aggregate_wip_total" and "SCOPE" not in result.columns and "WIP" in result.columns:
         result.insert(0, "SCOPE", plan.get("scope_label") or "ALL")
     result = _add_result_scope_columns(result, plan)
     return _order_result_columns(result, plan)
+
+
+def _drop_duplicate_standard_alias_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    result = frame.copy()
+    alias_groups = {
+        "DEN": ["DENSITY", "DEN_TYP"],
+        "PKG_TYPE1": ["PKG1", "PKG_TYP1", "PKG_TYP"],
+        "PKG_TYPE2": ["PKG2", "PKG_TYP2", "PKG_TYP_2"],
+        "MCP_NO": ["MCP NO", "MCP_SALE_CD", "MCP_SALES_NO", "MCPSALENO", "PROD_GRP_ID"],
+        "MODE": ["PROD_TYP"],
+        "TECH": ["TECH_NM"],
+        "LEAD": ["LEAD_CNT"],
+        "PRODUCTION": ["TOTAL_PRODUCTION", "PRODUCTION_TOTAL", "SUM_PRODUCTION", "PRODUCTION_SUM", "PRODUCTION_QUANTITY", "PRODUCTION_QTY"],
+        "WIP": ["TOTAL_WIP", "WIP_TOTAL", "WIP_SUM", "SUM_WIP", "WIP_QUANTITY", "WIP_QTY"],
+    }
+    for standard, aliases in alias_groups.items():
+        if standard not in result.columns:
+            if standard not in {"PRODUCTION", "WIP"}:
+                continue
+            for alias in aliases:
+                if alias in result.columns:
+                    result = result.rename(columns={alias: standard})
+                    break
+            continue
+        duplicate_aliases = [
+            alias
+            for alias in aliases
+            if alias in result.columns and _series_values_equivalent(result[standard], result[alias])
+        ]
+        if duplicate_aliases:
+            result = result.drop(columns=duplicate_aliases)
+    return result
+
+
+def _series_values_equivalent(left: pd.Series, right: pd.Series) -> bool:
+    if len(left) != len(right):
+        return False
+    left_numeric = pd.to_numeric(left, errors="coerce")
+    right_numeric = pd.to_numeric(right, errors="coerce")
+    if left_numeric.notna().any() or right_numeric.notna().any():
+        return left_numeric.fillna(0).equals(right_numeric.fillna(0))
+    left_text = left.fillna("").astype(str).str.strip().str.upper()
+    right_text = right.fillna("").astype(str).str.strip().str.upper()
+    return left_text.equals(right_text)
 
 
 def _dotted_result_column_renames(frame: pd.DataFrame, plan: dict[str, Any]) -> dict[str, str]:

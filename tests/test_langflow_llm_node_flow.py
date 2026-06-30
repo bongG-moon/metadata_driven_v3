@@ -1745,7 +1745,7 @@ def test_intent_normalizer_routes_unregistered_product_tokens_to_function_case(m
     assert plan["analysis_kind"] == "detail_rows"
     assert plan["pandas_function_case"]["key"] == "component_token_product_lookup"
     assert plan["pandas_function_case"]["function_name"] == "match_product_tokens"
-    assert plan["pandas_function_case"]["input_text"] == question
+    assert plan["pandas_function_case"]["input_text"] == "64G L-269P1Q"
     assert plan["step_plan"][0]["operation"] == "apply_pandas_function_case"
     assert plan["step_plan"][0]["function_name"] == "match_product_tokens"
     assert "DEN" not in fields
@@ -1934,6 +1934,99 @@ def test_intent_normalizer_uses_function_case_metadata_token_columns(monkeypatch
     assert plan["pandas_function_case"]["token_columns"] == ["CUSTOM_CODE"]
     assert "CUSTOM_CODE" not in fields
     assert "DATE" in fields
+
+
+def test_intent_normalizer_routes_wip_product_attribute_filters_to_function_case(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    question = "오늘 WB공정에서 CP 48G LPDDR5 제품 재공 알려줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260630")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "single_retrieval_analysis",
+        "analysis_kind": "aggregate_wip_total",
+        "datasets": ["wip_today"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wb_wip_today",
+                "params": {"DATE": "20260630"},
+                "filters": [
+                    {"field": "OPER_NAME", "op": "in", "values": ["W/B1", "W/B2", "W/B3", "W/B4", "W/B5", "W/B6"]},
+                    {"field": "MODE", "op": "starts_with", "value": "LPDDR5"},
+                    {"field": "DEN", "op": "eq", "value": "48G"},
+                    {"field": "DATE", "op": "eq", "value": "20260630"},
+                ],
+            }
+        ],
+        "step_plan": [
+            {
+                "step_id": "aggregate_wb_wip_total",
+                "operation": "aggregate_by_group",
+                "source_alias": "wb_wip_today",
+                "metric": "WIP",
+                "group_by": [],
+            }
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+    fields = {item.get("field") for item in _retrieval_jobs(payload)[0].get("filters", [])}
+
+    assert plan["pandas_function_case"]["key"] == "component_token_product_lookup"
+    assert plan["pandas_function_case"]["input_text"] == "CP 48G LPDDR5"
+    assert plan["step_plan"][0]["operation"] == "apply_pandas_function_case"
+    assert plan["step_plan"][1]["input_step_id"] == "component_token_product_lookup"
+    assert "OPER_NAME" in fields
+    assert "DATE" in fields
+    assert "MODE" not in fields
+    assert "DEN" not in fields
+
+
+def test_intent_normalizer_prunes_wip_job_for_production_only_question(monkeypatch: Any) -> None:
+    request_loader = load_component("langflow_components/data_analysis_flow/00_analysis_request_loader.py")
+    metadata_loader = load_component("langflow_components/data_analysis_flow/01_metadata_context_loader.py")
+    intent_normalizer = load_component("langflow_components/data_analysis_flow/03_intent_plan_normalizer.py")
+
+    question = "오늘 WB에서 제품별 생산량 알려줘"
+    payload = request_loader.build_request_payload(question, "test-session", request_date="20260630")
+    payload = load_seed_metadata_payload(metadata_loader, payload, monkeypatch)
+    intent_llm_json = {
+        "intent_type": "multi_step_analysis",
+        "analysis_kind": "aggregate_join",
+        "datasets": ["production_today", "wip_today"],
+        "product_grain": ["TECH", "DEN", "MODE", "PKG_TYPE1", "PKG_TYPE2", "LEAD", "MCP_NO"],
+        "retrieval_jobs": [
+            {
+                "dataset_key": "production_today",
+                "source_alias": "production_data",
+                "params": {"DATE": "20260630"},
+                "filters": [{"field": "OPER_NAME", "op": "in", "values": ["W/B1", "W/B2"]}],
+            },
+            {
+                "dataset_key": "wip_today",
+                "source_alias": "wip_data",
+                "params": {"DATE": "20260630"},
+                "filters": [{"field": "OPER_NAME", "op": "in", "values": ["W/B1", "W/B2"]}],
+            },
+        ],
+        "step_plan": [
+            {"step_id": "aggregate_production", "operation": "aggregate_by_group", "source_alias": "production_data", "metric": "PRODUCTION"},
+            {"step_id": "aggregate_wip", "operation": "aggregate_by_group", "source_alias": "wip_data", "metric": "WIP"},
+            {"step_id": "join_production_wip", "operation": "left_join", "left_step": "aggregate_production", "right_step": "aggregate_wip"},
+        ],
+    }
+
+    payload = intent_normalizer.normalize_intent_payload(payload, json.dumps(intent_llm_json, ensure_ascii=False))
+    plan = payload["intent_plan"]
+
+    assert [job["dataset_key"] for job in _retrieval_jobs(payload)] == ["production_today"]
+    assert plan["intent_type"] == "single_retrieval_analysis"
+    assert plan["metric"] == "PRODUCTION"
+    assert all(step.get("source_alias") != "wip_data" for step in plan["step_plan"])
 
 
 def test_intent_normalizer_keeps_registered_product_terms_out_of_function_case(monkeypatch: Any) -> None:

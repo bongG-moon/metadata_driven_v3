@@ -20,6 +20,7 @@
 제품 token/function-case 규칙:
 - 사용자가 "64G L-269P1Q 제품 찾아줘"처럼 제품 속성 token을 자유롭게 섞어서 제품을 찾으면 pandas_function_cases.component_token_product_lookup / match_product_tokens를 사용한다.
 - lpddr4 lc 64g처럼 mode/density/package/lead/MCP-style 값이 여러 개 나열되고 product_terms로 정의된 제품군이 아니면 MODE/DEN/PKG_TYPE filter를 임의 생성하지 않는다.
+- LPDDR5 48G CP처럼 제품 속성 token이 재공/생산량 질문 안에 함께 들어와도 MODE starts_with, DEN eq 같은 retrieval filter로 직접 바꾸지 말고 component_token_product_lookup을 먼저 계획한다.
 - 이런 경우 pandas_function_case=component_token_product_lookup을 설정하고 aggregate/rank/detail/join step 전에 apply_pandas_function_case step을 추가한다.
 - 제품 token pandas_function_case의 input_text에는 질문에서 발견된 모든 제품 속성 token을 포함한다. 예를 들어 `오늘 da에서 UFBGA qdp제품 생산량`은 input_text=`UFBGA qdp`이고, `lpddr4 lc 64g 제품`은 input_text=`lpddr4 lc 64g`이다. `qdp`처럼 마지막 token 하나만 남기지 않는다.
 - 제품 token input_text에는 날짜/시점, 공정 scope, metric/동사 표현은 넣지 않는다. 예를 들어 오늘, 어제, da에서, 생산량, 재공, 알려줘는 제외하고 제품 속성 token만 남긴다.
@@ -37,6 +38,7 @@
 - 사용자가 "공정별", "세부공정별", "차수별"처럼 breakdown 축을 말하면 그 축을 group_by 또는 step_plan에 명시한다.
 - 생산량은 production 계열 dataset, 재공은 wip 계열 dataset, Lot/Hold는 lot 또는 hold 계열 dataset, 장비는 equipment 계열 dataset을 우선 검토한다.
 - 사용자가 특정 공정 scope의 생산량, 재공, 목표, Hold, Lot, 장비를 묻는 경우 해당 metric에 맞는 dataset family를 선택한다.
+- 생산량만 묻는 질문에는 WIP/재공 dataset을 추가하지 않는다. 재공만 묻는 질문에는 production dataset을 추가하지 않는다. 생산량과 재공을 함께 묻는 경우에만 production+wip multi-source 계획을 만든다.
 - 같은 질문 안에 여러 공정 scope가 있으면 각 공정 scope를 별도 retrieval_job 또는 별도 step으로 분리한다.
 - DA 생산량과 WB 재공을 함께 묻는 경우 DA 조건을 production source에, WB 조건을 wip source에 각각 적용한다.
 - 전 공정/전체 공정/all process를 묻는 source에는 공정 필터를 적용하지 않는다.

@@ -113,6 +113,10 @@ def normalize_intent_payload(payload_value: Any, llm_response_value: Any) -> dic
         _attach_column_standardization_contract(job, dataset_catalog)
         normalized_jobs.append(job)
     plan["retrieval_jobs"] = normalized_jobs
+    normalized_jobs = _post_normalize_pandas_function_case_intent(plan, normalized_jobs, metadata, question, notes, errors)
+    plan["retrieval_jobs"] = normalized_jobs
+    normalized_jobs = _prune_unrequested_metric_family_jobs(plan, normalized_jobs, metadata, question, notes)
+    plan["retrieval_jobs"] = normalized_jobs
     if plan.get("requires_dataset_selection"):
         plan["datasets"] = []
     else:
@@ -158,13 +162,14 @@ def _base_plan(llm_json: dict[str, Any], product_grain: list[str]) -> dict[str, 
     step_plan = llm_json.get("step_plan") if isinstance(llm_json.get("step_plan"), list) else []
     retrieval_jobs = llm_json.get("retrieval_jobs") if isinstance(llm_json.get("retrieval_jobs"), list) else []
     product_grain_value = _normalized_product_grain(llm_json, product_grain)
+    raw_filters = llm_json.get("filters")
     plan = {
         "intent_type": intent_type,
         "analysis_kind": analysis_kind,
         "product_grain": product_grain_value,
         "datasets": _unique(llm_json.get("datasets", [])),
         "params_by_dataset": llm_json.get("params_by_dataset", {}) if isinstance(llm_json.get("params_by_dataset"), dict) else {},
-        "filters": llm_json.get("filters", []) if isinstance(llm_json.get("filters"), list) else [],
+        "filters": deepcopy(raw_filters) if isinstance(raw_filters, (list, dict)) else [],
         "retrieval_jobs": retrieval_jobs,
         "step_plan": step_plan,
         "depends_on_state": bool(llm_json.get("depends_on_state", False)),
@@ -1827,7 +1832,7 @@ def _augmented_filters_for_job(
     dataset_key = str(job.get("dataset_key") or "")
     dataset_catalog = datasets.get(dataset_key) if isinstance(datasets.get(dataset_key), dict) else {}
     raw_filters = job.get("filters") if isinstance(job.get("filters"), list) else []
-    plan_filters = plan.get("filters") if isinstance(plan.get("filters"), list) else []
+    plan_filters = _plan_filters_for_job(plan.get("filters"), job)
     inferred_filters = _infer_filters(
         question,
         metadata,
@@ -1860,6 +1865,24 @@ def _augmented_filters_for_job(
         merged = _remove_filter_fields(merged, ["DATE"])
     merged = _drop_conflicting_product_alias_filters(merged, inferred_filters, metadata)
     return _filters_for_dataset(_dedupe_filters(merged), dataset_key, dataset_catalog)
+
+
+def _plan_filters_for_job(filters: Any, job: dict[str, Any]) -> list[dict[str, Any]]:
+    if isinstance(filters, list):
+        return [deepcopy(item) for item in filters if isinstance(item, dict)]
+    if not isinstance(filters, dict):
+        return []
+    aliases = {
+        str(job.get("source_alias") or "").strip(),
+        str(job.get("dataset_key") or "").strip(),
+        str(job.get("job_id") or "").strip(),
+    }
+    aliases = {alias for alias in aliases if alias}
+    result: list[dict[str, Any]] = []
+    for key, value in filters.items():
+        if str(key or "").strip() in aliases:
+            result.extend(deepcopy(item) for item in _iter_filter_conditions(value))
+    return result
 
 
 def _filters_for_dataset(filters: list[Any], dataset_key: str, catalog: dict[str, Any]) -> list[dict[str, Any]]:
@@ -2105,7 +2128,7 @@ def _normalize_pandas_function_case_intent(
     if not function_name:
         return raw_jobs
 
-    input_text = _pandas_function_case_input_text(plan, question)
+    input_text = _pandas_function_case_input_text(plan, question, metadata)
     function_case = {
         "key": case_key,
         "function_name": function_name,
@@ -2125,6 +2148,131 @@ def _normalize_pandas_function_case_intent(
         _ensure_pandas_function_case_step(plan, raw_jobs, function_case)
         _append_once(notes, f"pandas_function_cases.{case_key} helper 적용 단계를 보존했습니다.")
     return raw_jobs
+
+
+def _post_normalize_pandas_function_case_intent(
+    plan: dict[str, Any],
+    normalized_jobs: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    question: str,
+    notes: list[str],
+    errors: list[str],
+) -> list[dict[str, Any]]:
+    if plan.get("pandas_function_case"):
+        return normalized_jobs
+    refreshed = _normalize_pandas_function_case_intent(plan, normalized_jobs, metadata, question, notes, errors)
+    return [job for job in refreshed if isinstance(job, dict)]
+
+
+def _prune_unrequested_metric_family_jobs(
+    plan: dict[str, Any],
+    normalized_jobs: list[dict[str, Any]],
+    metadata: dict[str, Any],
+    question: str,
+    notes: list[str],
+) -> list[dict[str, Any]]:
+    requested = _requested_metric_families(question, plan)
+    if not requested:
+        return normalized_jobs
+    has_production = "production" in requested
+    has_wip = "wip" in requested
+    if has_production == has_wip:
+        return normalized_jobs
+    requested_family = "production" if has_production else "wip"
+
+    catalog = ((metadata.get("table_catalog") or {}).get("datasets") or {}) if isinstance(metadata, dict) else {}
+    removed_aliases: set[str] = set()
+    kept_jobs: list[dict[str, Any]] = []
+    for job in normalized_jobs:
+        dataset_key = str(job.get("dataset_key") or "").strip()
+        dataset_catalog = catalog.get(dataset_key) if isinstance(catalog.get(dataset_key), dict) else {}
+        family = str(dataset_catalog.get("dataset_family") or job.get("dataset_family") or "").strip().lower()
+        if requested_family == "production" and family in {"wip", "inventory"}:
+            removed_aliases.add(str(job.get("source_alias") or dataset_key).strip())
+            continue
+        if requested_family == "wip" and family == "production":
+            removed_aliases.add(str(job.get("source_alias") or dataset_key).strip())
+            continue
+        kept_jobs.append(job)
+    if not removed_aliases or not kept_jobs:
+        return normalized_jobs
+
+    _remove_steps_for_aliases(plan, removed_aliases)
+    _repair_step_plan_after_metric_family_prune(plan, kept_jobs, requested_family)
+    _append_once(notes, "질문에서 요청하지 않은 metric family dataset 조회를 제거했습니다.")
+    return kept_jobs
+
+
+def _requested_metric_families(question: str, plan: dict[str, Any]) -> set[str]:
+    text = str(question or "")
+    metric = str(plan.get("metric") or "").strip().upper()
+    requested: set[str] = set()
+    if metric == "PRODUCTION" or _mentions_any(text, ["생산량", "생산 실적", "실적", "production", "PRODUCTION", "output", "OUTPUT"]):
+        requested.add("production")
+    if metric == "WIP" or _mentions_any(text, ["재공", "wip", "WIP"]):
+        requested.add("wip")
+    if _mentions_any(text, ["목표", "계획", "target", "TARGET", "달성률", "achievement"]):
+        requested.add("target")
+    return requested
+
+
+def _remove_steps_for_aliases(plan: dict[str, Any], removed_aliases: set[str]) -> None:
+    if not removed_aliases:
+        return
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    kept_steps: list[dict[str, Any]] = []
+    removed_step_ids: set[str] = set()
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        source_alias = str(step.get("source_alias") or "").strip()
+        source_aliases = [str(alias or "").strip() for alias in step.get("source_aliases", [])] if isinstance(step.get("source_aliases"), list) else []
+        referenced_aliases = {source_alias, *source_aliases} - {""}
+        if referenced_aliases & removed_aliases:
+            removed_step_ids.add(str(step.get("step_id") or "").strip())
+            continue
+        if str(step.get("left_step") or "").strip() in removed_step_ids or str(step.get("right_step") or "").strip() in removed_step_ids:
+            removed_step_ids.add(str(step.get("step_id") or "").strip())
+            continue
+        if str(step.get("input_step_id") or "").strip() in removed_step_ids:
+            step = deepcopy(step)
+            step.pop("input_step_id", None)
+        kept_steps.append(step)
+    plan["step_plan"] = kept_steps
+
+
+def _repair_step_plan_after_metric_family_prune(
+    plan: dict[str, Any],
+    kept_jobs: list[dict[str, Any]],
+    requested_family: str,
+) -> None:
+    metric = "PRODUCTION" if requested_family == "production" else "WIP"
+    source_alias = str(kept_jobs[0].get("source_alias") or kept_jobs[0].get("dataset_key") or "").strip() if kept_jobs else ""
+    if not source_alias:
+        return
+    steps = plan.get("step_plan") if isinstance(plan.get("step_plan"), list) else []
+    if not steps or any(str(step.get("operation") or "").strip() in {"left_join", "right_join", "inner_join", "outer_join"} for step in steps if isinstance(step, dict)):
+        group_by = plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []
+        operation = "aggregate_by_group" if group_by else "aggregate_total"
+        output_columns = [*group_by, metric] if group_by else [metric]
+        plan["step_plan"] = [
+            {
+                "step_id": f"aggregate_{requested_family}",
+                "operation": operation,
+                "source_alias": source_alias,
+                "metric": metric,
+                "group_by": group_by,
+                "output_columns": output_columns,
+            }
+        ]
+    plan["metric"] = metric
+    if requested_family == "production":
+        plan["analysis_kind"] = "aggregate_total" if not (plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []) else "aggregate_by_group"
+    elif requested_family == "wip":
+        plan["analysis_kind"] = "aggregate_wip_total" if not (plan.get("product_grain") if isinstance(plan.get("product_grain"), list) else []) else "aggregate_by_group"
+    plan["intent_type"] = "single_retrieval_analysis"
+    product_grain = [str(column) for column in plan.get("product_grain", []) if str(column or "").strip()] if isinstance(plan.get("product_grain"), list) else []
+    plan["analysis_output_columns"] = _unique([*product_grain, metric])
 
 
 def _matched_pandas_function_case(plan: dict[str, Any], metadata: dict[str, Any], question: str) -> tuple[str, dict[str, Any]]:
@@ -2269,15 +2417,25 @@ def _case_text_list(case: dict[str, Any], key: str) -> list[str]:
 
 def _all_plan_filter_conditions(plan: dict[str, Any]) -> list[dict[str, Any]]:
     conditions: list[dict[str, Any]] = []
-    filters = plan.get("filters") if isinstance(plan.get("filters"), list) else []
-    conditions.extend(item for item in filters if isinstance(item, dict))
+    filters = plan.get("filters")
+    conditions.extend(_iter_filter_conditions(filters))
     jobs = plan.get("retrieval_jobs") if isinstance(plan.get("retrieval_jobs"), list) else []
     for job in jobs:
         if not isinstance(job, dict):
             continue
-        job_filters = job.get("filters") if isinstance(job.get("filters"), list) else []
-        conditions.extend(item for item in job_filters if isinstance(item, dict))
+        conditions.extend(_iter_filter_conditions(job.get("filters")))
     return conditions
+
+
+def _iter_filter_conditions(filters: Any) -> list[dict[str, Any]]:
+    if isinstance(filters, list):
+        return [item for item in filters if isinstance(item, dict)]
+    if isinstance(filters, dict):
+        result: list[dict[str, Any]] = []
+        for value in filters.values():
+            result.extend(_iter_filter_conditions(value))
+        return result
+    return []
 
 
 def _matches_registered_product_term(question: str, metadata: dict[str, Any]) -> bool:
@@ -2292,7 +2450,7 @@ def _matches_registered_product_term(question: str, metadata: dict[str, Any]) ->
     return False
 
 
-def _pandas_function_case_input_text(plan: dict[str, Any], question: str) -> str:
+def _pandas_function_case_input_text(plan: dict[str, Any], question: str, metadata: dict[str, Any] | None = None) -> str:
     for key in ("pandas_function_case", "function_case"):
         value = plan.get(key)
         if isinstance(value, dict):
@@ -2305,7 +2463,146 @@ def _pandas_function_case_input_text(plan: dict[str, Any], question: str) -> str
         text = str(step.get("input_text") or step.get("product_expression") or "").strip()
         if text:
             return text
+    derived_text = _product_attribute_input_text_from_question_and_filters(plan, question, metadata or {})
+    if derived_text:
+        return derived_text
     return str(question or "").strip()
+
+
+def _product_attribute_input_text_from_question_and_filters(
+    plan: dict[str, Any],
+    question: str,
+    metadata: dict[str, Any],
+) -> str:
+    token_columns = _product_token_columns_from_metadata(metadata)
+    filter_tokens: list[str] = []
+    for condition in _all_plan_filter_conditions(plan):
+        field = str(condition.get("field") or "").strip().upper()
+        if field not in token_columns or not _filter_value_appears_in_question(condition, question):
+            continue
+        if "value" in condition:
+            filter_tokens.append(str(condition.get("value") or "").strip())
+        if isinstance(condition.get("values"), list):
+            filter_tokens.extend(str(value or "").strip() for value in condition["values"])
+    question_tokens = _product_attribute_tokens_from_question(question, metadata)
+    return " ".join(_unique([*question_tokens, *[token for token in filter_tokens if token]]))
+
+
+def _product_attribute_tokens_from_question(question: str, metadata: dict[str, Any]) -> list[str]:
+    ignored = _ignored_product_input_tokens(metadata)
+    result: list[str] = []
+    separators = r"[\s,;:/()\[\]{}]+"
+    for raw_token in re.split(separators, str(question or "")):
+        token = _clean_product_input_token(raw_token)
+        if not token:
+            continue
+        compact = _compact_token_text(token)
+        if not compact or compact in ignored:
+            continue
+        if _looks_like_free_product_attribute_token(token):
+            result.append(token)
+    return _unique(result)
+
+
+def _clean_product_input_token(value: Any) -> str:
+    token = str(value or "").strip().upper()
+    token = token.strip("\"'`~!@#$%^&*+=|\\<>?.")
+    suffixes = [
+        "제품의",
+        "제품",
+        "생산량",
+        "재공량",
+        "재공",
+        "수량",
+        "실적",
+        "리스트",
+        "목록",
+        "조회",
+        "찾아줘",
+        "보여줘",
+        "알려줘",
+        "찾아",
+        "보여",
+        "알려",
+        "공정에서",
+        "공정",
+        "에서",
+    ]
+    changed = True
+    while token and changed:
+        changed = False
+        for suffix in suffixes:
+            normalized_suffix = str(suffix).upper()
+            if token == normalized_suffix:
+                token = ""
+                changed = True
+                break
+            if token.endswith(normalized_suffix) and len(token) > len(normalized_suffix):
+                token = token[: -len(normalized_suffix)].strip()
+                changed = True
+                break
+    return token
+
+
+def _ignored_product_input_tokens(metadata: dict[str, Any]) -> set[str]:
+    ignored = {
+        "오늘",
+        "현재",
+        "어제",
+        "금일",
+        "전일",
+        "제품",
+        "생산량",
+        "생산",
+        "실적",
+        "재공",
+        "재공량",
+        "수량",
+        "조회",
+        "리스트",
+        "목록",
+        "알려줘",
+        "보여줘",
+        "찾아줘",
+        "알려",
+        "보여",
+        "찾아",
+        "TODAY",
+        "CURRENT",
+        "YESTERDAY",
+        "PRODUCTION",
+        "WIP",
+    }
+    domain = metadata.get("domain_items") if isinstance(metadata.get("domain_items"), dict) else {}
+    for section_name in ("process_groups", "product_terms", "status_terms", "metric_terms"):
+        items = domain.get(section_name) if isinstance(domain.get(section_name), dict) else {}
+        for key, item in items.items():
+            if not isinstance(item, dict):
+                continue
+            values = [key, item.get("display_name"), *(item.get("aliases") if isinstance(item.get("aliases"), list) else [])]
+            if section_name == "process_groups":
+                key_prefix = str(key or "").split("_", 1)[0].strip()
+                if key_prefix:
+                    values.append(key_prefix)
+            ignored.update(str(value or "").strip() for value in values if str(value or "").strip())
+            if section_name == "process_groups" and isinstance(item.get("processes"), list):
+                ignored.update(str(value or "").strip() for value in item["processes"] if str(value or "").strip())
+    return {_compact_token_text(value) for value in ignored if str(value or "").strip()}
+
+
+def _looks_like_free_product_attribute_token(token: str) -> bool:
+    text = str(token or "").strip().upper()
+    if not text:
+        return False
+    ascii_text = "".join(ch for ch in text if ch.isascii())
+    if ascii_text != text:
+        return False
+    alnum = text.replace("-", "").replace("_", "").replace("/", "")
+    if not alnum.isalnum():
+        return False
+    if any(ch.isdigit() for ch in text):
+        return len(alnum) >= 2
+    return text.isalpha() and 2 <= len(text) <= 12
 
 
 def _normalize_product_token_lookup_plan(
@@ -2529,7 +2826,14 @@ def _default_product_token_columns() -> list[str]:
     ]
 
 
-def _remove_product_token_filters(filters: Any, token_columns: set[str], question: str) -> list[dict[str, Any]]:
+def _remove_product_token_filters(filters: Any, token_columns: set[str], question: str) -> Any:
+    if isinstance(filters, dict):
+        result: dict[str, Any] = {}
+        for key, value in filters.items():
+            cleaned = _remove_product_token_filters(value, token_columns, question)
+            if cleaned:
+                result[key] = cleaned
+        return result
     if not isinstance(filters, list):
         return []
     result: list[dict[str, Any]] = []
@@ -2834,15 +3138,13 @@ def _state_product_keys_are_enough(plan: dict[str, Any], question: str) -> bool:
 
 def _plan_uses_state_product_filter(plan: dict[str, Any]) -> bool:
     filter_groups: list[Any] = []
-    if isinstance(plan.get("filters"), list):
+    if isinstance(plan.get("filters"), (list, dict)):
         filter_groups.append(plan["filters"])
     for job in plan.get("retrieval_jobs", []) if isinstance(plan.get("retrieval_jobs"), list) else []:
-        if isinstance(job, dict) and isinstance(job.get("filters"), list):
+        if isinstance(job, dict) and isinstance(job.get("filters"), (list, dict)):
             filter_groups.append(job["filters"])
     for filters in filter_groups:
-        for condition in filters:
-            if not isinstance(condition, dict):
-                continue
+        for condition in _iter_filter_conditions(filters):
             field = str(condition.get("field") or "").strip()
             op = str(condition.get("op") or "").strip()
             if field == "PRODUCT_GRAIN" and op == "from_state":

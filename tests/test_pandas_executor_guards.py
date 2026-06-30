@@ -184,6 +184,34 @@ def test_pandas_executor_normalizes_metric_prefixed_production_quantity_column()
     assert alias_result["analysis"]["rows"][0]["PRODUCTION"] == 120
 
 
+def test_pandas_executors_drop_duplicate_standard_alias_columns() -> None:
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "aggregate_total",
+            "metric": "PRODUCTION",
+            "analysis_output_columns": ["DEN", "PRODUCTION"],
+        },
+        "state": {},
+        "runtime_sources": {},
+    }
+    pandas_llm_json = {
+        "code": "result_df = pd.DataFrame([{'DEN': '48G', 'DENSITY': '48G', 'PRODUCTION': 10, 'TOTAL_PRODUCTION': 10}])",
+        "output_columns": ["DEN", "DENSITY", "PRODUCTION", "TOTAL_PRODUCTION"],
+        "reasoning_steps": [],
+    }
+
+    for path in [
+        "langflow_components/data_analysis_flow/15_pandas_code_executor.py",
+        "langflow_components/data_analysis_flow/17_pandas_repair_code_executor.py",
+    ]:
+        pandas_executor = load_component(path)
+        result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+        assert result["analysis"]["status"] == "ok"
+        assert result["analysis"]["columns"] == ["DEN", "PRODUCTION"]
+        assert result["analysis"]["rows"][0] == {"DEN": "48G", "PRODUCTION": 10}
+
+
 def test_pandas_executor_keeps_incomplete_success_result_for_prompt_repair_visibility() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {

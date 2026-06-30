@@ -18,6 +18,8 @@ plan과 state는 Python dict입니다. plan['key'], plan.get('key'), state.get('
 column name 안의 공백은 실제 source column name의 일부입니다. source summary 또는 primary_quantity_column에 `INPUT 계획`, `OUT 계획`처럼 보이면 `INPUT계획`, `OUT계획`으로 임의 압축하지 말고 정확히 보이는 이름을 사용하세요.
 plan이 `INPUT_PLAN`/`OUT_PLAN` 같은 standard metric을 요구하지만 source summary에는 `INPUT 계획`/`OUT 계획` 같은 physical quantity column만 보이면, 계산에는 실제 source column을 사용하고 최종 result column만 standard metric name으로 정리하세요.
 metric column을 한글 label로 번역하지 마세요.
+PRODUCTION이 이미 최종 metric이면 TOTAL_PRODUCTION, PRODUCTION_QTY 같은 같은 값의 중복 metric alias를 만들지 마세요. WIP도 TOTAL_WIP 같은 중복 alias 없이 WIP를 사용하세요.
+DEN/DENSITY, PKG_TYPE1/PKG1, PKG_TYPE2/PKG2처럼 같은 의미의 standard/physical alias column을 result_df에 동시에 남기지 마세요. 최종 결과는 plan의 standard column name을 우선 사용하세요.
 module import, file read/write, network, OS, eval, exec, open, subprocess 사용은 금지입니다.
 numpy, np, np.where, pd.inf, float('inf'), infinity replacement를 사용하지 마세요.
 pandas filter를 적용할 때 eq/in/not_in/starts_with/contains 같은 문자열 또는 범주형 비교는 source column도 비교값도 같은 형식으로 맞춘 뒤 비교하세요. 예: df[col].astype(str).str.strip().str.upper()와 str(value).strip().upper()를 비교하세요.
@@ -32,6 +34,7 @@ SHIFT, DATE, OPER_NAME처럼 숫자/문자/공백 표기가 섞일 수 있는 fi
 - step에 input_step_id가 있으면 sources[source_alias]를 다시 읽지 말고 step_outputs[input_step_id]를 해당 step의 input DataFrame으로 사용하세요.
 - apply_pandas_function_case step에서 helper input_text를 임의로 축약하지 마세요. 제품 token helper라면 질문의 모든 제품 속성 token을 포함하세요. 예: `UFBGA qdp제품`은 match_product_tokens('UFBGA qdp', ...)처럼 호출하고 match_product_tokens('qdp', ...)처럼 일부 token만 넘기지 마세요.
 - 제품 token pandas_function_case가 선택된 경우 helper를 호출해 token filtering을 수행하세요. token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과입니다.
+- 제품 token pandas_function_case가 선택된 계획에서는 MODE/DEN/PKG_TYPE 같은 제품 속성 retrieval filter를 직접 새로 만들거나 helper 호출을 우회하지 마세요.
 - apply_pandas_function_case step 뒤에 같은 source_alias의 aggregate/rank/detail step이 이어지면 function-case output을 이후 step의 filtered source로 사용하세요.
 - filter op는 eq, in, not_in, not_empty/exists, empty, starts_with, last_char_in, gte/gt/lte/lt 같은 numeric comparison을 지원하세요.
 - rank_groups/per-group ranking에서는 step.rank_groups로 group label을 만들고, group label + target entity grain 기준으로 집계한 뒤 group label별로 ranking하고, 계획된 output column만 유지하세요.
