@@ -234,6 +234,21 @@ def test_pandas_repair_components_use_single_output_ports() -> None:
     assert getattr(executor_outputs["payload_out"], "group_outputs", False) is False
     assert getattr(executor_outputs["payload_out"], "method", "") == "build_payload"
 
+
+def test_pandas_repair_executor_is_standalone_file() -> None:
+    code = (PROJECT_ROOT / "langflow_components" / "data_analysis_flow" / "17_pandas_repair_code_executor.py").read_text(encoding="utf-8")
+
+    forbidden_snippets = [
+        "spec_from_file_location",
+        "module_from_spec",
+        "Path(__file__)",
+        "with_name(\"15_pandas_code_executor.py\")",
+        "15_pandas_code_executor.py",
+    ]
+    for snippet in forbidden_snippets:
+        assert snippet not in code
+
+
 def test_data_analysis_prompt_builders_use_single_prompt_output_pattern() -> None:
     expected_prompt_outputs = {
         "data_analysis_flow/02_intent_prompt_builder.py": "intent_prompt",

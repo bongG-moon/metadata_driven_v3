@@ -48,6 +48,7 @@ Detailed wiring guides now live with each flow folder:
 
 - `../docs/ROUTED_RUN_FLOW_SESSION_WIRING_GUIDE.md` for the full router + selected subflow + session-state wiring
 - `router_flow/CONNECTION_GUIDE.md`
+- `router_flow2/CONNECTION_GUIDE.md` for the Langflow Smart Router based alternative router
 - `metadata_qa_flow/CONNECTION_GUIDE.md`
 - `data_analysis_flow/CONNECTION_GUIDE.md`
 - `report_generation_flow/CONNECTION_GUIDE.md`

@@ -196,6 +196,65 @@ def test_orchestrator_response_builds_subflow_call_from_env(monkeypatch: Any) ->
     }
 
 
+def test_router_flow2_maps_smart_router_label_to_route_response(monkeypatch: Any) -> None:
+    adapter = load_component("langflow_components/router_flow2/01_smart_router_route_response_builder.py")
+    monkeypatch.setenv("LANGFLOW_BASE_URL", "http://localhost:7860")
+    monkeypatch.setenv("LANGFLOW_REPORT_GENERATION_FLOW_ID", "report-flow-id")
+
+    response = adapter.build_route_response(
+        {
+            "request": {"question": "오늘 WB공정 요약 리포트 만들어줘", "session_id": "s2"},
+            "state": {},
+        },
+        "report_generation",
+    )
+
+    assert response["route"] == "report_generation"
+    assert response["selected_flow"] == "report_generation_flow"
+    assert response["subflow_call"]["api_url"] == "http://localhost:7860/api/v1/run/report-flow-id"
+    assert response["subflow_call"]["input_value"] == "오늘 WB공정 요약 리포트 만들어줘"
+    assert response["subflow_call"]["session_id"] == "s2"
+
+
+def test_router_flow2_accepts_smart_router_json_and_catalog_api_url() -> None:
+    adapter = load_component("langflow_components/router_flow2/01_smart_router_route_response_builder.py")
+    payload = {"request": {"question": "현재 조회 가능한 DATA LIST 알려줘", "session_id": "s3"}}
+    catalog = json.dumps(
+        {
+            "metadata_qa": {
+                "selected_flow": "metadata_qa_flow",
+                "api_url": "http://localhost:7860/api/v1/run/metadata-flow",
+            }
+        },
+        ensure_ascii=False,
+    )
+
+    routed = adapter.build_smart_router_route_payload(
+        payload,
+        json.dumps({"route": "metadata_qa", "confidence": "high", "reason": "catalog question"}, ensure_ascii=False),
+        route_catalog_json=catalog,
+    )
+
+    assert routed["metadata_route"]["route"] == "metadata_qa"
+    assert routed["metadata_route"]["route_confidence"] == "high"
+    assert routed["route_response"]["selected_flow"] == "metadata_qa_flow"
+    assert routed["route_response"]["subflow_call"]["api_url"] == "http://localhost:7860/api/v1/run/metadata-flow"
+
+
+def test_router_flow2_forced_route_supports_branch_mode() -> None:
+    adapter = load_component("langflow_components/router_flow2/01_smart_router_route_response_builder.py")
+
+    response = adapter.build_route_response(
+        {"request": {"question": "원인 진단해줘", "session_id": "s4"}},
+        "",
+        forced_route="operations_diagnosis",
+    )
+
+    assert response["route"] == "operations_diagnosis"
+    assert response["selected_flow"] == "operations_diagnosis_flow"
+    assert response["flow_id_env"] == "LANGFLOW_OPERATIONS_DIAGNOSIS_FLOW_ID"
+
+
 def test_selected_flow_api_runner_calls_only_selected_flow() -> None:
     runner = load_component("langflow_components/router_flow/06_selected_flow_api_runner.py")
     route_response = {
