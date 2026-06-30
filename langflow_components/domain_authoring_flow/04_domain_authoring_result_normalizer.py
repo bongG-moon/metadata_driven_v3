@@ -488,8 +488,25 @@ def _normalize_quantity_payload(key: str, payload: dict[str, Any], source_text: 
     if inferred_family and not _clean(payload.get("dataset_family")):
         payload["dataset_family"] = inferred_family
 
-    compact = _compact_text(quantity_text)
-    if _has_input_production_cue(quantity_text):
+    is_target_plan_quantity = _has_target_plan_quantity_cue(quantity_text)
+    if is_target_plan_quantity:
+        key = "target_plan" if not key or key in {"target", "plan"} else key
+        payload["dataset_family"] = "target"
+        quantity_column_values = {column.upper() for column in _as_text_list(payload.get("quantity_column"))}
+        if not quantity_column_values or quantity_column_values.intersection({"PRODUCTION", "INPUT_QTY"}):
+            payload["quantity_column"] = ["INPUT_PLAN", "OUT_PLAN"]
+        target_source_artifacts = {"TARGET", "PLAN", "SCHD", "SCHEDULE", "PRODUCTION", "INPUT_QTY", "PLAN_QTY"}
+        existing_source_columns = [
+            column for column in _as_text_list(payload.get("source_columns"))
+            if column.upper() not in target_source_artifacts
+        ]
+        payload["source_columns"] = _unique_text([*existing_source_columns, "INPUT_PLAN", "OUT_PLAN"])
+        payload.setdefault("aggregation", "sum")
+        output_column = _clean(payload.get("output_column")).upper()
+        if not output_column or output_column in {"INPUT_QTY", "PRODUCTION"}:
+            payload["output_column"] = "PLAN_QTY"
+
+    if not is_target_plan_quantity and _has_input_production_cue(quantity_text):
         key = "input_production" if not key or key in {"production", "input"} else key
         payload.setdefault("dataset_family", "production")
         payload.setdefault("quantity_column", "PRODUCTION")
@@ -655,6 +672,11 @@ def _has_formula_metric_cue(text: str, required_columns: set[str]) -> bool:
 def _has_input_production_cue(text: str) -> bool:
     compact = _compact_text(text)
     return ("input" in compact or "투입" in compact) and ("production" in compact or "생산" in compact or "실적" in compact)
+
+
+def _has_target_plan_quantity_cue(text: str) -> bool:
+    compact = _compact_text(text)
+    return any(cue in compact for cue in ("계획", "스케줄", "스케쥴", "schedule", "schd", "target", "plan"))
 
 
 def _has_unique_count_cue(text: str) -> bool:

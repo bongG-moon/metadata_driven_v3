@@ -356,6 +356,39 @@ def test_domain_authoring_autofills_equipment_count_metric_from_natural_text() -
     assert "EQP_COUNT" in metric_payload["output_columns"]
 
 
+def test_domain_authoring_target_quantity_does_not_use_production_or_input_output() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    llm_json = {
+        "items": [
+            {
+                "section": "quantity_terms",
+                "key": "TARGET",
+                "payload": {
+                    "display_name": "계획 수량",
+                    "aliases": ["계획", "스케쥴", "스케줄", "SCHD", "투입계획", "생산계획"],
+                    "dataset_family": "target",
+                    "quantity_column": "PRODUCTION",
+                    "aggregation": "sum",
+                    "output_column": "INPUT_QTY",
+                },
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(llm_json, json.dumps(llm_json, ensure_ascii=False))
+    quantity_payload = normalized["items"][0]["payload"]
+
+    assert normalized["errors"] == []
+    assert quantity_payload["dataset_family"] == "target"
+    assert quantity_payload["quantity_column"] == ["INPUT_PLAN", "OUT_PLAN"]
+    assert quantity_payload["source_columns"] == ["INPUT_PLAN", "OUT_PLAN"]
+    assert quantity_payload["aggregation"] == "sum"
+    assert quantity_payload["output_column"] == "PLAN_QTY"
+    assert "condition" not in quantity_payload
+
+
 def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
     writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
     payload = {
@@ -388,6 +421,83 @@ def test_domain_writer_allows_resolved_metric_autofill_supplements() -> None:
             {"field": "output_column_name_FOR_FAIL_UNIT_QTY", "reason": "FAIL_UNIT_QTY 컬럼의 정확한 이름과 데이터 타입이 필요합니다."},
         ],
         "item_reviews": [{"section": "metric_terms", "key": "wafer_based_performance", "decision": "needs_fix", "reason": "보강 필요"}],
+    }
+
+    result = writer.review_and_write_domain_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")
+
+    assert result["review"]["ready_to_save"] is True
+    assert result["review"]["supplement_requests"] == []
+    assert result["review"]["item_reviews"][0]["decision"] == "pass"
+    assert result["write_result"]["status"] == "error"
+    assert any("mongo_uri" in error for error in result["write_result"]["errors"])
+
+
+def test_domain_writer_allows_family_based_quantity_terms_with_nested_supplement_fields() -> None:
+    writer = load_module("langflow_components/domain_authoring_flow/07_domain_review_writer.py")
+    payload = {
+        "metadata_type": "domain",
+        "items": [
+            {
+                "section": "quantity_terms",
+                "key": "WIP",
+                "payload": {"dataset_family": "wip", "quantity_column": "WIP", "aggregation": "sum", "output_column": "WIP"},
+            },
+            {
+                "section": "quantity_terms",
+                "key": "PRODUCTION",
+                "payload": {
+                    "dataset_family": "production",
+                    "quantity_column": "PRODUCTION",
+                    "aggregation": "sum",
+                    "output_column": "PRODUCTION",
+                },
+            },
+            {
+                "section": "quantity_terms",
+                "key": "PROCESS_OUTPUT",
+                "payload": {
+                    "dataset_family": "production",
+                    "quantity_column": "PRODUCTION",
+                    "aggregation": "sum",
+                    "output_column": "PRODUCTION",
+                },
+            },
+            {
+                "section": "quantity_terms",
+                "key": "INPUT",
+                "payload": {
+                    "dataset_family": "production",
+                    "quantity_column": "PRODUCTION",
+                    "aggregation": "sum",
+                    "output_column": "INPUT_QTY",
+                    "condition": {"OPER_NAME": "INPUT"},
+                },
+            },
+            {
+                "section": "quantity_terms",
+                "key": "TARGET",
+                "payload": {
+                    "dataset_family": "target",
+                    "quantity_column": ["INPUT_PLAN", "OUT_PLAN"],
+                    "source_columns": ["INPUT_PLAN", "OUT_PLAN"],
+                    "aggregation": "sum",
+                    "output_column": "PLAN_QTY",
+                },
+            },
+        ],
+        "duplicate_decision": {"action": "ask", "requires_user_choice": False},
+        "errors": [],
+    }
+    review_json = {
+        "ready_to_save": False,
+        "supplement_requests": [
+            {"field": "quantity_terms.WIP.payload.dataset_key", "reason": "dataset_key가 필요합니다."},
+            {"field": "quantity_terms.PRODUCTION.payload.dataset_key", "reason": "dataset_key가 필요합니다."},
+            {"field": "quantity_terms.PROCESS_OUTPUT.payload.dataset_key", "reason": "dataset_key가 필요합니다."},
+            {"field": "quantity_terms.INPUT.payload.output_column", "reason": "출력 컬럼 충돌 가능성이 있습니다."},
+            {"field": "quantity_terms.TARGET.payload.quantity_column", "reason": "계획 컬럼이 필요합니다."},
+        ],
+        "item_reviews": [{"section": "quantity_terms", "key": "TARGET", "decision": "needs_fix", "reason": "보강 필요"}],
     }
 
     result = writer.review_and_write_domain_payload(payload, json.dumps(review_json, ensure_ascii=False), mongo_uri="")

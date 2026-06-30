@@ -283,11 +283,14 @@ def _is_resolved_metric_supplement_request(item: Any, payload: dict[str, Any]) -
     field = _supplement_field(item)
     if not field:
         return False
-    field_lower = field.lower()
+    field_lower = _supplement_field_tail(field).lower()
     if field_lower not in {"dataset_key", "dataset_family", "required_quantity_terms"} and "output_column" not in field_lower:
         return False
+    requested_section, requested_key = _supplement_item_path(field)
     for domain_item in _as_list(payload.get("items")):
         if not isinstance(domain_item, dict) or _clean(domain_item.get("section")) != "metric_terms":
+            continue
+        if not _domain_item_matches_supplement_path(domain_item, requested_section, requested_key):
             continue
         metric_payload = domain_item.get("payload") if isinstance(domain_item.get("payload"), dict) else {}
         if field_lower == "dataset_key" and _metric_has_dataset_scope(metric_payload):
@@ -305,11 +308,14 @@ def _is_resolved_quantity_supplement_request(item: Any, payload: dict[str, Any])
     field = _supplement_field(item)
     if not field:
         return False
-    field_lower = field.lower()
+    field_lower = _supplement_field_tail(field).lower()
     if field_lower not in {"dataset_key", "dataset_family", "aggregation", "quantity_column", "output_column", "output_column_name"}:
         return False
+    requested_section, requested_key = _supplement_item_path(field)
     for domain_item in _as_list(payload.get("items")):
         if not isinstance(domain_item, dict) or _clean(domain_item.get("section")) != "quantity_terms":
+            continue
+        if not _domain_item_matches_supplement_path(domain_item, requested_section, requested_key):
             continue
         quantity_payload = domain_item.get("payload") if isinstance(domain_item.get("payload"), dict) else {}
         if field_lower == "dataset_key" and (
@@ -393,6 +399,30 @@ def _supplement_field(item: Any) -> str:
     if ":" in text:
         return _clean(text.split(":", 1)[0])
     return ""
+
+
+def _supplement_field_tail(field: str) -> str:
+    parts = _supplement_field_parts(field)
+    return parts[-1] if parts else _clean(field)
+
+
+def _supplement_item_path(field: str) -> tuple[str, str]:
+    parts = _supplement_field_parts(field)
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return "", ""
+
+
+def _supplement_field_parts(field: str) -> list[str]:
+    return [part for part in re.split(r"[.\[\]/]+", _clean(field)) if part]
+
+
+def _domain_item_matches_supplement_path(domain_item: dict[str, Any], requested_section: str, requested_key: str) -> bool:
+    if requested_section and _clean(domain_item.get("section")).lower() != requested_section.lower():
+        return False
+    if requested_key and _clean(domain_item.get("key")).lower() != requested_key.lower():
+        return False
+    return True
 
 
 def _normalize_item_reviews(item_reviews: list[Any], ready_to_save: bool) -> list[Any]:

@@ -195,9 +195,9 @@ def _execute_generated_pandas_code(
         "state": deepcopy(state),
         **(helper_functions or {}),
     }
-    safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
+    local_vars["__builtins__"] = _safe_builtins()
     try:
-        exec(compile(code, "<llm_pandas_code>", "exec"), safe_globals, local_vars)
+        exec(compile(code, "<llm_pandas_code>", "exec"), local_vars, local_vars)
         function_case_trace = _function_case_trace_from_locals(local_vars)
         result_df = local_vars.get("result_df")
         if result_df is None or not hasattr(result_df, "to_dict"):
@@ -272,10 +272,9 @@ def _function_case_helpers(payload: dict[str, Any], generated_code: Any = "") ->
         if case_errors:
             errors.extend(f"pandas_function_cases.{case_key}.{function_name}: {error}" for error in case_errors)
             continue
-        local_vars: dict[str, Any] = {"pd": pd}
-        safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
+        local_vars: dict[str, Any] = {"pd": pd, "__builtins__": _safe_builtins()}
         try:
-            exec(compile(helper_code, f"<pandas_function_case:{case_key}>", "exec"), safe_globals, local_vars)
+            exec(compile(helper_code, f"<pandas_function_case:{case_key}>", "exec"), local_vars, local_vars)
         except Exception as exc:
             errors.append(f"pandas_function_cases.{case_key}.{function_name} failed to load: {exc}")
             continue
@@ -304,10 +303,9 @@ def _manual_function_case_helpers(
             if case_errors:
                 errors.extend(f"specialized_functions_text.{function_name}: {error}" for error in case_errors)
                 continue
-            local_vars: dict[str, Any] = {"pd": pd}
-            safe_globals = {"__builtins__": _safe_builtins(), "pd": pd}
+            local_vars: dict[str, Any] = {"pd": pd, "__builtins__": _safe_builtins()}
             try:
-                exec(compile(helper_code, f"<specialized_functions_text:{index}:{function_name}>", "exec"), safe_globals, local_vars)
+                exec(compile(helper_code, f"<specialized_functions_text:{index}:{function_name}>", "exec"), local_vars, local_vars)
             except Exception as exc:
                 errors.append(f"specialized_functions_text.{function_name} failed to load: {exc}")
                 continue

@@ -97,6 +97,55 @@ def test_pandas_executor_drops_redundant_source_alias_columns_before_llm_code_ru
     assert result["analysis"]["rows"][0]["TARGET_QTY"] == 20
 
 
+def test_pandas_executor_allows_generated_helper_functions_to_call_each_other() -> None:
+    payload = {
+        "intent_plan": {
+            "analysis_kind": "detail_rows",
+            "retrieval_jobs": [{"dataset_key": "production", "source_alias": "yesterday_production"}],
+        },
+        "state": {},
+        "runtime_sources": {
+            "yesterday_production": [
+                {"MODE": "LPDDR5", "DEN": "128G", "PKG_TYPE1": "TFBGA", "PKG_TYPE2": "ODP", "PRODUCTION": 10},
+                {"MODE": "LPDDR4", "DEN": "64G", "PKG_TYPE1": "UFBGA", "PKG_TYPE2": "QDP", "PRODUCTION": 20},
+            ]
+        },
+    }
+    pandas_llm_json = {
+        "code": "\n".join(
+            [
+                "source_df = sources['yesterday_production'].copy()",
+                "def normalize_token(value):",
+                "    return str(value or '').strip().upper()",
+                "def clean_input_token(token):",
+                "    token = normalize_token(token)",
+                "    for suffix in ['제품', '생산량']:",
+                "        normalized_suffix = normalize_token(suffix)",
+                "        if token.endswith(normalized_suffix):",
+                "            token = token[: -len(normalized_suffix)]",
+                "    return token",
+                "target_mode = clean_input_token('lpddr5제품')",
+                "result_df = source_df[source_df['MODE'].map(normalize_token) == target_mode]",
+                "result_df = result_df[['MODE', 'DEN', 'PKG_TYPE1', 'PKG_TYPE2', 'PRODUCTION']]",
+            ]
+        ),
+        "output_columns": ["MODE", "DEN", "PKG_TYPE1", "PKG_TYPE2", "PRODUCTION"],
+        "reasoning_steps": [],
+    }
+
+    for executor_path in [
+        "langflow_components/data_analysis_flow/15_pandas_code_executor.py",
+        "langflow_components/data_analysis_flow/17_pandas_repair_code_executor.py",
+    ]:
+        pandas_executor = load_component(executor_path)
+        result = pandas_executor.execute_pandas_from_llm(payload, json.dumps(pandas_llm_json, ensure_ascii=False))
+
+        assert result["analysis"]["status"] == "ok"
+        assert result["analysis"]["row_count"] == 1
+        assert result["analysis"]["rows"][0]["MODE"] == "LPDDR5"
+        assert result["analysis"]["rows"][0]["PRODUCTION"] == 10
+
+
 def test_pandas_executor_datetime_import_error_guides_repair() -> None:
     pandas_executor = load_component("langflow_components/data_analysis_flow/15_pandas_code_executor.py")
     payload = {
