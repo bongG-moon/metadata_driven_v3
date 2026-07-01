@@ -276,11 +276,25 @@ DEVICE_DESC는 제품 설명 컬럼이고 DEVICE CODE와는 구분해.
 특정 차수를 지정하지 않고 차수별, 공정 차수별로 보여달라고 하면 공정 그룹에 포함된 세부 OPER_NAME 기준으로 결과를 나누어 보여줘.
 
 OPER_NUM 또는 OPER_SEQ는 table catalog에 명확히 공정 차수 컬럼으로 정의되어 있고 사용자가 공정 번호 기준을 요구할 때만 사용해.
-
-공정 그룹에 등록된 기준이 아닌 A공정~B공정 이런식으로 질문할 때는 A공정의 OPER_SEQ보다 크거나 같으면서 B공정의 OPER_SEQ보다 작거나 같은 공정들을 뜻하는거야.
 이 항목은 analysis_recipes로 저장해줘.
 ```
 <!-- single_process_sequence_grouping_rule:end -->
+
+<!-- single_process_range_oper_seq_rule:start -->
+```text
+공정 구간 조회 규칙을 등록해줘.
+이름은 공정 구간 OPER_SEQ 범위 필터 정도로 해줘.
+
+사용자가 D/A1~W/B6, D/A1-W/B6, D/A1W/B6처럼 시작 공정과 끝 공정을 이어서 말하면 공정 그룹을 펼치는 뜻이 아니라 공정 순서 구간을 말하는 거야.
+이때 D/A1과 W/B6 두 공정만 보는 게 아니라, D/A1의 OPER_SEQ부터 W/B6의 OPER_SEQ 사이에 있는 모든 공정을 봐야 해.
+
+OPER_SEQ는 문자로 비교하지 말고 숫자로 바꿔서 비교해.
+조회할 때는 OPER_NAME과 OPER_SEQ가 필요해.
+최종 필터를 OPER_NAME이 D/A1 또는 W/B6인 행으로 만들면 안 되고, 시작 공정과 끝 공정의 OPER_SEQ를 찾은 다음 그 사이 구간으로 필터링해야 해.
+
+이 규칙은 생산량이나 재공처럼 OPER_NAME과 OPER_SEQ가 있는 데이터에서 공정 구간을 물어볼 때 사용해.
+```
+<!-- single_process_range_oper_seq_rule:end -->
 
 <!-- single_quantity_terms:start -->
 ```text

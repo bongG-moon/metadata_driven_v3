@@ -4,6 +4,7 @@ Use only information present in the refined text. Put missing essentials in miss
 The authoring context contains existing domain metadata, table catalog metadata, and main flow filter metadata.
 Use existing domain metadata only to choose an existing key or detect duplicate/update intent; do not create unrelated items just because they appear in the existing summary.
 Every generated item must be directly grounded in the refined text. If a key, alias, process value, formula, or question pattern appears only in the existing summary but not in the refined text, do not create that item.
+If the worker does not explicitly provide a key, generate a stable snake_case key from the display_name, aliases, function_name, or the core phrase in the input. Keep only the worker-provided meaning in payload.
 Use table catalog metadata to infer dataset_family, source columns, and table wording when the worker says things like production table, ASSIGN table, target/schedule table, WIP table, or names a known column.
 Use main flow filter metadata to infer standard field names from physical columns or worker wording, but do not create main_flow_filter items in this domain flow.
 For reusable domain rules, prefer dataset_family/source_columns over a concrete dataset_key unless the worker explicitly names one dataset.

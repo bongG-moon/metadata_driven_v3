@@ -5,7 +5,9 @@
 
 ```text
 도메인 특화 의도 분석 규칙:
-- 등록된 product_terms, process_groups, status_terms, metric_terms, quantity_terms, analysis_recipes가 있으면 일반 추론보다 먼저 적용한다.
+- 등록된 process_groups, status_terms, metric_terms, quantity_terms, analysis_recipes가 있으면 일반 추론보다 먼저 적용한다.
+- product_terms는 사용자가 해당 product_terms key/display_name/alias를 질문에 직접 말한 경우에만 적용한다. 질문의 제품 속성 token 조합이 product_terms 조건과 우연히 같아 보여도 제품군 이름을 말하지 않았으면 product_terms 조건을 가져오지 않는다.
+- 예: "어제 LPDDR5 128G TFBGA ODP 제품 실적 알려줘"는 POP 제품이라고 말하지 않았으므로 POP_PRODUCT 조건(MODE starts_with LP, PKG list, MCP_NO not_empty)을 적용하지 않는다. 질문에 실제 등장한 LPDDR5/128G/TFBGA/ODP token만 제품 token function case에 넘긴다.
 - 등록된 도메인 조건으로 처리 가능한 질문은 pandas_function_cases로 보내지 않는다.
 - pandas_function_cases는 일반 필터로 안정적으로 표현하기 어려운 절차형 매칭이나 파싱이 필요할 때만 선택한다.
 - 복합 분석 절차가 필요하면 02번에서 임의 절차를 새로 만들기보다 등록된 analysis_recipes를 먼저 찾는다.
@@ -27,14 +29,21 @@
 - 생산량+재공, 공정별 집계, history/current 조인처럼 analysis_recipes를 쓰는 복합 질문이어도 등록 product_terms가 아닌 자유 제품 token이 있으면 recipe step_plan 앞에 component_token_product_lookup step을 먼저 둔다.
 - 이때 recipe의 production/wip/lot/equipment step은 helper가 식별한 제품 key를 기준으로 source row를 제한한 뒤 기존 recipe의 aggregate/rank/detail/join을 수행하도록 계획한다.
 - product-token function case에서는 retrieval_jobs가 helper에 필요한 제품 컬럼을 조회해야 하며, token match를 retrieval_jobs[].filters만으로 표현하지 않는다.
+- product-token function case를 쓰는 경우 intent reasoning에서 LPDDR5는 MODE, ODP는 MCP_NO처럼 특정 column에 미리 단정하지 않는다. token-to-column 매칭은 pandas helper/function_case_trace에서 확인한다.
+- product-token function case input_text에는 product_terms 조건에서 파생된 filter 값이나 후보 list를 넣지 말고, 사용자 질문에 실제 등장한 제품 token만 넣는다.
+- 사용자가 "MCP NO가 L-207로 시작", "MCP_NO=L-207", "DEN이 64G"처럼 표준 field 이름과 연산자/값을 명시하면 pandas_function_case를 쓰지 말고 retrieval_jobs[].filters 또는 plan.filters에 해당 field filter를 넣는다. 예: MCP NO가 L-207로 시작 -> {"field":"MCP_NO","op":"starts_with","value":"L-207"}.
+- "LPDDR5 128G TFBGA ODP 제품 실적 알려줘"처럼 특정 제품 조건의 metric만 묻고 제품별/공정별/상세/리스트를 말하지 않으면 group_by/product_grain을 비우고 aggregate total로 계획한다.
 - 단, "64G L-269 ASSY 제품 찾아줘"처럼 제품 token과 찾기/조회 의도만 있고 생산/재공/Lot/Hold/장비/dataset 같은 source family 단서가 없으면 wip_today나 production_today를 임의로 선택하지 않는다. 이 경우 dataset 선택이 불명확하다고 reasoning_steps에 남기고 retrieval_jobs를 만들지 않는다.
-- POP, MOBILE, HBM, AUTO향 같은 등록 product_terms는 ordinary metadata-backed filter condition이다. 이 제품군 조건은 pandas function case가 아니다.
+- POP, MOBILE, HBM, AUTO향 같은 등록 product_terms는 사용자가 해당 제품군 이름을 직접 말했을 때만 ordinary metadata-backed filter condition이다. 이 제품군 조건은 pandas function case가 아니다.
 - product_terms의 raw condition field는 filter로만 쓰고, 필요하면 PRODUCT_GROUP 같은 사용자-facing scope label을 result_scope_columns/output_columns에 남긴다.
 - ranked 또는 aggregated entity가 DEVICE이면 DEVICE 기준으로 group/rank한다. MOBILE 같은 product filter가 있다고 product_grain으로 바꾸지 않는다.
 
 공정/metric source scope 규칙:
 - DA, WB, SG, DP, BG, LT, WET 같은 공정명 또는 공정 그룹 표현은 metadata.domain_items.process_groups를 먼저 확인한다.
 - 공정 그룹 질문은 해당 그룹에 등록된 세부 OPER_NAME 또는 OPER_SHORT_DESC 조건으로 해석한다.
+- metadata.domain_items.analysis_recipes 안에 공정 구간, A공정~B공정, OPER_SEQ 범위, 시작 공정과 끝 공정 사이 같은 의미의 규칙이 있으면, 시작 공정~끝 공정 표현은 공정 그룹 확장이 아니라 OPER_SEQ 범위 필터로 계획한다. 특정 key 이름에 의존하지 말고 display_name, aliases, calculation_rule, pandas_generation_rule의 의미를 보고 선택한다.
+- 이 공정 구간 규칙을 사용할 때는 시작/끝 OPER_NAME을 최종 OPER_NAME in [start, end] 필터로 남기지 않는다. 시작/끝 OPER_NAME은 source에서 OPER_SEQ boundary를 찾기 위한 label이고, 실제 row selection은 숫자형 OPER_SEQ between/gte/lte로 수행하도록 step_plan과 reasoning_steps에 남긴다.
+- 이 경우 retrieval_jobs[].required_columns에는 OPER_NAME과 OPER_SEQ를 포함하고, plan에는 process_range_contract 또는 equivalent 구조를 보존한다.
 - 사용자가 "공정별", "세부공정별", "차수별"처럼 breakdown 축을 말하면 그 축을 group_by 또는 step_plan에 명시한다.
 - 생산량은 production 계열 dataset, 재공은 wip 계열 dataset, Lot/Hold는 lot 또는 hold 계열 dataset, 장비는 equipment 계열 dataset을 우선 검토한다.
 - 사용자가 특정 공정 scope의 생산량, 재공, 목표, Hold, Lot, 장비를 묻는 경우 해당 metric에 맞는 dataset family를 선택한다.

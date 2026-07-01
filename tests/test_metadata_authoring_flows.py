@@ -139,6 +139,38 @@ def test_domain_authoring_preserves_dataset_specific_conditions_and_metric_depen
     ]
 
 
+def test_domain_authoring_backfills_domain_key_from_display_name() -> None:
+    normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
+    payload = {
+        "metadata_type": "domain",
+        "raw_text": "공정 구간 조회 규칙을 등록해줘. D/A1~W/B6처럼 말하면 시작 공정과 끝 공정의 OPER_SEQ 사이 구간으로 봐.",
+        "errors": [],
+        "warnings": [],
+    }
+    llm_json = {
+        "items": [
+            {
+                "section": "analysis_recipes",
+                "payload": {
+                    "display_name": "공정 구간 OPER_SEQ 범위 필터",
+                    "aliases": ["공정 구간", "A공정~B공정"],
+                    "calculation_rule": "시작 공정과 끝 공정의 OPER_SEQ를 숫자로 비교해 사이 구간을 필터링한다.",
+                    "required_dataset_families": ["production", "wip"],
+                },
+                "confidence": "high",
+            }
+        ],
+        "missing_information": [],
+        "warnings": [],
+    }
+
+    normalized = normalizer.normalize_domain_authoring_result(payload, json.dumps(llm_json, ensure_ascii=False))
+
+    assert normalized["errors"] == []
+    assert normalized["items"][0]["key"] == "process_range_oper_seq_filter"
+    assert normalized["items"][0]["payload"]["display_name"] == "공정 구간 OPER_SEQ 범위 필터"
+
+
 def test_domain_authoring_normalizes_filter_descriptors_to_executable_conditions() -> None:
     normalizer = load_module("langflow_components/domain_authoring_flow/04_domain_authoring_result_normalizer.py")
     payload = {"metadata_type": "domain", "errors": [], "warnings": []}

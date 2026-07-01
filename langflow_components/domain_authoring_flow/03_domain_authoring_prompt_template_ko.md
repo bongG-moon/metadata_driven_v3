@@ -4,6 +4,7 @@
 authoring context에는 기존 domain metadata, table catalog metadata, main flow filter metadata가 함께 들어 있습니다.
 기존 domain metadata는 기존 key 선택 또는 중복/update 의도 판단에만 사용하세요. 기존 요약에 보인다는 이유만으로 입력에 없는 항목을 새로 만들지 마세요.
 생성하는 모든 item은 정제된 설명에 직접 근거가 있어야 합니다. key, alias, process 값, 공식, 질문 패턴이 기존 요약에만 있고 정제된 설명에 없으면 생성하지 마세요.
+작업자가 key를 직접 말하지 않아도 저장 가능한 stable snake_case key를 생성하세요. key는 display_name, aliases, function_name, 입력 문장의 핵심 표현에서 유추하되 payload에는 작업자가 말한 의미만 보존하세요.
 table catalog metadata는 작업자가 production table, ASSIGN table, target/schedule table, WIP table처럼 말하거나 컬럼명을 언급했을 때 dataset_family와 source column을 추론하는 데 사용하세요.
 main flow filter metadata는 물리 컬럼이나 업무 표현을 표준 field로 해석할 때만 사용하고, 이 domain flow에서 main_flow_filter item을 만들지 마세요.
 재사용 가능한 domain rule은 작업자가 특정 dataset_key를 명시하지 않았다면 dataset_key보다 dataset_family/source_columns를 선호하세요.

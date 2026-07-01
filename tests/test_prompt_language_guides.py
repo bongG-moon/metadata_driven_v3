@@ -87,6 +87,37 @@ def test_specialized_intent_prompt_keeps_source_local_date_scope() -> None:
     assert "source_scope.date_scope=current/today" in prompt
 
 
+def test_product_terms_apply_only_when_user_mentions_product_group_name() -> None:
+    specialized_prompt = (PROMPT_DIR / "02_SPECIALIZED_INTENT_PROMPT.md").read_text(encoding="utf-8")
+    builder_code = (ROOT / "langflow_components" / "data_analysis_flow" / "02_intent_prompt_builder.py").read_text(encoding="utf-8")
+
+    assert "사용자가 해당 product_terms key/display_name/alias를 질문에 직접 말한 경우에만" in specialized_prompt
+    assert "LPDDR5 128G TFBGA ODP" in specialized_prompt
+    assert "POP_PRODUCT 조건" in specialized_prompt
+    assert "사용자 질문에 실제 등장한 제품 token만" in specialized_prompt
+
+    assert "해당 helper가 판단해야 하는 핵심 표현" in builder_code
+    assert "helper 입력이 아닌 문구" in builder_code
+    assert "표준 field 이름과 연산자/값" in builder_code
+    assert "절차형 helper로 바꾸지 말고" in builder_code
+    assert "POP_PRODUCT 조건" not in builder_code
+    assert "MCP NO가 L-207로 시작" not in builder_code
+    assert "MCP NO가 L-207로 시작" in specialized_prompt
+    assert "pandas_function_case를 쓰지 말고" in specialized_prompt
+
+
+def test_process_range_rule_lives_in_specialized_prompt_not_common_prompts() -> None:
+    specialized_prompt = (PROMPT_DIR / "02_SPECIALIZED_INTENT_PROMPT.md").read_text(encoding="utf-8")
+    common_intent = (ROOT / "langflow_components" / "data_analysis_flow" / "02_intent_prompt_builder.py").read_text(encoding="utf-8")
+    common_pandas = (ROOT / "langflow_components" / "data_analysis_flow" / "14_pandas_prompt_builder.py").read_text(encoding="utf-8")
+
+    assert "특정 key 이름에 의존하지 말고" in specialized_prompt
+    assert "OPER_SEQ boundary" in specialized_prompt
+    assert "process_range_oper_seq_filter" not in specialized_prompt
+    assert "process_range_oper_seq_filter" not in common_intent
+    assert "process_range_oper_seq_filter" not in common_pandas
+
+
 def test_specialized_product_helper_uses_mcp_prefix_and_ignores_org() -> None:
     guide = (PROMPT_DIR / "SPECIALIZED_FUNCTIONS_INPUT_GUIDE.md").read_text(encoding="utf-8")
     assert "의미 있는 제품 속성 토큰이 모두 매칭되어야 한다" in guide

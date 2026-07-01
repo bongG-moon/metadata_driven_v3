@@ -45,13 +45,12 @@ def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: 
         specialized_functions_text,
     )
     payload_for_executor = deepcopy(payload)
-    payload_for_executor["pandas_function_case_runtime"] = deepcopy(function_cases.get("runtime", {}))
 
     prompt = "\n".join(
         [
             "당신은 Langflow 제조 데이터 에이전트의 pandas code generation 노드입니다.",
             "반드시 하나의 엄격한 JSON object만 반환하세요. markdown 코드블록으로 감싸지 마세요.",
-            "제공된 변수 pd, sources, plan, state와 Specialized Functions에서 로드된 helper function만 사용해서 Python pandas 코드를 생성하세요.",
+            "제공된 변수 pd, sources, plan, state를 사용하고, Specialized Functions는 현재 source와 plan에 맞게 조정해 generated code 안에 inline 정의할 helper 템플릿으로 참고하세요.",
             "sources는 source_alias를 pandas DataFrame에 매핑하는 dict입니다.",
             "source alias는 sources/source summary의 실제 key만 사용하세요. 보통 retrieval_jobs[*].source_alias입니다. generic alias를 임의로 만들지 마세요.",
             "plan과 state는 Python dict입니다. plan['key'], plan.get('key'), state.get('key')를 사용하고 plan.key 또는 state.key는 절대 사용하지 마세요.",
@@ -95,10 +94,10 @@ def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: 
             "- step_outputs라는 local dict를 유지하세요. 모든 step 이후 step DataFrame을 step_outputs[step_id]에 저장하고, downstream filtering/joining에는 step_outputs의 이전 step을 읽어 사용하세요.",
             "- step_outputs key는 plan['step_plan']의 실제 step_id를 사용하세요. 질문에 DA/WB, 제품/공정 같은 표현이 있어도 normalized step_plan에 없는 rank_da_*, rank_wb_*, combine_* 같은 별도 step을 새로 만들지 마세요.",
             "- step에 input_step_id가 있으면 sources[source_alias]를 다시 읽지 말고 step_outputs[input_step_id]를 해당 step의 input DataFrame으로 사용하세요.",
-            "- apply_pandas_function_case step에서 helper input_text를 임의로 축약하지 마세요. 제품 token helper라면 질문의 모든 제품 속성 token을 포함하세요. 예: 'UFBGA qdp제품'은 match_product_tokens('UFBGA qdp', ...)처럼 호출하고 match_product_tokens('qdp', ...)처럼 일부 token만 넘기지 마세요.",
-            "- 제품 token pandas_function_case가 선택된 경우 helper를 호출해 token filtering을 수행하세요. token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과입니다.",
-            "- 제품 token pandas_function_case가 선택된 계획에서는 MODE/DEN/PKG_TYPE 같은 제품 속성 retrieval filter를 직접 새로 만들거나 helper 호출을 우회하지 마세요.",
-            "- apply_pandas_function_case step 이후 같은 source_alias에 대한 aggregate/rank/detail step이 이어지면 helper output schema를 먼저 확인하세요.",
+            "- apply_pandas_function_case step에서 helper input_text를 임의로 축약하지 마세요. 제품 token helper라면 질문의 모든 제품 속성 token을 포함하세요. 예: 'UFBGA qdp제품'은 inline 정의한 match_product_tokens('UFBGA qdp', ...)처럼 호출하고 match_product_tokens('qdp', ...)처럼 일부 token만 넘기지 마세요.",
+            "- 제품 token pandas_function_case가 선택된 경우 Specialized Functions 템플릿을 참고해 generated code 안에 helper를 정의하고 token filtering을 수행하세요. token filtering 없이 전체 product list를 반환하는 것은 잘못된 결과입니다.",
+            "- 제품 token pandas_function_case가 선택된 계획에서는 MODE/DEN/PKG_TYPE 같은 제품 속성 retrieval filter를 직접 새로 만들거나 inline helper 호출을 우회하지 마세요.",
+            "- apply_pandas_function_case step 이후 같은 source_alias에 대한 aggregate/rank/detail step이 이어지면 inline helper output schema를 먼저 확인하세요.",
             "- downstream step의 group_by/metric/output_columns에 필요한 column이 helper output에 모두 있으면 helper output 자체를 filtered source row로 사용하세요.",
             "- downstream에 필요한 column이 helper output에 없으면 helper output을 key table로만 사용하고, 같은 source_alias 원본 DataFrame을 공통 key columns로 filter/merge한 뒤 aggregate/rank/detail을 수행하세요.",
             "- helper output을 직접 사용할 때도 그 결과에 없는 column으로 groupby, metric 계산, output selection을 하지 마세요. 필요한 column이 없으면 원본 source를 key로 제한한 filtered source row를 먼저 만드세요.",
@@ -161,7 +160,7 @@ def build_pandas_prompt_payload(payload_value: Any, specialized_functions_text: 
         "source_summary": source_summary,
         "source_filters": source_filters,
         "pandas_function_cases": function_cases["cases"],
-        "pandas_function_case_runtime": function_cases.get("runtime", {}),
+        "pandas_function_case_templates": function_cases.get("template_info", {}),
     }
 
 
@@ -198,8 +197,8 @@ def _pandas_function_cases(
             "defined_functions": manual_function_names,
             "helper_signatures": manual_signatures,
             "implementation_note": (
-                "Use this text as a reference for generating pandas code. "
-                "The generated code may define this helper inline or call it when the executor has the same helper loaded."
+                "Use this text as an inline helper template for generating pandas code. "
+                "Prefer defining the adapted helper inside the generated code, then call it."
             ),
         }
         if manual_blocks:
@@ -228,7 +227,7 @@ def _pandas_function_cases(
             manual_case["instructions"] = manual
         cases.append(manual_case)
     cases.extend(selected_domain_cases)
-    runtime = {
+    template_info = {
         "manual_text": manual,
         "manual_code_blocks": manual_code_blocks,
         "manual_function_names": manual_function_names,
@@ -244,13 +243,13 @@ def _pandas_function_cases(
             for case in selected_domain_cases
             if case.get("function_name")
         ],
-        "missing_helpers": [
+        "missing_templates": [
             {
                 "key": case.get("key"),
                 "function_name": case.get("function_name"),
                 "message": (
-                    f"pandas_function_cases.{case.get('key')}가 {case.get('function_name')} helper를 선택했지만 "
-                    "실행 가능한 helper 구현이 제공되지 않았습니다."
+                    f"pandas_function_cases.{case.get('key')}가 {case.get('function_name')} helper template을 선택했지만 "
+                    "Specialized Functions 또는 metadata.function_code에 참고 템플릿이 제공되지 않았습니다."
                 ),
             }
             for case in selected_domain_cases
@@ -261,21 +260,23 @@ def _pandas_function_cases(
         return {
             "cases": [],
             "prompt_text": "선택된 specialized pandas function case가 없습니다.",
-            "runtime": runtime,
+            "template_info": template_info,
         }
     prompt_payload = {
         "rules": [
             "이 case들은 재사용 helper-function 안내입니다. 새 data source를 추가하지 않습니다.",
             "metadata case는 function_code가 포함된 경우를 제외하면 선택 힌트입니다.",
-            "Specialized Functions에 붙여넣은 code와 설명은 pandas code 작성을 위한 reference입니다.",
+            "Specialized Functions에 붙여넣은 code와 설명은 고정 라이브러리가 아니라 pandas code 작성을 위한 inline helper 템플릿입니다.",
             "Specialized Functions 입력이 function_name별 block 구조라면 선택된 function_name과 일치하는 block만 참고하고 다른 helper block의 설명은 무시하세요.",
             "함수별 block의 설명은 해당 function_name 전용 contract입니다. 한 helper의 token/column 규칙을 다른 helper에 적용하지 마세요.",
-            "필요하면 Specialized Functions의 helper 함수를 generated code 안에 정의한 뒤 호출해도 됩니다.",
+            "선택된 function case는 가능한 한 Specialized Functions의 helper 구조와 매칭 규칙을 유지하되, 현재 sources의 실제 column과 plan의 source_alias에 맞게 조정해서 generated code 안에 helper를 정의한 뒤 호출하세요.",
+            "Specialized Functions 템플릿에 있는 함수 signature, column 후보, output column은 현재 source에 맞게 필요한 범위에서 조정할 수 있습니다.",
+            "단, helper의 매칭 의미를 바꾸거나 사용자 질문/plan에 없는 조건을 새로 추가하지 마세요.",
             "function case를 적용할 때 preview_rows가 아니라 sources의 실제 DataFrame을 사용하세요.",
             "plan.pandas_function_case 또는 step_plan의 function_case_key/function_name이 case를 지정하면 Specialized Functions의 의도를 반영해 pandas code를 작성하세요.",
-            "helper function을 호출할 때는 가능한 한 positional arguments를 사용하세요. 예: match_product_tokens(input_text, sources[source_alias]).",
+            "inline 정의한 helper function을 호출할 때는 가능한 한 positional arguments를 사용하세요. 예: match_product_tokens(input_text, sources[source_alias]).",
             "helper input_text는 현재 step.get('input_text') 또는 plan.get('pandas_function_case', {}).get('input_text')에서 읽으세요. plan['intent_plan']은 존재하지 않습니다.",
-            "helper function을 호출만 하고 generated code 안에 정의하지 않는 경우에는 15 Pandas Code Executor와 17 Pandas Repair Code Executor에도 같은 Specialized Functions가 연결되어 있어야 합니다.",
+            "helper function을 generated code 안에 정의하지 않고 외부 helper처럼 호출만 하는 방식은 피하세요. 실행 환경이 helper를 로드할 수 있더라도 최종 code는 self-contained inline helper 형태를 우선하세요.",
             "helper가 입력 text를 해석해 source row를 필터링하는 case라면 helper 설명에 있는 concrete input 조건을 실제 sources DataFrame row에 적용하세요.",
             "helper 결과를 downstream step에 넘기기 전에 group_by/metric/output_columns에 필요한 column이 helper output에 있는지 확인하세요.",
             "필요한 column이 모두 있으면 helper output을 filtered source row로 사용하고, 필요한 column이 없으면 helper output을 key table로만 사용해서 원본 sources[source_alias]를 공통 key columns로 제한한 뒤 집계하세요.",
@@ -285,12 +286,12 @@ def _pandas_function_cases(
             "matched row로 실제 result_df를 반환하세요. print warning이나 print output에 의존하지 마세요.",
         ],
         "selected_cases": cases,
-        "missing_helpers": runtime["missing_helpers"],
+        "missing_templates": template_info["missing_templates"],
     }
     return {
         "cases": cases,
         "prompt_text": json.dumps(prompt_payload, ensure_ascii=False, indent=2),
-        "runtime": runtime,
+        "template_info": template_info,
     }
 
 
@@ -853,8 +854,8 @@ class PandasPromptBuilder(Component):
             "chars": len(prompt_payload["prompt"]),
             "sources": list(prompt_payload.get("source_summary", {}).keys()),
             "function_cases": len(prompt_payload.get("pandas_function_cases", [])),
-            "helper_functions": (prompt_payload.get("pandas_function_case_runtime") or {}).get("manual_function_names", []),
-            "missing_helpers": (prompt_payload.get("pandas_function_case_runtime") or {}).get("missing_helpers", []),
+            "template_functions": (prompt_payload.get("pandas_function_case_templates") or {}).get("manual_function_names", []),
+            "missing_templates": (prompt_payload.get("pandas_function_case_templates") or {}).get("missing_templates", []),
         }
         return Message(text=prompt_payload["prompt"])
 

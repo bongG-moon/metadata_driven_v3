@@ -22,7 +22,7 @@
 | retrieval | `07`~`11` | payload | branch-level `retrieval_payload.source_results` | `source_results` |
 | retrieval merge | `12_source_retrieval_merger.py` | branch retrieval payloads | wrapped `retrieval_payload` with `source_results`, `intent_plan`, `state` | `source_results` |
 | pandas adapter | `13_retrieval_payload_adapter.py` | main payload, retrieval payload | `runtime_sources`, compact `source_results` | `runtime_sources`, `source_results` |
-| pandas prompt | `14_pandas_prompt_builder.py` | payload, specialized functions | prompt text, `pandas_function_case_runtime` in prompt payload | prompt text only; executor gets original payload |
+| pandas prompt | `14_pandas_prompt_builder.py` | payload, specialized functions | prompt text, `pandas_function_case_templates` debug info | prompt text only; executor gets original payload |
 | pandas execute | `15_pandas_code_executor.py` | payload, pandas LLM JSON | `analysis`, `warnings` from analysis errors | `analysis` |
 | repair | `16A`~`16B`, `17` | payload | `pandas_repair`, repaired `analysis` | `analysis`, `pandas_repair` |
 | store | `18_mongodb_data_store.py` | payload | stores large rows, may compact `runtime_sources` and add refs | `mongo_data_store`, compact refs |
@@ -112,7 +112,7 @@ python -m pytest -q tests/test_main_flow_api_response_builder.py tests/test_web_
 대표 기능 회귀:
 
 ```powershell
-python -m pytest -q tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_unregistered_product_tokens_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_product_token_metric_filters_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_keeps_registered_product_terms_out_of_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_prunes_lot_status_for_followup_equipment_count tests/test_langflow_llm_node_flow.py::test_intent_normalizer_uses_state_product_key_summary_without_full_rows tests/test_langflow_llm_node_flow.py::test_pandas_executor_loads_function_case_helper_from_text_input_message_object
+python -m pytest -q tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_unregistered_product_tokens_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_routes_product_token_metric_filters_to_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_keeps_registered_product_terms_out_of_function_case tests/test_langflow_llm_node_flow.py::test_intent_normalizer_prunes_lot_status_for_followup_equipment_count tests/test_langflow_llm_node_flow.py::test_intent_normalizer_uses_state_product_key_summary_without_full_rows tests/test_langflow_llm_node_flow.py::test_pandas_executor_requires_inline_function_case_helper
 # 6 passed
 ```
 
@@ -166,9 +166,9 @@ python -m pytest -q tests/test_split_flow_contracts.py::test_previous_result_res
 
 ## 순차 점검: 14~17 Preview
 
-- `14`의 Specialized Functions input은 LLM prompt/reference/runtime metadata로 쓰인다.
-- `15`와 `17`의 Specialized Functions input은 helper 호출만 남은 generated code를 실행하기 위한 runtime helper source로 쓰인다.
-- helper 구현이 generic node에 직접 하드코딩된 형태는 아니다.
+- `14`의 Specialized Functions input은 LLM prompt에 들어가는 inline helper template로만 쓰인다.
+- `15`와 `17`은 Specialized Functions input을 받지 않고, generated code 안에 inline 정의된 helper만 실행한다.
+- helper 구현이 generic node에 직접 하드코딩되거나 executor runtime에 주입되는 형태가 아니다.
 - `15` fallback은 안정성에는 기여하지만 `step_plan` primitive와 일부 특정 analysis kind 로직까지 포함해 넓다. 의미 품질 개선은 prompt/metadata 우선으로 하고, fallback 축소는 나중에 대표 질문 회귀 검증 후 진행한다.
 - `runtime_sources`는 17에서 Mongo store가 성공해야 preview/ref로 줄어든다. Mongo disabled 또는 설정 누락 시에는 full runtime rows가 남으므로, 이 부분은 별도 저장 정책/로컬 실행 정책으로 다룬다.
 
@@ -203,14 +203,14 @@ python -m pytest -q tests/test_source_retrievers.py tests/test_langflow_llm_node
 
 ### 14 Pandas Prompt Builder
 
-- `Specialized Functions` input은 pandas LLM에게 함수 형태와 의도를 보여주는 prompt reference다.
-- 선택된 `pandas_function_cases`는 metadata/domain에 있고, 실제 helper 구현은 `Specialized Functions` text 또는 metadata `function_code`에서 온다.
-- 14의 `prompt_payload`는 디버그/호환 경로로 `payload`와 `pandas_function_case_runtime`을 함께 갖는다. 15가 이 wrapper도 받을 수 있도록 지원하므로, 지금 단계에서는 제거하지 않는다.
+- `Specialized Functions` input은 pandas LLM에게 함수 형태와 의도를 보여주는 inline helper template다.
+- 선택된 `pandas_function_cases`는 metadata/domain에 있고, helper template은 `Specialized Functions` text 또는 metadata `function_code`에서 온다.
+- 14의 `prompt_payload`는 디버그용 `pandas_function_case_templates`를 노출하지만, 15 실행 payload로 runtime helper를 주입하지 않는다.
 
 ### 15 Pandas Code Executor
 
-- canonical 연결은 13 payload와 14 LLM 응답, 그리고 동일한 `Specialized Functions` text를 15에 넣는 방식이다.
-- 호환 연결로 14 `prompt_payload`가 15 payload에 들어와도 내부 `payload`와 `pandas_function_case_runtime`을 추출한다.
+- canonical 연결은 13 payload와 14 LLM 응답만 15에 넣는 방식이다.
+- 15는 14 `prompt_payload` wrapper를 받을 수 있지만 내부 `payload`만 추출하고, function-case helper를 외부에서 로드하지 않는다.
 - helper 호출 결과에서 `matched_conditions`, `condition_trace`, DataFrame `attrs["matched_conditions"]`를 읽어 `analysis.function_case_trace`에 남긴다. 따라서 제품 토큰이 어떤 컬럼 조건으로 해석됐는지 기록할 수 있다.
 - `_fallback_result_df` 계열은 아직 넓다. 다만 이번 정리의 목적은 payload 축소이므로 fallback 축소는 대표 LLM 질문 재검증 세트를 먼저 만든 뒤 별도 단계로 진행한다.
 
@@ -221,9 +221,9 @@ python -m pytest -q tests/test_source_retrievers.py tests/test_langflow_llm_node
 
 ### 17 Pandas Repair Code Executor
 
-- canonical 연결은 16A payload와 16B repair LLM 응답, 그리고 동일한 `Specialized Functions` text를 17에 넣는 방식이다.
+- canonical 연결은 16A payload와 16B repair LLM 응답만 17에 넣는 방식이다.
 - repair가 필요 없으면 16A payload를 그대로 pass-through하고, repair가 필요하면 수정된 pandas code만 실행한다.
-- function case가 선택됐는데 helper를 우회한 경우를 repair prompt가 다시 helper 호출/inline 정의 쪽으로 유도한다.
+- function case가 선택됐는데 helper를 우회하거나 외부 helper 호출만 남긴 경우를 repair prompt가 inline 정의 self-contained code 쪽으로 유도한다.
 
 ### 18 MongoDB Data Store
 
@@ -233,7 +233,7 @@ python -m pytest -q tests/test_source_retrievers.py tests/test_langflow_llm_node
 검증
 
 ```powershell
-python -m pytest -q tests/test_langflow_llm_node_flow.py::test_pandas_executor_loads_function_case_helper_from_prompt_payload_text tests/test_langflow_llm_node_flow.py::test_pandas_executor_loads_function_case_helper_from_text_input_message_object tests/test_langflow_llm_node_flow.py::test_pandas_repair_prompt_preserves_selected_function_case_helper_call tests/test_prompt_language_guides.py::test_specialized_product_helper_uses_mcp_prefix_and_ignores_org tests/test_prompt_language_guides.py::test_component_token_product_lookup_metadata_is_selection_hint_only
+python -m pytest -q tests/test_langflow_llm_node_flow.py::test_pandas_executor_requires_inline_function_case_helper tests/test_langflow_llm_node_flow.py::test_pandas_executor_allows_inline_selected_function_case_helper tests/test_langflow_llm_node_flow.py::test_pandas_repair_prompt_preserves_selected_function_case_helper_call tests/test_prompt_language_guides.py::test_specialized_product_helper_uses_mcp_prefix_and_ignores_org tests/test_prompt_language_guides.py::test_component_token_product_lookup_metadata_is_selection_hint_only
 # 5 passed
 ```
 

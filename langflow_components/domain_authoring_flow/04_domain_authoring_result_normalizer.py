@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from copy import deepcopy
 from typing import Any
@@ -157,6 +158,10 @@ def _normalize_item(
         section = "analysis_recipes"
     if section not in ALLOWED_SECTIONS:
         errors.append(f"items[{index}] section이 허용값이 아닙니다: {section}")
+    if not key and section != "product_key_columns" and section in ALLOWED_SECTIONS:
+        key = _derive_domain_key(section, payload, raw_source_text or source_text)
+        if key:
+            warnings.append(f"items[{index}] key was generated from display_name/aliases/source text: {key}")
     if not key and section != "product_key_columns":
         errors.append(f"items[{index}] key가 없습니다.")
     if section == "product_key_columns":
@@ -286,6 +291,77 @@ def _is_process_group_grounded_in_source(key: str, payload: dict[str, Any], sour
 
 def _match_text(value: Any) -> str:
     return re.sub(r"[\s_\-./,()]+", "", _clean(value).lower())
+
+
+KEY_TOKEN_MAP = {
+    "공정": "process",
+    "구간": "range",
+    "범위": "range",
+    "차수": "sequence",
+    "순서": "sequence",
+    "조회": "lookup",
+    "규칙": "rule",
+    "필터": "filter",
+    "표시": "display",
+    "결과": "result",
+    "제품": "product",
+    "수량": "quantity",
+    "생산": "production",
+    "실적": "performance",
+    "재공": "wip",
+    "계획": "plan",
+    "목표": "target",
+    "장비": "equipment",
+    "설비": "equipment",
+    "달성율": "achievement_rate",
+    "달성률": "achievement_rate",
+    "조인": "join",
+    "결합": "join",
+}
+SECTION_KEY_PREFIX = {
+    "analysis_recipes": "analysis_recipe",
+    "pandas_function_cases": "pandas_function_case",
+    "process_groups": "process_group",
+    "product_terms": "product_term",
+    "quantity_terms": "quantity_term",
+    "metric_terms": "metric_term",
+    "status_terms": "status_term",
+}
+
+
+def _derive_domain_key(section: str, payload: dict[str, Any], source_text: str) -> str:
+    text_parts: list[str] = []
+    for field in ("display_name", "function_name", "output_column", "intent_type", "default_analysis_kind"):
+        if _clean(payload.get(field)):
+            text_parts.append(_clean(payload.get(field)))
+    text_parts.extend(_as_text_list(payload.get("aliases"))[:3])
+    if not text_parts:
+        text_parts.extend(line for line in _clean(source_text).splitlines()[:2] if _clean(line))
+    source = " ".join(text_parts)
+    ordered_matches: list[tuple[int, str]] = []
+    for korean, english in KEY_TOKEN_MAP.items():
+        start = 0
+        while True:
+            index = source.find(korean, start)
+            if index < 0:
+                break
+            ordered_matches.append((index, english))
+            start = index + len(korean)
+    for match in re.finditer(r"[A-Za-z][A-Za-z0-9_]*", source):
+        token = match.group(0)
+        normalized = re.sub(r"[^A-Za-z0-9_]+", "_", token).strip("_").lower()
+        if len(normalized) > 1 and normalized not in {"and", "or", "the", "an", "of", "to", "for", "by"}:
+            ordered_matches.append((match.start(), normalized))
+    ordered_matches.sort(key=lambda item: item[0])
+    deduped: list[str] = []
+    for _, token_text in ordered_matches:
+        for token in token_text.split("_"):
+            if token and token not in deduped:
+                deduped.append(token)
+    if deduped:
+        return "_".join(deduped[:8])
+    digest = hashlib.sha1(f"{section}:{source_text}".encode("utf-8")).hexdigest()[:8]
+    return f"{SECTION_KEY_PREFIX.get(section, 'domain_item')}_{digest}"
 
 
 def _normalize_payload_lists(payload: dict[str, Any]) -> None:
